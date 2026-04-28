@@ -49,21 +49,5 @@ TRANSLATIONS += \
     designer_zh_CN.ts \
     designer_en.ts
 
-# .qm output directory
-TRANSLATIONS_DIR = $$BUILD_PATH/$$TARGET/translations
-
-# Custom lrelease build step (works with MSVC nmake / VS Qt plugin)
-lrelease_step.name    = lrelease
-lrelease_step.input   = TRANSLATIONS
-lrelease_step.output  = $$TRANSLATIONS_DIR/${QMAKE_FILE_BASE}.qm
-win32 {
-    lrelease_step.commands = \
-        $(CHK_DIR_EXISTS) $$shell_path($$TRANSLATIONS_DIR) $(MKDIR) $$shell_path($$TRANSLATIONS_DIR) \
-        $$escape_expand(\\n\\t)$$shell_path($$[QT_INSTALL_BINS]/lrelease) ${QMAKE_FILE_IN} -qm ${QMAKE_FILE_OUT}
-} else {
-    lrelease_step.commands = \
-        mkdir -p $$TRANSLATIONS_DIR \
-        $$escape_expand(\\n\\t)$$[QT_INSTALL_BINS]/lrelease ${QMAKE_FILE_IN} -qm ${QMAKE_FILE_OUT}
-}
-lrelease_step.CONFIG += no_link target_predeps
-QMAKE_EXTRA_COMPILERS += lrelease_step
+# Automatically compile .ts -> .qm and embed into the binary at :/i18n/
+CONFIG += lrelease embed_translations
