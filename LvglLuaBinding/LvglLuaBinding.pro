@@ -7,6 +7,14 @@ QT -= core gui
 CONFIG += c++17
 # 引入目录配置
 include($$PWD/../build_dirs.pri)
+
+DESTDIR = $$TARDIR
+DEPENDPATH += $$TARDIR
+OBJECTS_DIR = $$BUILD_PATH/$$TARGET/obj
+MOC_DIR = $$BUILD_PATH/$$TARGET/moc
+RCC_DIR = $$BUILD_PATH/$$TARGET/rcc
+UI_DIR =  $$BUILD_PATH/$$TARGET/ui
+
 # Preprocessor definitions
 DEFINES += LVGLLUABINDING_EXPORTS
 

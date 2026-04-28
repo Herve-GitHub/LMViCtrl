@@ -9,6 +9,13 @@ CONFIG  -= qt
 # 引入目录配置
 include($$PWD/../build_dirs.pri)
 
+DESTDIR = $$TARDIR
+DEPENDPATH += $$TARDIR
+OBJECTS_DIR = $$BUILD_PATH/$$TARGET/obj
+MOC_DIR = $$BUILD_PATH/$$TARGET/moc
+RCC_DIR = $$BUILD_PATH/$$TARGET/rcc
+UI_DIR =  $$BUILD_PATH/$$TARGET/ui
+
 # Avoid object name collisions between source files sharing the same
 # basename across different directories (e.g.
 # src/thread/windows/SDL_sysmutex.c vs src/thread/generic/SDL_sysmutex.c).
