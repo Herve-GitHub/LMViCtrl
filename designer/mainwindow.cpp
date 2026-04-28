@@ -37,6 +37,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_canvasView = new CanvasView(this);
     m_canvasView->setScene(m_canvasScene);
     setCentralWidget(m_canvasView);
+
+    // 初始化工程状态
+    resetProject();
+    setProjectOpen(false);
 }
 
 MainWindow::~MainWindow()

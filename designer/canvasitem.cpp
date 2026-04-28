@@ -1,12 +1,49 @@
 #include "canvasitem.h"
-#include "widgetpainter.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneHoverEvent>
+#include <QHash>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QStyleOptionGraphicsItem>
+
+// ---------------------------------------------------------------------------
+// 加载 widget 预览图：img/widgets/<lua 同名>.png（带缓存）
+// ---------------------------------------------------------------------------
+static QPixmap loadWidgetPixmap(const QString &luaFilePath)
+{
+    static QHash<QString, QPixmap> cache;
+
+    const QString key = QFileInfo(luaFilePath).completeBaseName();
+    if (key.isEmpty()) return {};
+
+    const auto it = cache.constFind(key);
+    if (it != cache.constEnd()) return it.value();
+
+    QPixmap pix;
+    // 优先与 lua 文件同目录的 ../img/widgets/<key>.png；
+    // 退化到 当前工作目录/img/widgets/<key>.png
+    const QFileInfo luaFi(luaFilePath);
+    QString imgPath;
+    if (luaFi.exists()) {
+        imgPath = QDir(luaFi.absolutePath() + QStringLiteral("/../../img/widgets"))
+                      .absoluteFilePath(key + QStringLiteral(".png"));
+        if (!QFileInfo::exists(imgPath))
+            imgPath.clear();
+    }
+    if (imgPath.isEmpty()) {
+        imgPath = QDir::current().absoluteFilePath(
+            QStringLiteral("img/widgets/%1.png").arg(key));
+    }
+    pix.load(imgPath);
+
+    cache.insert(key, pix);
+    return pix;
+}
 
 // ---------------------------------------------------------------------------
 // 构造
@@ -114,8 +151,25 @@ void CanvasItem::paint(QPainter *p,
 {
     const QRectF body(0, 0, m_inst.width, m_inst.height);
 
-    // --- Widget 外观：委托给 WidgetPainter ---
-    WidgetPainter::draw(p, body, m_meta, m_inst);
+    // --- 透明矩形框 + widget 预览图 ---
+    p->save();
+    p->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p->setRenderHint(QPainter::Antialiasing,           true);
+
+    const QPixmap pix = loadWidgetPixmap(m_meta.luaFilePath);
+    if (!pix.isNull()) {
+        p->drawPixmap(body, pix, QRectF(pix.rect()));
+    } else {
+        // 找不到图片时画一个浅色虚线框作为占位
+        p->setBrush(Qt::NoBrush);
+        p->setPen(QPen(QColor(150, 150, 150, 180), 1, Qt::DashLine));
+        p->drawRect(body.adjusted(0.5, 0.5, -0.5, -0.5));
+        if (!m_meta.name.isEmpty()) {
+            p->setPen(QColor(180, 180, 180));
+            p->drawText(body, Qt::AlignCenter, m_meta.name);
+        }
+    }
+    p->restore();
 
     // --- 选中状态叠加（在 widget 外观之上）---
     if (isSelected()) {

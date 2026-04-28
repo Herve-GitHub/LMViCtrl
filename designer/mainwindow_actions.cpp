@@ -8,26 +8,205 @@
 
 #include "mainwindow.h"
 #include "canvasscene.h"
+#include "projectmanager.h"
 
 #include <QApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QGraphicsItem>
 #include <QInputDialog>
+#include <QMessageBox>
 #include <QTranslator>
 #include <QUndoStack>
+#include <QUuid>
+
+namespace {
+constexpr const char *kProjectFilter = "QtLvglDesigner Project (*.json *.qlproj)";
+}
+
+// ============================================================
+// 工程辅助函数
+// ============================================================
+
+void MainWindow::resetProject()
+{
+    m_project = ProjectData{};
+    m_project.id        = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_project.createdAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    m_project.updatedAt = m_project.createdAt;
+
+    // 默认创建一个空白屏
+    ScreenData s;
+    s.id    = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    s.name  = QStringLiteral("Screen1");
+    s.order = 0;
+    m_project.screens.clear();
+    m_project.screens.append(s);
+
+    m_projectFilePath.clear();
+
+    if (m_canvasScene) {
+        m_canvasScene->setCanvasSize(m_project.target.width, m_project.target.height);
+        m_canvasScene->clearAllItems();
+    }
+}
+
+void MainWindow::applyProjectToScene()
+{
+    if (!m_canvasScene) return;
+    m_canvasScene->setCanvasSize(m_project.target.width, m_project.target.height);
+    if (!m_project.screens.isEmpty())
+        m_canvasScene->loadInstances(m_project.screens.first().widgets);
+    else
+        m_canvasScene->clearAllItems();
+}
+
+void MainWindow::syncSceneToProject()
+{
+    if (!m_canvasScene) return;
+    if (m_project.screens.isEmpty()) {
+        ScreenData s;
+        s.id    = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        s.name  = QStringLiteral("Screen1");
+        s.order = 0;
+        m_project.screens.append(s);
+    }
+    m_project.screens.first().widgets = m_canvasScene->allInstances();
+    m_project.target.width  = m_canvasScene->canvasSize().width();
+    m_project.target.height = m_canvasScene->canvasSize().height();
+    m_project.updatedAt     = QDateTime::currentDateTime().toString(Qt::ISODate);
+}
+
+void MainWindow::setProjectOpen(bool open)
+{
+    m_projectOpen = open;
+    updateWindowTitle();
+}
+
+void MainWindow::updateWindowTitle()
+{
+    QString title = QStringLiteral("QtLvglDesigner");
+    if (m_projectOpen) {
+        const QString name = m_projectFilePath.isEmpty()
+                                 ? (m_project.name.isEmpty() ? tr("未命名") : m_project.name)
+                                 : QFileInfo(m_projectFilePath).fileName();
+        title = QStringLiteral("%1 - %2").arg(name, title);
+    }
+    setWindowTitle(title);
+}
+
+bool MainWindow::saveProjectToPath(const QString &path)
+{
+    syncSceneToProject();
+    QString err;
+    if (!ProjectManager::saveToFile(m_project, path, &err)) {
+        QMessageBox::warning(this, tr("保存失败"),
+                             tr("无法保存工程：%1").arg(err));
+        return false;
+    }
+    m_projectFilePath = path;
+    updateWindowTitle();
+    return true;
+}
+
+bool MainWindow::maybeSaveCurrent()
+{
+    if (!m_projectOpen) return true;
+
+    const auto ret = QMessageBox::question(
+        this, tr("关闭工程"),
+        tr("是否保存当前工程的修改？"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+
+    if (ret == QMessageBox::Cancel) return false;
+    if (ret == QMessageBox::Discard) return true;
+
+    onSave();
+    // 保存被取消时 m_projectFilePath 仍可能为空
+    return !m_projectFilePath.isEmpty();
+}
 
 // ============================================================
 // 文件
 // ============================================================
 
-void MainWindow::onNewProject() {}
+void MainWindow::onNewProject()
+{
+    if (!maybeSaveCurrent()) return;
 
-void MainWindow::onOpenProject() {}
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, tr("新建工程"), tr("工程名称："),
+        QLineEdit::Normal, tr("NewProject"), &ok);
+    if (!ok) return;
 
-void MainWindow::onCloseProject() {}
+    resetProject();
+    if (!name.trimmed().isEmpty())
+        m_project.name = name.trimmed();
+    applyProjectToScene();
+    setProjectOpen(true);
+}
 
-void MainWindow::onSave() {}
+void MainWindow::onOpenProject()
+{
+    if (!maybeSaveCurrent()) return;
 
-void MainWindow::onSaveAs() {}
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("打开工程"), QString(), tr(kProjectFilter));
+    if (path.isEmpty()) return;
+
+    ProjectData p;
+    QString err;
+    if (!ProjectManager::loadFromFile(&p, path, &err)) {
+        QMessageBox::warning(this, tr("打开失败"),
+                             tr("无法打开工程：%1").arg(err));
+        return;
+    }
+    m_project         = p;
+    m_projectFilePath = path;
+    applyProjectToScene();
+    setProjectOpen(true);
+}
+
+void MainWindow::onCloseProject()
+{
+    if (!m_projectOpen) return;
+    if (!maybeSaveCurrent()) return;
+
+    resetProject();
+    setProjectOpen(false);
+}
+
+void MainWindow::onSave()
+{
+    if (!m_projectOpen) return;
+    if (m_projectFilePath.isEmpty()) {
+        onSaveAs();
+        return;
+    }
+    saveProjectToPath(m_projectFilePath);
+}
+
+void MainWindow::onSaveAs()
+{
+    if (!m_projectOpen) return;
+
+    QString defaultName = m_project.name.isEmpty() ? QStringLiteral("project")
+                                                   : m_project.name;
+    if (!m_projectFilePath.isEmpty())
+        defaultName = m_projectFilePath;
+    else
+        defaultName = QDir::current().absoluteFilePath(defaultName + ".json");
+
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("另存为"), defaultName, tr(kProjectFilter));
+    if (path.isEmpty()) return;
+
+    saveProjectToPath(path);
+}
 
 void MainWindow::onExportZip() {}
 

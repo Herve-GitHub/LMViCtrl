@@ -34,6 +34,12 @@ public:
     // 所有实例（用于序列化）
     QList<WidgetInstance> allInstances() const;
 
+    // 清空所有 widget 实例（保留背景），同时清空撤销栈与剪贴板
+    void clearAllItems();
+
+    // 用一组实例替换当前画布内容（用于工程加载，不入撤销栈）
+    void loadInstances(const QList<WidgetInstance> &instances);
+
     // --- 由 undo 命令直接调用（不入栈）---
     void doAddItem   (const WidgetInstance &inst);
     void doRemoveItem(const QString &instanceId);

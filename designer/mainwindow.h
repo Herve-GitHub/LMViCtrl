@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include "WidgetMeta.h"
 
 class WidgetToolbox;
 class CanvasScene;
@@ -232,5 +233,19 @@ private:
     WidgetToolbox   *m_widgetToolbox = nullptr;
     CanvasScene     *m_canvasScene   = nullptr;
     CanvasView      *m_canvasView    = nullptr;
+
+    // ===== 工程状态 =====
+    ProjectData m_project;            // 当前内存中的工程数据
+    QString     m_projectFilePath;    // 当前工程的 JSON 文件路径（未保存为空）
+    bool        m_projectOpen = false;
+
+    // 工程相关辅助函数
+    void resetProject();              // 重置为默认（新建）状态
+    void applyProjectToScene();       // 把 m_project 第一屏内容载入画布
+    void syncSceneToProject();        // 把当前画布同步回 m_project
+    bool maybeSaveCurrent();          // 关闭/退出前提示保存（true=可继续）
+    bool saveProjectToPath(const QString &path);
+    void updateWindowTitle();
+    void setProjectOpen(bool open);
 };
 #endif // MAINWINDOW_H

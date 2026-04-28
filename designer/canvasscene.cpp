@@ -274,6 +274,29 @@ QList<WidgetInstance> CanvasScene::allInstances() const
     return result;
 }
 
+void CanvasScene::clearAllItems()
+{
+    const auto its = items();
+    for (QGraphicsItem *gi : its) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+            removeItem(ci);
+            delete ci;
+        }
+    }
+    m_clipboard.clear();
+    m_pasteCount = 0;
+    m_pressPositions.clear();
+    m_resizingIds.clear();
+    m_undoStack->clear();
+}
+
+void CanvasScene::loadInstances(const QList<WidgetInstance> &instances)
+{
+    clearAllItems();
+    for (const auto &inst : instances)
+        doAddItem(inst);
+}
+
 // ---------------------------------------------------------------------------
 // 拖放（从 WidgetToolbox 拖进来）
 // ---------------------------------------------------------------------------

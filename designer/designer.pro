@@ -20,21 +20,21 @@ SOURCES += \
     mainwindow.cpp \
     mainwindow_actions.cpp \
     luawidgetparser.cpp \
+    projectmanager.cpp \
     widgettoolbox.cpp \
     canvasitem.cpp \
     canvasscene.cpp \
-    canvasview.cpp \
-    widgetpainter.cpp
+    canvasview.cpp
 
 HEADERS += \
     mainwindow.h \
     WidgetMeta.h \
     luawidgetparser.h \
+    projectmanager.h \
     widgettoolbox.h \
     canvasitem.h \
     canvasscene.h \
-    canvasview.h \
-    widgetpainter.h
+    canvasview.h
 
 FORMS += \
     mainwindow.ui
