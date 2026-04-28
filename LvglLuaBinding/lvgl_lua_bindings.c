@@ -500,7 +500,7 @@ static int luaopen_lvgl(lua_State* L) {
     luaL_newlib(L, lvgl_funcs);
     
     // Add clipboard functions
-    merge_methods_to_table(L, lvgl_get_clipboard_funcs());
+
     merge_methods_to_table(L, lvgl_get_mongoose_methods());
     
     // Add constants - Alignment

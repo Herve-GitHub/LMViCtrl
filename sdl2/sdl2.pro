@@ -6,6 +6,8 @@ TEMPLATE = lib
 TARGET   = SDL2
 CONFIG  += shared
 CONFIG  -= qt
+# 引入目录配置
+include($$PWD/../build_dirs.pri)
 
 # Avoid object name collisions between source files sharing the same
 # basename across different directories (e.g.
@@ -39,16 +41,6 @@ INCLUDEPATH += include \
     DEFINES += _CRT_SECURE_NO_WARNINGS \
                _CRT_NONSTDC_NO_DEPRECATE \
                HAVE_LIBC=1
-}
-
-# Output directories
-CONFIG(debug, debug|release) {
-    DESTDIR     = bin/debug
-    OBJECTS_DIR = bin/debug/obj
-} else {
-    DESTDIR     = bin/release
-    OBJECTS_DIR = bin/release/obj
-    QMAKE_CFLAGS_RELEASE += -O2
 }
 
 # -----------------------------------------------------------------------

@@ -63,10 +63,6 @@ const luaL_Reg* lvgl_get_textarea_methods(void);
 const luaL_Reg* lvgl_get_chart_methods(void);
 const luaL_Reg* lvgl_get_slider_methods(void);
 
-
-// Get clipboard functions
-const luaL_Reg* lvgl_get_clipboard_funcs(void);
-
 const luaL_Reg* lvgl_get_mongoose_methods(void);
 
 #endif // LVGL_LUA_BINDINGS_INTERNAL_H

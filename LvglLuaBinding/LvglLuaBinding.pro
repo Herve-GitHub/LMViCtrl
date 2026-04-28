@@ -4,13 +4,33 @@ TARGET = LvglLuaBinding
 
 QT -= core gui
 
-CONFIG += c11
-
+CONFIG += c++17
+# 引入目录配置
+include($$PWD/../build_dirs.pri)
 # Preprocessor definitions
 DEFINES += LVGLLUABINDING_EXPORTS
-DEFINES += _CRT_SECURE_NO_WARNINGS
-DEFINES += _CRT_NONSTDC_NO_WARNINGS
+
 DEFINES += LV_CONF_INCLUDE_SIMPLE
+
+# -------------------------------------------------------
+# Windows-specific
+# -------------------------------------------------------
+win32 {
+    DEFINES += _CRT_SECURE_NO_WARNINGS
+    DEFINES += _CRT_NONSTDC_NO_WARNINGS
+    DEFINES += WIN32 _WINDOWS _USRDLL
+    DEF_FILE = LvglLuaBinding.def
+    DISTFILES += LvglLuaBinding.def
+    LIBS += -luser32 -lgdi32 -limm32 -lwinmm -lshell32 -lws2_32
+}
+
+# -------------------------------------------------------
+# Unix/Linux-specific
+# -------------------------------------------------------
+unix {
+    QMAKE_CFLAGS += -fvisibility=hidden
+    QMAKE_CXXFLAGS += -fvisibility=hidden
+}
 
 # Include paths
 INCLUDEPATH += .
@@ -719,19 +739,9 @@ SOURCES += \
     lvgl_textarea_lua_bindings.c \
     lvgl_lua_mongoose.c
 
-# -------------------------------------------------------
-# Windows-specific
-# -------------------------------------------------------
-win32 {
-    DEFINES += WIN32 _WINDOWS _USRDLL
-    DEF_FILE = LvglLuaBinding.def
-    LIBS += -luser32 -lgdi32 -limm32 -lwinmm -lshell32 -lws2_32
-}
+win32:CONFIG(release, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
+else:unix: LIBS += -L$$DESTDIR/ -lSDL2
 
-# -------------------------------------------------------
-# Unix/Linux-specific
-# -------------------------------------------------------
-unix {
-    QMAKE_CFLAGS += -fvisibility=hidden
-    QMAKE_CXXFLAGS += -fvisibility=hidden
-}
+INCLUDEPATH += $$PWD/../sdl2
+DEPENDPATH += $$PWD/../sdl2
