@@ -112,6 +112,7 @@ void WidgetToolbox::buildUi()
     // 搜索框
     m_searchEdit = new QLineEdit(container);
     m_searchEdit->setPlaceholderText(tr("搜索组件…"));
+    m_searchEdit->setStyleSheet(QStringLiteral("color: white;"));
     m_searchEdit->setClearButtonEnabled(true);
     connect(m_searchEdit, &QLineEdit::textChanged,
             this, &WidgetToolbox::onFilterChanged);

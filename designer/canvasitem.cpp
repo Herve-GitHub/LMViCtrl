@@ -59,6 +59,7 @@ CanvasItem::CanvasItem(const WidgetInstance &inst,
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setAcceptHoverEvents(true);
     setZValue(inst.zOrder);
+    m_pixmap = loadWidgetPixmap(m_meta.luaFilePath);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +157,7 @@ void CanvasItem::paint(QPainter *p,
     p->setRenderHint(QPainter::SmoothPixmapTransform, true);
     p->setRenderHint(QPainter::Antialiasing,           true);
 
-    const QPixmap pix = loadWidgetPixmap(m_meta.luaFilePath);
+    const QPixmap &pix = m_pixmap;
     if (!pix.isNull()) {
         p->drawPixmap(body, pix, QRectF(pix.rect()));
     } else {
@@ -293,6 +294,9 @@ QVariant CanvasItem::itemChange(GraphicsItemChange change, const QVariant &value
         m_inst.x = qRound(pos().x());
         m_inst.y = qRound(pos().y());
         if (scene()) scene()->update();
+    }
+    if (m_pixmap.isNull()) {
+		//todo 如果没有预览图，尝试使用lvgl去绘制图片
     }
     return QGraphicsObject::itemChange(change, value);
 }

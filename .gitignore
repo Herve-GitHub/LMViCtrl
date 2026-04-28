@@ -1,7 +1,15 @@
 /build
+/bin
+/.vs
 /.qtcreator
 /output
 /.qmake.stash
 /Makefile
 /Makefile.Debug
 /Makefile.Release
+*.qtvscr
+*.vcxproj
+*.filters
+*.user
+*.sln
+*.slnx

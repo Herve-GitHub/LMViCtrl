@@ -327,15 +327,16 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
 
     // 默认宽高从 meta 中取（若有）
     int defW = 120, defH = 60;
+
+    WidgetInstance inst;
     if (m_metaMap.contains(widgetId)) {
         const auto &meta = m_metaMap.value(widgetId);
         for (const auto &p : meta.properties) {
             if (p.name == QLatin1String("width"))  defW = p.defaultValue.toInt();
             if (p.name == QLatin1String("height")) defH = p.defaultValue.toInt();
+            inst.properties[p.name] = p.defaultValue;
         }
     }
-
-    WidgetInstance inst;
     inst.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     inst.widgetId   = widgetId;
     inst.x          = qRound(event->scenePos().x()) - defW / 2;

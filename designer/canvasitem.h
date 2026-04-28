@@ -12,6 +12,9 @@ class CanvasItem : public QGraphicsObject
     Q_OBJECT
 
 public:
+    enum { Type = UserType + 1 };
+    int type() const override { return Type; }
+
     explicit CanvasItem(const WidgetInstance &inst,
                         const WidgetMeta     &meta,
                         QGraphicsItem        *parent = nullptr);
@@ -53,6 +56,7 @@ private:
 
     WidgetInstance m_inst;
     WidgetMeta     m_meta;
+    QPixmap        m_pixmap;
 
     HandlePos m_activeHandle   = HandlePos::None;
     QPointF   m_pressScenePos;

@@ -24,7 +24,10 @@ SOURCES += \
     widgettoolbox.cpp \
     canvasitem.cpp \
     canvasscene.cpp \
-    canvasview.cpp
+    canvasview.cpp \
+    projectpropertiesdialog.cpp \
+    screentab.cpp \
+    screenmanagerdock.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -34,7 +37,10 @@ HEADERS += \
     widgettoolbox.h \
     canvasitem.h \
     canvasscene.h \
-    canvasview.h
+    canvasview.h \
+    projectpropertiesdialog.h \
+    screentab.h \
+    screenmanagerdock.h
 
 FORMS += \
     mainwindow.ui

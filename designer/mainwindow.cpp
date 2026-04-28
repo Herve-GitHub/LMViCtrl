@@ -1,8 +1,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "widgettoolbox.h"
-#include "canvasscene.h"
-#include "canvasview.h"
+#include "screentab.h"
+#include "screenmanagerdock.h"
 
 #include <QAction>
 #include <QDir>
@@ -10,6 +10,7 @@
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QTabWidget>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -22,25 +23,35 @@ MainWindow::MainWindow(QWidget *parent)
     applyDarkTheme();
     setupMenus();
 
-    // 组件工具箱（停靠在左侧）
+    // 图页管理器（停靠在左侧上方）
+    m_screenManager = new ScreenManagerDock(this);
+    addDockWidget(Qt::LeftDockWidgetArea, m_screenManager);
+
+    // 组件工具箱（停靠在左侧，位于图页管理器下方）
     m_widgetToolbox = new WidgetToolbox(this);
     addDockWidget(Qt::LeftDockWidgetArea, m_widgetToolbox);
+    splitDockWidget(m_screenManager, m_widgetToolbox, Qt::Vertical);
     const QString widgetsDir = QDir::current().absoluteFilePath(
         QStringLiteral("lua/widgets"));
     m_widgetToolbox->loadFromDirectory(widgetsDir);
+    connect(m_screenManager, &ScreenManagerDock::openScreenRequested,
+            this, &MainWindow::onScreenManagerOpenRequested);
+    connect(m_screenManager, &ScreenManagerDock::screensChanged,
+            this, &MainWindow::onScreensChanged);
 
-    // 画布
-    m_canvasScene = new CanvasScene(this);
-    m_canvasScene->setCanvasSize(1024, 768);   // 默认与 ProjectTarget 一致
-    m_canvasScene->setWidgetMetas(m_widgetToolbox->widgetMetas());
-
-    m_canvasView = new CanvasView(this);
-    m_canvasView->setScene(m_canvasScene);
-    setCentralWidget(m_canvasView);
+    // 多图页 TabWidget（中央区域）
+    m_tabWidget = new QTabWidget(this);
+    m_tabWidget->setTabsClosable(true);
+    m_tabWidget->setMovable(false);
+    setCentralWidget(m_tabWidget);
+    connect(m_tabWidget, &QTabWidget::tabCloseRequested,
+            this, &MainWindow::onTabCloseRequested);
 
     // 初始化工程状态
+    loadRecentProjects();
     resetProject();
-    setProjectOpen(false);
+    updateRecentMenu();
+    setProjectOpen(true);
 }
 
 MainWindow::~MainWindow()
@@ -132,9 +143,8 @@ void MainWindow::setupFileMenu()
     connect(addAction(fileMenu, tr("工程属性")),
             &QAction::triggered, this, &MainWindow::onProjectProperties);
 
-    QMenu *recentMenu = fileMenu->addMenu(tr("最近打开工程"));
-    QAction *emptyRecent = recentMenu->addAction(tr("(空)"));
-    emptyRecent->setEnabled(false);
+    m_recentMenu = fileMenu->addMenu(tr("最近打开工程"));
+    updateRecentMenu();
 
     fileMenu->addSeparator();
     connect(addAction(fileMenu, tr("退出"), QKeySequence(Qt::ALT | Qt::Key_F4)),

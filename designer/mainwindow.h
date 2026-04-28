@@ -2,11 +2,14 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QHash>
 #include "WidgetMeta.h"
 
 class WidgetToolbox;
 class CanvasScene;
 class CanvasView;
+class ScreenTab;
+class ScreenManagerDock;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -14,6 +17,7 @@ class MainWindow;
 }
 class QMenu;
 class QAction;
+class QTabWidget;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -228,24 +232,49 @@ private slots:
     void onLicenseInfo();
     void onTechnicalSupport();
 
+    // ===== 图页管理槽 =====
+    void onScreenManagerOpenRequested(const QString &screenId);
+    void onScreensChanged(const QList<ScreenData> &screens);
+    void onTabCloseRequested(int index);
+
 private:
-    Ui::MainWindow  *ui;
-    WidgetToolbox   *m_widgetToolbox = nullptr;
-    CanvasScene     *m_canvasScene   = nullptr;
-    CanvasView      *m_canvasView    = nullptr;
+    Ui::MainWindow    *ui;
+    WidgetToolbox     *m_widgetToolbox    = nullptr;
+    QTabWidget        *m_tabWidget        = nullptr;
+    ScreenManagerDock *m_screenManager    = nullptr;
+    QMenu             *m_recentMenu       = nullptr;
+
+    // screenId → ScreenTab*（已打开的图页）
+    QHash<QString, ScreenTab *> m_openTabs;
 
     // ===== 工程状态 =====
-    ProjectData m_project;            // 当前内存中的工程数据
-    QString     m_projectFilePath;    // 当前工程的 JSON 文件路径（未保存为空）
-    bool        m_projectOpen = false;
+    ProjectData      m_project;
+    QString          m_projectFilePath;
+    bool             m_projectOpen = false;
+    QStringList      m_recentProjects;
+
+    static constexpr int kMaxRecentProjects = 10;
 
     // 工程相关辅助函数
-    void resetProject();              // 重置为默认（新建）状态
-    void applyProjectToScene();       // 把 m_project 第一屏内容载入画布
-    void syncSceneToProject();        // 把当前画布同步回 m_project
-    bool maybeSaveCurrent();          // 关闭/退出前提示保存（true=可继续）
+    void resetProject();
+    void syncSceneToProject();
+    bool maybeSaveCurrent();
     bool saveProjectToPath(const QString &path);
     void updateWindowTitle();
     void setProjectOpen(bool open);
+
+    // 图页辅助
+    void openScreenTab(const QString &screenId);
+    void closeScreenTab(const QString &screenId);
+    void applyProjectToTabs();          // 工程加载后打开所有图页
+    void refreshTabWidgetMetas();       // 把 widgetMetas 注入所有打开的 tab
+    ScreenTab *currentScreenTab() const;
+    CanvasScene *currentScene() const;  // 当前活动图页的 scene（可为 nullptr）
+
+    // 最近工程
+    void loadRecentProjects();
+    void saveRecentProjects();
+    void addRecentProject(const QString &path);
+    void updateRecentMenu();
 };
 #endif // MAINWINDOW_H

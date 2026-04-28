@@ -9,15 +9,24 @@
 #include "mainwindow.h"
 #include "canvasscene.h"
 #include "projectmanager.h"
+#include "projectpropertiesdialog.h"
+#include "screentab.h"
+#include "screenmanagerdock.h"
+#include "widgettoolbox.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsItem>
 #include <QInputDialog>
+#include <QMenu>
 #include <QMessageBox>
+#include <QTabWidget>
+#include <QTextStream>
 #include <QTranslator>
 #include <QUndoStack>
 #include <QUuid>
@@ -32,51 +41,177 @@ constexpr const char *kProjectFilter = "QtLvglDesigner Project (*.json *.qlproj)
 
 void MainWindow::resetProject()
 {
+    // 关闭所有已打开的图页 tab
+    if (m_tabWidget) {
+        m_tabWidget->clear();
+        m_openTabs.clear();
+    }
+
     m_project = ProjectData{};
     m_project.id        = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_project.createdAt = QDateTime::currentDateTime().toString(Qt::ISODate);
     m_project.updatedAt = m_project.createdAt;
 
-    // 默认创建一个空白屏
     ScreenData s;
     s.id    = QUuid::createUuid().toString(QUuid::WithoutBraces);
     s.name  = QStringLiteral("Screen1");
     s.order = 0;
-    m_project.screens.clear();
     m_project.screens.append(s);
 
     m_projectFilePath.clear();
 
-    if (m_canvasScene) {
-        m_canvasScene->setCanvasSize(m_project.target.width, m_project.target.height);
-        m_canvasScene->clearAllItems();
-    }
-}
+    if (m_screenManager)
+        m_screenManager->setScreens(m_project.screens);
 
-void MainWindow::applyProjectToScene()
-{
-    if (!m_canvasScene) return;
-    m_canvasScene->setCanvasSize(m_project.target.width, m_project.target.height);
-    if (!m_project.screens.isEmpty())
-        m_canvasScene->loadInstances(m_project.screens.first().widgets);
-    else
-        m_canvasScene->clearAllItems();
+    // 默认打开第一个图页
+    openScreenTab(s.id);
 }
 
 void MainWindow::syncSceneToProject()
 {
-    if (!m_canvasScene) return;
-    if (m_project.screens.isEmpty()) {
-        ScreenData s;
-        s.id    = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        s.name  = QStringLiteral("Screen1");
-        s.order = 0;
+    // 将所有已打开的图页同步回 m_project
+    for (ScreenData &screen : m_project.screens) {
+        if (ScreenTab *tab = m_openTabs.value(screen.id, nullptr))
+            tab->syncToScreen(screen);
+    }
+    m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+}
+
+void MainWindow::applyProjectToTabs()
+{
+    if (!m_tabWidget) return;
+    m_tabWidget->clear();
+    m_openTabs.clear();
+
+    if (m_screenManager)
+        m_screenManager->setScreens(m_project.screens);
+
+    // 开启所有图页
+    for (const ScreenData &s : std::as_const(m_project.screens))
+        openScreenTab(s.id);
+}
+
+void MainWindow::openScreenTab(const QString &screenId)
+{
+    // 已开着则激活
+    if (ScreenTab *existing = m_openTabs.value(screenId, nullptr)) {
+        m_tabWidget->setCurrentWidget(existing);
+        return;
+    }
+
+    // 找到对应 ScreenData
+    ScreenData *sd = nullptr;
+    for (ScreenData &s : m_project.screens) {
+        if (s.id == screenId) { sd = &s; break; }
+    }
+    if (!sd) return;
+
+    const QSize cvSize(m_project.target.width, m_project.target.height);
+    const QList<WidgetMeta> metas = m_widgetToolbox ? m_widgetToolbox->widgetMetas()
+                                                    : QList<WidgetMeta>{};
+    auto *tab = new ScreenTab(*sd, cvSize, metas, m_tabWidget);
+
+    const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
+    m_tabWidget->addTab(tab, tabTitle);
+    m_tabWidget->setCurrentWidget(tab);
+    m_openTabs.insert(screenId, tab);
+}
+
+void MainWindow::closeScreenTab(const QString &screenId)
+{
+    ScreenTab *tab = m_openTabs.value(screenId, nullptr);
+    if (!tab) return;
+    // 先同步数据再关闭
+    for (ScreenData &s : m_project.screens) {
+        if (s.id == screenId) { tab->syncToScreen(s); break; }
+    }
+    const int idx = m_tabWidget->indexOf(tab);
+    if (idx >= 0) m_tabWidget->removeTab(idx);
+    m_openTabs.remove(screenId);
+    tab->deleteLater();
+}
+
+void MainWindow::refreshTabWidgetMetas()
+{
+    const QList<WidgetMeta> metas = m_widgetToolbox ? m_widgetToolbox->widgetMetas()
+                                                    : QList<WidgetMeta>{};
+    for (ScreenTab *tab : std::as_const(m_openTabs))
+        tab->scene()->setWidgetMetas(metas);
+}
+
+ScreenTab *MainWindow::currentScreenTab() const
+{
+    if (!m_tabWidget) return nullptr;
+    return qobject_cast<ScreenTab *>(m_tabWidget->currentWidget());
+}
+
+CanvasScene *MainWindow::currentScene() const
+{
+    ScreenTab *tab = currentScreenTab();
+    return tab ? tab->scene() : nullptr;
+}
+
+// 图页管理器信号
+void MainWindow::onScreenManagerOpenRequested(const QString &screenId)
+{
+    if (screenId.startsWith(QLatin1String("__delete__:"))) {
+        const QString id = screenId.mid(11);
+        closeScreenTab(id);
+        // 删除后若没有打开的 tab，自动打开第一个
+        if (m_tabWidget && m_tabWidget->count() == 0 && !m_project.screens.isEmpty())
+            openScreenTab(m_project.screens.first().id);
+        return;
+    }
+    openScreenTab(screenId);
+}
+
+void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
+{
+    // 先同步当前所有已打开的图页数据
+    syncSceneToProject();
+
+    // 找到被删除的图页，关闭对应 tab
+    QSet<QString> newIds;
+    for (const ScreenData &s : updatedScreens) newIds.insert(s.id);
+    const QList<QString> oldIds = m_openTabs.keys();
+    for (const QString &id : oldIds) {
+        if (!newIds.contains(id)) closeScreenTab(id);
+    }
+
+    // 更新 m_project.screens（保留 widgets）
+    QHash<QString, QList<WidgetInstance>> widgetMap;
+    for (const ScreenData &s : std::as_const(m_project.screens))
+        widgetMap.insert(s.id, s.widgets);
+
+    m_project.screens.clear();
+    for (ScreenData s : updatedScreens) {
+        s.widgets = widgetMap.value(s.id);
         m_project.screens.append(s);
     }
-    m_project.screens.first().widgets = m_canvasScene->allInstances();
-    m_project.target.width  = m_canvasScene->canvasSize().width();
-    m_project.target.height = m_canvasScene->canvasSize().height();
-    m_project.updatedAt     = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    // 刷新已打开 tab 的标题
+    for (ScreenData &s : m_project.screens) {
+        if (ScreenTab *tab = m_openTabs.value(s.id, nullptr)) {
+            const int idx = m_tabWidget->indexOf(tab);
+            if (idx >= 0)
+                m_tabWidget->setTabText(idx,
+                    QStringLiteral("%1. %2").arg(s.order + 1).arg(s.name));
+        }
+    }
+
+    // 应用分辨率变化到所有已开 tab
+    for (ScreenTab *tab : std::as_const(m_openTabs))
+        tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
+}
+
+void MainWindow::onTabCloseRequested(int index)
+{
+    auto *tab = qobject_cast<ScreenTab *>(m_tabWidget->widget(index));
+    if (!tab) return;
+    closeScreenTab(tab->screenId());
+    // 如果已无打开的 tab，自动打开第一个
+    if (m_tabWidget->count() == 0 && !m_project.screens.isEmpty())
+        openScreenTab(m_project.screens.first().id);
 }
 
 void MainWindow::setProjectOpen(bool open)
@@ -108,6 +243,7 @@ bool MainWindow::saveProjectToPath(const QString &path)
     }
     m_projectFilePath = path;
     updateWindowTitle();
+    addRecentProject(path);
     return true;
 }
 
@@ -146,8 +282,8 @@ void MainWindow::onNewProject()
     resetProject();
     if (!name.trimmed().isEmpty())
         m_project.name = name.trimmed();
-    applyProjectToScene();
     setProjectOpen(true);
+    // 新建工程尚未保存，无路径，不记录最近工程
 }
 
 void MainWindow::onOpenProject()
@@ -167,8 +303,9 @@ void MainWindow::onOpenProject()
     }
     m_project         = p;
     m_projectFilePath = path;
-    applyProjectToScene();
+    applyProjectToTabs();
     setProjectOpen(true);
+    addRecentProject(path);
 }
 
 void MainWindow::onCloseProject()
@@ -216,7 +353,29 @@ void MainWindow::onExportReport() {}
 
 void MainWindow::onImportProject() {}
 
-void MainWindow::onProjectProperties() {}
+void MainWindow::onProjectProperties()
+{
+    if (!m_projectOpen) return;
+
+    ProjectPropertiesDialog dlg(m_project, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const ProjectData newData = dlg.projectData();
+
+    const bool resolutionChanged =
+        (newData.target.width  != m_project.target.width ||
+         newData.target.height != m_project.target.height);
+
+    m_project = newData;
+    m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    if (resolutionChanged) {
+        for (ScreenTab *tab : std::as_const(m_openTabs))
+            tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
+    }
+
+    updateWindowTitle();
+}
 
 void MainWindow::onExit()
 {
@@ -227,27 +386,25 @@ void MainWindow::onExit()
 // 编辑
 // ============================================================
 
-void MainWindow::onUndo() { if (m_canvasScene) m_canvasScene->undoStack()->undo(); }
+void MainWindow::onUndo() { if (auto *s = currentScene()) s->undoStack()->undo(); }
 
-void MainWindow::onRedo() { if (m_canvasScene) m_canvasScene->undoStack()->redo(); }
+void MainWindow::onRedo() { if (auto *s = currentScene()) s->undoStack()->redo(); }
 
 void MainWindow::onCut()
 {
-    if (!m_canvasScene) return;
-    m_canvasScene->copySelected();
-    m_canvasScene->deleteSelected();
+    if (auto *s = currentScene()) { s->copySelected(); s->deleteSelected(); }
 }
 
-void MainWindow::onCopy() { if (m_canvasScene) m_canvasScene->copySelected(); }
+void MainWindow::onCopy() { if (auto *s = currentScene()) s->copySelected(); }
 
-void MainWindow::onPaste() { if (m_canvasScene) m_canvasScene->pasteClipboard(); }
+void MainWindow::onPaste() { if (auto *s = currentScene()) s->pasteClipboard(); }
 
-void MainWindow::onDelete() { if (m_canvasScene) m_canvasScene->deleteSelected(); }
+void MainWindow::onDelete() { if (auto *s = currentScene()) s->deleteSelected(); }
 
 void MainWindow::onSelectAll()
 {
-    if (m_canvasScene)
-        for (QGraphicsItem *gi : m_canvasScene->items())
+    if (auto *s = currentScene())
+        for (QGraphicsItem *gi : s->items())
             gi->setSelected(true);
 }
 
@@ -311,11 +468,45 @@ void MainWindow::onProjectConfig() {}
 
 void MainWindow::onProjectPermission() {}
 
-void MainWindow::onNewScreen() {}
+void MainWindow::onNewScreen()
+{
+    if (!m_screenManager) return;
+    // 委托给图页管理器（它会发 screensChanged + openScreenRequested 信号）
+    m_screenManager->onAddScreen();
+}
 
-void MainWindow::onDeleteScreen() {}
+void MainWindow::onDeleteScreen()
+{
+    if (!m_screenManager) return;
+    m_screenManager->onDeleteScreen();
+}
 
-void MainWindow::onScreenProperties() {}
+void MainWindow::onScreenProperties()
+{
+    ScreenTab *tab = currentScreenTab();
+    if (!tab) return;
+
+    ScreenData *sd = nullptr;
+    for (ScreenData &s : m_project.screens) {
+        if (s.id == tab->screenId()) { sd = &s; break; }
+    }
+    if (!sd) return;
+
+    bool ok = false;
+    const QString newName = QInputDialog::getText(
+        this, tr("图页属性"), tr("图页名称："),
+        QLineEdit::Normal, sd->name, &ok);
+    if (!ok || newName.trimmed().isEmpty()) return;
+
+    sd->name = newName.trimmed();
+    // 刷新 tab 标题和管理器列表
+    const int idx = m_tabWidget->indexOf(tab);
+    if (idx >= 0)
+        m_tabWidget->setTabText(idx,
+            QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name));
+    if (m_screenManager)
+        m_screenManager->setScreens(m_project.screens);
+}
 
 void MainWindow::onTagDictionary() {}
 
@@ -602,3 +793,98 @@ void MainWindow::onVersionInfo() {}
 void MainWindow::onLicenseInfo() {}
 
 void MainWindow::onTechnicalSupport() {}
+
+// ============================================================
+// 最近使用工程
+// ============================================================
+
+static QString recentProjectsFilePath()
+{
+    return QDir(QCoreApplication::applicationDirPath())
+        .absoluteFilePath(QStringLiteral("recent_projects.txt"));
+}
+
+void MainWindow::loadRecentProjects()
+{
+    m_recentProjects.clear();
+    QFile f(recentProjectsFilePath());
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+    QTextStream in(&f);
+    while (!in.atEnd()) {
+        const QString line = in.readLine().trimmed();
+        if (!line.isEmpty() && QFileInfo::exists(line))
+            m_recentProjects.append(line);
+    }
+    m_recentProjects = m_recentProjects.mid(0, kMaxRecentProjects);
+}
+
+void MainWindow::saveRecentProjects()
+{
+    QFile f(recentProjectsFilePath());
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        return;
+    QTextStream out(&f);
+    for (const QString &p : std::as_const(m_recentProjects))
+        out << p << "\n";
+}
+
+void MainWindow::addRecentProject(const QString &path)
+{
+    if (path.isEmpty()) return;
+    const QString canonical = QFileInfo(path).absoluteFilePath();
+    m_recentProjects.removeAll(canonical);
+    m_recentProjects.prepend(canonical);
+    if (m_recentProjects.size() > kMaxRecentProjects)
+        m_recentProjects = m_recentProjects.mid(0, kMaxRecentProjects);
+    saveRecentProjects();
+    updateRecentMenu();
+}
+
+void MainWindow::updateRecentMenu()
+{
+    if (!m_recentMenu) return;
+    m_recentMenu->clear();
+    if (m_recentProjects.isEmpty()) {
+        QAction *a = m_recentMenu->addAction(tr("(空)"));
+        a->setEnabled(false);
+        return;
+    }
+    for (const QString &path : std::as_const(m_recentProjects)) {
+        const QString label = QFileInfo(path).fileName()
+                              + QStringLiteral("  [")
+                              + QDir::toNativeSeparators(path)
+                              + QStringLiteral("]");
+        QAction *a = m_recentMenu->addAction(label);
+        connect(a, &QAction::triggered, this, [this, path]() {
+            if (!QFileInfo::exists(path)) {
+                QMessageBox::warning(this, tr("文件不存在"),
+                                     tr("工程文件已移动或删除：\n%1").arg(path));
+                m_recentProjects.removeAll(path);
+                saveRecentProjects();
+                updateRecentMenu();
+                return;
+            }
+            if (!maybeSaveCurrent()) return;
+            ProjectData p;
+            QString err;
+            if (!ProjectManager::loadFromFile(&p, path, &err)) {
+                QMessageBox::warning(this, tr("打开失败"),
+                                     tr("无法打开工程：%1").arg(err));
+                return;
+            }
+            m_project         = p;
+            m_projectFilePath = path;
+            applyProjectToTabs();
+            setProjectOpen(true);
+            addRecentProject(path);
+        });
+    }
+    m_recentMenu->addSeparator();
+    QAction *clearAction = m_recentMenu->addAction(tr("清除最近记录"));
+    connect(clearAction, &QAction::triggered, this, [this]() {
+        m_recentProjects.clear();
+        saveRecentProjects();
+        updateRecentMenu();
+    });
+}
