@@ -26,6 +26,7 @@ SOURCES += \
     canvasscene.cpp \
     canvasview.cpp \
     projectpropertiesdialog.cpp \
+    propertypaneldock.cpp \
     screentab.cpp \
     screenmanagerdock.cpp \
     welcomewidget.cpp \
@@ -41,6 +42,7 @@ HEADERS += \
     canvasscene.h \
     canvasview.h \
     projectpropertiesdialog.h \
+    propertypaneldock.h \
     screentab.h \
     screenmanagerdock.h \
     welcomewidget.h \
@@ -49,11 +51,12 @@ HEADERS += \
 FORMS += \
     mainwindow.ui
 
-# Automatically compile .ts -> .qm and embed into the binary at :/i18n/
-# Note: CONFIG += lrelease must come BEFORE TRANSLATIONS, otherwise qmake
-# treats .ts files as compile sources and emits a bogus .obj target.
-CONFIG += lrelease embed_translations
-
-TRANSLATIONS += \
-    designer_zh_CN.ts \
-    designer_en.ts
+# 编译完成后，将 lua 和 img 文件夹拷贝到输出目录
+win32 {
+    QMAKE_POST_LINK += xcopy /E /I /Y $$shell_quote($$shell_path($$PWD/lua)) $$shell_quote($$shell_path($$TARDIR/lua)) $$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += xcopy /E /I /Y $$shell_quote($$shell_path($$PWD/img)) $$shell_quote($$shell_path($$TARDIR/img))
+}
+unix {
+    QMAKE_POST_LINK += cp -r $$shell_quote($$PWD/lua) $$shell_quote($$TARDIR) $$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -r $$shell_quote($$PWD/img) $$shell_quote($$TARDIR)
+}

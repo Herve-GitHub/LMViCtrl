@@ -4,6 +4,7 @@
 #include <QList>
 #include <QSet>
 #include <QSize>
+#include <functional>
 #include "WidgetMeta.h"
 
 class QUndoStack;
@@ -26,6 +27,13 @@ public:
     // 注册 WidgetMeta（用于名称/颜色查找）
     void setWidgetMetas(const QList<WidgetMeta> &metas);
 
+    // 通过 widgetId 取得 meta（属性面板使用）
+    WidgetMeta widgetMeta(const QString &widgetId) const { return m_metaMap.value(widgetId); }
+
+    // 名字生成器：提供一个候选基础名，回调返回工程内唯一名
+    using NameGenerator = std::function<QString(const QString &baseName)>;
+    void setNameGenerator(NameGenerator g) { m_nameGen = std::move(g); }
+
     // 公共编辑操作（均入 undo 栈）
     void deleteSelected();
     void copySelected();
@@ -46,7 +54,18 @@ public:
     void doSetGeometry(const QString &instanceId, const QRectF &rect);
     void doSetPositions(const QList<QPair<QString, QPointF>> &moves);
 
+    // 属性面板编辑（不入栈，立刻生效）
+    void setInstanceName    (const QString &instanceId, const QString &name);
+    void setInstanceProperty(const QString &instanceId, const QString &key, const QVariant &value);
+
+    // 通过 instanceId 取实例数据（属性面板使用）
+    bool instance(const QString &instanceId, WidgetInstance *out) const;
+
     CanvasItem *findItem(const QString &instanceId) const;
+
+signals:
+    // 实例的某属性 / 名字 被外部修改后通知（属性面板用于回填）
+    void instanceChanged(const QString &instanceId);
 
 protected:
     void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
@@ -77,4 +96,6 @@ private:
     // 内部剪贴板
     QList<WidgetInstance> m_clipboard;
     int                   m_pasteCount = 0;
+
+    NameGenerator m_nameGen;
 };

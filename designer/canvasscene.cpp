@@ -344,6 +344,25 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     inst.width      = defW;
     inst.height     = defH;
 
+    // 生成工程内唯一名字（fallback 到本场景内部唯一）
+    QString baseName = m_metaMap.contains(widgetId)
+        ? m_metaMap.value(widgetId).name : widgetId;
+    if (baseName.isEmpty()) baseName = QStringLiteral("widget");
+    if (m_nameGen) {
+        inst.name = m_nameGen(baseName);
+    } else {
+        // 简易 fallback：在本 scene 内查找冲突
+        QSet<QString> used;
+        for (QGraphicsItem *gi : items())
+            if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+                used.insert(ci->instance().name);
+        int n = 1;
+        QString cand;
+        do { cand = QStringLiteral("%1_%2").arg(baseName).arg(n++); }
+        while (used.contains(cand));
+        inst.name = cand;
+    }
+
     m_undoStack->push(new AddItemCommand(this, inst));
     event->acceptProposedAction();
 }
@@ -436,4 +455,36 @@ void CanvasScene::onResizeCommitted(const QString &instanceId,
 {
     m_resizingIds.insert(instanceId);
     m_undoStack->push(new ResizeItemCommand(this, instanceId, before, after));
+}
+
+// ---------------------------------------------------------------------------
+// 属性面板使用：查询 / 修改实例
+// ---------------------------------------------------------------------------
+bool CanvasScene::instance(const QString &instanceId, WidgetInstance *out) const
+{
+    if (!out) return false;
+    if (CanvasItem *ci = findItem(instanceId)) {
+        *out = ci->instance();
+        return true;
+    }
+    return false;
+}
+
+void CanvasScene::setInstanceName(const QString &instanceId, const QString &name)
+{
+    CanvasItem *ci = findItem(instanceId);
+    if (!ci) return;
+    if (ci->instance().name == name) return;
+    ci->setInstanceName(name);
+    emit instanceChanged(instanceId);
+}
+
+void CanvasScene::setInstanceProperty(const QString &instanceId,
+                                      const QString &key,
+                                      const QVariant &value)
+{
+    CanvasItem *ci = findItem(instanceId);
+    if (!ci) return;
+    ci->setInstanceProperty(key, value);
+    emit instanceChanged(instanceId);
 }

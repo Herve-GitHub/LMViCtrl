@@ -11,6 +11,7 @@ class CanvasView;
 class ScreenTab;
 class ScreenManagerDock;
 class WelcomeWidget;
+class PropertyPanelDock;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -247,6 +248,7 @@ private:
     QTabWidget        *m_tabWidget        = nullptr;
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
+    PropertyPanelDock *m_propertyPanel    = nullptr;
     QMenu             *m_recentMenu       = nullptr;
 
     // screenId → ScreenTab*（已打开的图页）
@@ -281,5 +283,10 @@ private:
     void saveRecentProjects();
     void addRecentProject(const QString &path);
     void updateRecentMenu();
+
+    // 属性面板辅助
+    QString generateUniqueWidgetName(const QString &baseName) const;
+    void    installSceneNameGenerator(CanvasScene *scene);
+    void    ensureInstanceNamesAssigned();
 };
 #endif // MAINWINDOW_H

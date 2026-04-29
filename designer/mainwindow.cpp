@@ -2,6 +2,9 @@
 #include "ui_mainwindow.h"
 #include "widgettoolbox.h"
 #include "screenmanagerdock.h"
+#include "propertypaneldock.h"
+#include "screentab.h"
+#include "canvasscene.h"
 #include "welcomewidget.h"
 #include <QAction>
 #include <QDir>
@@ -46,6 +49,14 @@ MainWindow::MainWindow(QWidget *parent)
     m_tabWidget->setMovable(false);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested,
             this, &MainWindow::onTabCloseRequested);
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int){
+        if (m_propertyPanel)
+            m_propertyPanel->setCurrentScene(currentScene());
+    });
+
+    // 属性面板（停靠在右侧）
+    m_propertyPanel = new PropertyPanelDock(this);
+    addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
 
     // 欢迎页
     m_welcomeWidget = new WelcomeWidget;

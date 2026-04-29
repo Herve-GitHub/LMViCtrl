@@ -24,6 +24,10 @@ public:
     // 由撤销/重做命令直接设置几何（不产生新命令）
     void applyGeometry(const QRectF &sceneRect);
 
+    // 属性面板：直接修改实例数据（不入栈）
+    void setInstanceName(const QString &name);
+    void setInstanceProperty(const QString &key, const QVariant &value);
+
     QRectF       boundingRect() const override;
     QPainterPath shape()        const override;
     void         paint(QPainter *,

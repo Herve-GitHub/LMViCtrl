@@ -77,6 +77,21 @@ void CanvasItem::applyGeometry(const QRectF &r)
 }
 
 // ---------------------------------------------------------------------------
+// 属性面板：直接修改实例数据
+// ---------------------------------------------------------------------------
+void CanvasItem::setInstanceName(const QString &name)
+{
+    m_inst.name = name;
+    update();
+}
+
+void CanvasItem::setInstanceProperty(const QString &key, const QVariant &value)
+{
+    m_inst.properties.insert(key, value);
+    update();
+}
+
+// ---------------------------------------------------------------------------
 // 几何辅助
 // ---------------------------------------------------------------------------
 QRectF CanvasItem::boundingRect() const

@@ -16,6 +16,7 @@ QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
     QJsonObject o;
     o["instanceId"] = inst.instanceId;
     o["widgetId"]   = inst.widgetId;
+    o["name"]       = inst.name;
     o["zOrder"]     = inst.zOrder;
     o["x"]          = inst.x;
     o["y"]          = inst.y;
@@ -32,6 +33,7 @@ WidgetInstance ProjectManager::instanceFromJson(const QJsonObject &o)
     WidgetInstance inst;
     inst.instanceId = o.value("instanceId").toString();
     inst.widgetId   = o.value("widgetId").toString();
+    inst.name       = o.value("name").toString();
     inst.zOrder     = o.value("zOrder").toInt(0);
     inst.x          = o.value("x").toInt(0);
     inst.y          = o.value("y").toInt(0);

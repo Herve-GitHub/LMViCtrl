@@ -11,6 +11,7 @@
 #include "newprojectdialog.h"
 #include "projectmanager.h"
 #include "projectpropertiesdialog.h"
+#include "propertypaneldock.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
 #include "welcomewidget.h"
@@ -86,6 +87,9 @@ void MainWindow::applyProjectToTabs()
     m_tabWidget->clear();
     m_openTabs.clear();
 
+    // 为旧工程/缺失 name 的实例补一个唯一名
+    ensureInstanceNamesAssigned();
+
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
 
@@ -114,10 +118,16 @@ void MainWindow::openScreenTab(const QString &screenId)
                                                     : QList<WidgetMeta>{};
     auto *tab = new ScreenTab(*sd, cvSize, metas, m_tabWidget);
 
+    // 安装名字生成器（拖入新组件时使用，确保工程内唯一）
+    installSceneNameGenerator(tab->scene());
+
     const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
     m_tabWidget->addTab(tab, tabTitle);
     m_tabWidget->setCurrentWidget(tab);
     m_openTabs.insert(screenId, tab);
+
+    if (m_propertyPanel)
+        m_propertyPanel->setCurrentScene(tab->scene());
 }
 
 void MainWindow::closeScreenTab(const QString &screenId)
@@ -499,7 +509,11 @@ void MainWindow::onToggleFormatToolbar(bool /*checked*/) {}
 
 void MainWindow::onToggleProjectBrowser(bool /*checked*/) {}
 
-void MainWindow::onTogglePropertyPanel(bool /*checked*/) {}
+void MainWindow::onTogglePropertyPanel(bool checked)
+{
+    if (m_propertyPanel)
+        m_propertyPanel->setVisible(checked);
+}
 
 void MainWindow::onToggleOutputWindow(bool /*checked*/) {}
 
@@ -948,4 +962,80 @@ void MainWindow::updateRecentMenu()
         saveRecentProjects();
         updateRecentMenu();
     });
+}
+
+// ============================================================
+// 属性面板辅助
+// ============================================================
+
+QString MainWindow::generateUniqueWidgetName(const QString &baseName) const
+{
+    QString base = baseName.trimmed();
+    if (base.isEmpty()) base = QStringLiteral("widget");
+
+    QString cleaned;
+    for (QChar c : base) {
+        if (c.isLetterOrNumber() || c == QLatin1Char('_')) cleaned.append(c);
+        else cleaned.append(QLatin1Char('_'));
+    }
+    if (cleaned.isEmpty()) cleaned = QStringLiteral("widget");
+
+    // 收集工程内所有已使用的名字（已打开的 tab 用 scene 数据，未打开的用 ScreenData）
+    QSet<QString> used;
+    for (const ScreenData &s : m_project.screens) {
+        ScreenTab *tab = m_openTabs.value(s.id, nullptr);
+        if (tab) {
+            for (const auto &inst : tab->scene()->allInstances())
+                if (!inst.name.isEmpty()) used.insert(inst.name);
+        } else {
+            for (const auto &inst : s.widgets)
+                if (!inst.name.isEmpty()) used.insert(inst.name);
+        }
+    }
+
+    int n = 1;
+    QString cand;
+    do { cand = QStringLiteral("%1_%2").arg(cleaned).arg(n++); }
+    while (used.contains(cand));
+    return cand;
+}
+
+void MainWindow::installSceneNameGenerator(CanvasScene *scene)
+{
+    if (!scene) return;
+    scene->setNameGenerator([this](const QString &base) {
+        return this->generateUniqueWidgetName(base);
+    });
+}
+
+void MainWindow::ensureInstanceNamesAssigned()
+{
+    QSet<QString> used;
+    for (const ScreenData &s : m_project.screens)
+        for (const auto &inst : s.widgets)
+            if (!inst.name.isEmpty()) used.insert(inst.name);
+
+    QHash<QString, QString> idToBase;
+    if (m_widgetToolbox) {
+        for (const auto &m : m_widgetToolbox->widgetMetas())
+            idToBase.insert(m.id, m.name);
+    }
+
+    auto nextName = [&used](QString base) {
+        if (base.isEmpty()) base = QStringLiteral("widget");
+        int n = 1;
+        QString cand;
+        do { cand = QStringLiteral("%1_%2").arg(base).arg(n++); }
+        while (used.contains(cand));
+        used.insert(cand);
+        return cand;
+    };
+
+    for (ScreenData &s : m_project.screens) {
+        for (WidgetInstance &inst : s.widgets) {
+            if (!inst.name.isEmpty()) continue;
+            QString base = idToBase.value(inst.widgetId, inst.widgetId);
+            inst.name = nextName(base);
+        }
+    }
 }

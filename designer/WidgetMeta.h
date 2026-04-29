@@ -43,6 +43,7 @@ struct WidgetMeta {
 struct WidgetInstance {
     QString instanceId;   // UUID
     QString widgetId;
+    QString name;         // 工程内唯一的实例名（用户可改）
     int zOrder = 0;// 层级顺序，数值越大越靠上
     int x = 0;// 位置   
     int y = 0;// 位置
@@ -90,4 +91,11 @@ struct ProjectData {
     QList<ScreenData> screens;//页面列表
 };
 
+Q_DECLARE_METATYPE(PropertyOption)
+Q_DECLARE_METATYPE(PropertyMeta)
 Q_DECLARE_METATYPE(WidgetMeta)
+Q_DECLARE_METATYPE(WidgetInstance)
+Q_DECLARE_METATYPE(ScreenData)
+Q_DECLARE_METATYPE(ProjectResources)
+Q_DECLARE_METATYPE(ProjectTarget)
+Q_DECLARE_METATYPE(ProjectData)
