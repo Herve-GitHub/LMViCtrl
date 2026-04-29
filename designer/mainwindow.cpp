@@ -1,15 +1,15 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "widgettoolbox.h"
-#include "screentab.h"
 #include "screenmanagerdock.h"
-
+#include "welcomewidget.h"
 #include <QAction>
 #include <QDir>
 #include <QFont>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QStackedWidget>
 #include <QTabWidget>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -25,6 +25,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 图页管理器（停靠在左侧上方）
     m_screenManager = new ScreenManagerDock(this);
+
     addDockWidget(Qt::LeftDockWidgetArea, m_screenManager);
 
     // 组件工具箱（停靠在左侧，位于图页管理器下方）
@@ -39,19 +40,33 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_screenManager, &ScreenManagerDock::screensChanged,
             this, &MainWindow::onScreensChanged);
 
-    // 多图页 TabWidget（中央区域）
-    m_tabWidget = new QTabWidget(this);
+    // 多图页 TabWidget
+    m_tabWidget = new QTabWidget;
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(false);
-    setCentralWidget(m_tabWidget);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested,
             this, &MainWindow::onTabCloseRequested);
 
-    // 初始化工程状态
+    // 欢迎页
+    m_welcomeWidget = new WelcomeWidget;
+    connect(m_welcomeWidget, &WelcomeWidget::newProjectRequested,
+            this, &MainWindow::onNewProject);
+    connect(m_welcomeWidget, &WelcomeWidget::openProjectRequested,
+            this, &MainWindow::onOpenProject);
+    connect(m_welcomeWidget, &WelcomeWidget::openRecentRequested,
+            this, &MainWindow::onOpenRecentProject);
+
+    // 堆叠容器：0=欢迎页，1=设计区
+    m_stackedWidget = new QStackedWidget(this);
+    m_stackedWidget->addWidget(m_welcomeWidget);
+    m_stackedWidget->addWidget(m_tabWidget);
+    setCentralWidget(m_stackedWidget);
+
+    // 加载最近工程并显示欢迎页
     loadRecentProjects();
-    resetProject();
     updateRecentMenu();
-    setProjectOpen(true);
+    m_welcomeWidget->setRecentProjects(m_recentProjects);
+    setProjectOpen(false);   // 启动时停留在欢迎页
 }
 
 MainWindow::~MainWindow()

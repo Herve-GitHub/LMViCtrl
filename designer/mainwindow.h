@@ -10,6 +10,7 @@ class CanvasScene;
 class CanvasView;
 class ScreenTab;
 class ScreenManagerDock;
+class WelcomeWidget;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -18,6 +19,7 @@ class MainWindow;
 class QMenu;
 class QAction;
 class QTabWidget;
+class QStackedWidget;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -236,11 +238,14 @@ private slots:
     void onScreenManagerOpenRequested(const QString &screenId);
     void onScreensChanged(const QList<ScreenData> &screens);
     void onTabCloseRequested(int index);
+    void onOpenRecentProject(const QString &path);
 
 private:
     Ui::MainWindow    *ui;
     WidgetToolbox     *m_widgetToolbox    = nullptr;
+    QStackedWidget    *m_stackedWidget    = nullptr;
     QTabWidget        *m_tabWidget        = nullptr;
+    WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     QMenu             *m_recentMenu       = nullptr;
 

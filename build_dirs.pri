@@ -11,12 +11,13 @@ BUILD_DIR = $$PWD/build
 msvc{
     QMAKE_CFLAGS += /utf-8
     QMAKE_CXXFLAGS += /utf-8
-    BUILD_PATH = $$BUILD_DIR/msvc/$$QT_ARCH/
     CONFIG(debug, debug|release) {
         TARDIR = $$BIN_DIR/msvc/$$QT_ARCH/debug
+        BUILD_PATH = $$BUILD_DIR/msvc/$$QT_ARCH/debug
     }
     CONFIG(release, debug|release)  {
         TARDIR = $$BIN_DIR/msvc/$$QT_ARCH/release
+        BUILD_PATH = $$BUILD_DIR/msvc/$$QT_ARCH/release
     }
 }
 gcc{
@@ -24,11 +25,12 @@ gcc{
         QMAKE_LFLAGS += -Wl,-rpath,\\\$$ORIGIN
         QMAKE_LFLAGS += -Wl,-rpath,\\\$$ORIGIN/basiclibrary
     }
-    BUILD_PATH = $$BUILD_DIR/gcc/$$QT_ARCH/
     CONFIG(debug, debug|release) {
         TARDIR = $$BIN_DIR/gcc/$$QT_ARCH/debug
+        BUILD_PATH = $$BUILD_DIR/gcc/$$QT_ARCH/debug
     }
     CONFIG(release, debug|release)  {
         TARDIR = $$BIN_DIR/gcc/$$QT_ARCH/release
+        BUILD_PATH = $$BUILD_DIR/gcc/$$QT_ARCH/release
     }
 }

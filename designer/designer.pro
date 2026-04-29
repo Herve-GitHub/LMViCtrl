@@ -27,7 +27,9 @@ SOURCES += \
     canvasview.cpp \
     projectpropertiesdialog.cpp \
     screentab.cpp \
-    screenmanagerdock.cpp
+    screenmanagerdock.cpp \
+    welcomewidget.cpp \
+    newprojectdialog.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -40,14 +42,18 @@ HEADERS += \
     canvasview.h \
     projectpropertiesdialog.h \
     screentab.h \
-    screenmanagerdock.h
+    screenmanagerdock.h \
+    welcomewidget.h \
+    newprojectdialog.h
 
 FORMS += \
     mainwindow.ui
 
+# Automatically compile .ts -> .qm and embed into the binary at :/i18n/
+# Note: CONFIG += lrelease must come BEFORE TRANSLATIONS, otherwise qmake
+# treats .ts files as compile sources and emits a bogus .obj target.
+CONFIG += lrelease embed_translations
+
 TRANSLATIONS += \
     designer_zh_CN.ts \
     designer_en.ts
-
-# Automatically compile .ts -> .qm and embed into the binary at :/i18n/
-CONFIG += lrelease embed_translations

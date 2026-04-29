@@ -8,10 +8,12 @@
 
 #include "mainwindow.h"
 #include "canvasscene.h"
+#include "newprojectdialog.h"
 #include "projectmanager.h"
 #include "projectpropertiesdialog.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
+#include "welcomewidget.h"
 #include "widgettoolbox.h"
 
 #include <QApplication>
@@ -25,6 +27,7 @@
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTranslator>
@@ -217,6 +220,22 @@ void MainWindow::onTabCloseRequested(int index)
 void MainWindow::setProjectOpen(bool open)
 {
     m_projectOpen = open;
+
+    // 切换中央区域：欢迎页 ↔ 设计区
+    if (m_stackedWidget)
+        m_stackedWidget->setCurrentIndex(open ? 1 : 0);
+
+    // 侧边栏停靠窗口随工程状态显示/隐藏
+    if (m_screenManager)
+        m_screenManager->setVisible(open);
+    if (m_widgetToolbox)
+        m_widgetToolbox->setVisible(open);
+
+    resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
+    // 若切回欢迎页，刷新最近工程列表
+    if (!open && m_welcomeWidget)
+        m_welcomeWidget->setRecentProjects(m_recentProjects);
+
     updateWindowTitle();
 }
 
@@ -271,24 +290,38 @@ bool MainWindow::maybeSaveCurrent()
 
 void MainWindow::onNewProject()
 {
-    if (!maybeSaveCurrent()) return;
+    if (m_projectOpen && !maybeSaveCurrent()) return;
 
-    bool ok = false;
-    const QString name = QInputDialog::getText(
-        this, tr("新建工程"), tr("工程名称："),
-        QLineEdit::Normal, tr("NewProject"), &ok);
-    if (!ok) return;
+    NewProjectDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted) return;
 
     resetProject();
-    if (!name.trimmed().isEmpty())
-        m_project.name = name.trimmed();
+
+    const QString name = dlg.projectName();
+    if (!name.isEmpty())
+        m_project.name = name;
+
+    // 根据模板 ID 做个性化初始化（后续可扩展）
+    const QString tplId = dlg.templateId();
+    if (tplId == QLatin1String("hmi")) {
+        m_project.target.width  = 1024;
+        m_project.target.height = 768;
+    } else if (tplId.startsWith(QLatin1String("tpl_")) ||
+               tplId.startsWith(QLatin1String("svg"))) {
+        m_project.target.width  = 800;
+        m_project.target.height = 480;
+    } else {
+        // 控件工程默认用较小分辨率
+        m_project.target.width  = 480;
+        m_project.target.height = 320;
+    }
+
     setProjectOpen(true);
-    // 新建工程尚未保存，无路径，不记录最近工程
 }
 
 void MainWindow::onOpenProject()
 {
-    if (!maybeSaveCurrent()) return;
+    if (m_projectOpen && !maybeSaveCurrent()) return;
 
     const QString path = QFileDialog::getOpenFileName(
         this, tr("打开工程"), QString(), tr(kProjectFilter));
@@ -313,8 +346,36 @@ void MainWindow::onCloseProject()
     if (!m_projectOpen) return;
     if (!maybeSaveCurrent()) return;
 
-    resetProject();
+    // 清空 tab 和工程数据，回到欢迎页
+    if (m_tabWidget) {
+        m_tabWidget->clear();
+        m_openTabs.clear();
+    }
+    m_project = ProjectData{};
+    m_projectFilePath.clear();
+    if (m_screenManager)
+        m_screenManager->setScreens({});
     setProjectOpen(false);
+}
+
+// 从欢迎页的最近工程列表直接打开
+void MainWindow::onOpenRecentProject(const QString &path)
+{
+    if (path.isEmpty()) return;
+    if (m_projectOpen && !maybeSaveCurrent()) return;
+
+    ProjectData p;
+    QString err;
+    if (!ProjectManager::loadFromFile(&p, path, &err)) {
+        QMessageBox::warning(this, tr("打开失败"),
+                             tr("无法打开工程：%1").arg(err));
+        return;
+    }
+    m_project         = p;
+    m_projectFilePath = path;
+    applyProjectToTabs();
+    setProjectOpen(true);
+    addRecentProject(path);
 }
 
 void MainWindow::onSave()
