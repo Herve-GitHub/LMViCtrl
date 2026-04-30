@@ -1,0 +1,39 @@
+1. 基础对象
+- `lv_obj`：所有控件的基类，也是最基础的容器
+- `lv_label`：文本
+- `lv_image` / 旧版常见 `lv_img`：图片
+- `lv_line`：线条
+
+2. 交互输入
+- `lv_button` / 旧版常见 `lv_btn`：按钮
+- `lv_checkbox`：复选框
+- `lv_switch`：开关
+- `lv_slider`：滑块
+- `lv_textarea`：文本输入框
+- `lv_keyboard` / `lv_kb`：软键盘
+- `lv_dropdown`：下拉框
+- `lv_roller`：滚轮选择器
+
+3. 数值与状态显示
+- `lv_bar`：进度条
+- `lv_arc`：圆弧/仪表
+- `lv_led`：LED 指示灯
+- `lv_spinner`：加载动画
+- `lv_scale`：刻度尺（较新版本常见）
+
+4. 数据展示
+- `lv_table`：表格
+- `lv_chart`：图表
+
+5. 容器与页面组织
+- `lv_list`：列表
+- `lv_menu`：菜单
+- `lv_tabview`：标签页
+- `lv_tileview`：平铺页
+- `lv_window` / `lv_win`：窗口
+- `lv_msgbox`：消息框
+
+6. 绘制与媒体
+- `lv_canvas`：画布
+- `lv_imagebutton` / `lv_imgbtn`：图片按钮
+- `lv_animimg`：动画图片

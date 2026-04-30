@@ -240,7 +240,8 @@ void MainWindow::setProjectOpen(bool open)
         m_screenManager->setVisible(open);
     if (m_widgetToolbox)
         m_widgetToolbox->setVisible(open);
-
+    if(m_propertyPanel)
+        m_propertyPanel->setVisible(open);
     resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
     // 若切回欢迎页，刷新最近工程列表
     if (!open && m_welcomeWidget)
@@ -307,11 +308,13 @@ void MainWindow::onNewProject()
 
     resetProject();
 
-    const QString name = dlg.projectName();
+    const QString name     = dlg.projectName();
+    const QString location = dlg.projectLocation();
+
     if (!name.isEmpty())
         m_project.name = name;
 
-    // 根据模板 ID 做个性化初始化（后续可扩展）
+    // 根据模板 ID 做个性化初始化
     const QString tplId = dlg.templateId();
     if (tplId == QLatin1String("hmi")) {
         m_project.target.width  = 1024;
@@ -321,9 +324,22 @@ void MainWindow::onNewProject()
         m_project.target.width  = 800;
         m_project.target.height = 480;
     } else {
-        // 控件工程默认用较小分辨率
         m_project.target.width  = 480;
         m_project.target.height = 320;
+    }
+
+    // 保存到指定路径
+    if (!location.isEmpty() && !name.isEmpty()) {
+        const QString filePath = location + QLatin1Char('/') + name
+                                 + QStringLiteral(".json");
+        m_projectFilePath = filePath;
+        QString err;
+        if (!ProjectManager::saveToFile(m_project, filePath, &err)) {
+            QMessageBox::warning(this, tr("保存失败"),
+                                 tr("无法创建工程文件：%1").arg(err));
+        } else {
+            addRecentProject(filePath);
+        }
     }
 
     setProjectOpen(true);

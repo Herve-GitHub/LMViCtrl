@@ -51,7 +51,7 @@ PropertyPanelDock::PropertyPanelDock(QWidget *parent)
     : QDockWidget(tr("属性"), parent)
 {
     setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-
+    setMinimumWidth(250);
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
 
@@ -159,6 +159,7 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
     // ===== 第一部分：不可编辑 =====
     auto addReadOnly = [this](const QString &label, const QString &val) {
         auto *le = new QLineEdit(val);
+        le->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);  // 设置从左向右显示
         le->setReadOnly(true);
         le->setStyleSheet("QLineEdit { background:#2a2a2a; color:#aaa; }");
         m_metaForm->addRow(new QLabel(label), le);
@@ -172,6 +173,7 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
     // -- name (可编辑) --
     {
         auto *nameEdit = new QLineEdit(inst.name);
+        nameEdit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);  // 设置从左向右显示
         connect(nameEdit, &QLineEdit::editingFinished, this, [this, nameEdit]() {
             if (!m_scene || m_currentInstanceId.isEmpty()) return;
             m_scene->setInstanceName(m_currentInstanceId, nameEdit->text());

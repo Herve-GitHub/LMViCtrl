@@ -49,6 +49,7 @@ private:
     void buildUi();
     void populateCategories();
     void populateTemplates(const QString &categoryId);
+    QString uniqueProjectName(const QString &base) const;
 
     QListWidget   *m_categoryList  = nullptr;
     QListWidget   *m_templateList  = nullptr;

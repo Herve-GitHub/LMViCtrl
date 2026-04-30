@@ -224,6 +224,7 @@ NewProjectDialog::NewProjectDialog(QWidget *parent)
     populateCategories();
     if (m_categoryList->count() > 0)
         m_categoryList->setCurrentRow(0);
+    m_nameEdit->setText(uniqueProjectName(QStringLiteral("NewProject")));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -435,6 +436,8 @@ void NewProjectDialog::buildUi()
             this, &QDialog::accept);
     connect(cancelBtn, &QPushButton::clicked,
             this, &QDialog::reject);
+    connect(m_locationEdit, &QLineEdit::textChanged,
+        this, &NewProjectDialog::validate);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -524,8 +527,30 @@ void NewProjectDialog::validate()
     } else if (m_templateId.isEmpty()) {
         error = tr("请选择一个工程模板。");
     }
-
+    if (error.isEmpty()) {
+        const QString loc = m_locationEdit->text().trimmed();
+        if (!loc.isEmpty()) {
+            const QString projFile = loc + QLatin1Char('/') + name
+                                    + QStringLiteral(".json");
+            if (QDir(loc).exists(name + QStringLiteral(".json"))
+                || QDir(loc).exists(name)) {
+                error = tr("该路径下已存在同名工程，请修改工程名称。");
+            }
+        }
+    }
     m_errorLabel->setVisible(!error.isEmpty());
     m_errorLabel->setText(error);
     m_createBtn->setEnabled(error.isEmpty());
+}
+QString NewProjectDialog::uniqueProjectName(const QString &base) const
+{
+    const QString loc = m_locationEdit->text().trimmed();
+    if (loc.isEmpty()) return base;
+    QString name = base;
+    int i = 1;
+    while (QDir(loc).exists(name + QStringLiteral(".json"))
+           || QDir(loc).exists(name)) {
+        name = base + QString::number(i++);
+    }
+    return name;
 }
