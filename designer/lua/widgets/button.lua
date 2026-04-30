@@ -1,12 +1,13 @@
 -- 带元数据的按钮示例，演示如何将属性暴露给编辑器
-local lv = require("lvgl")
+local lv     = require("lvgl")
+local common = require("common.common")
 
 local Button = {}
 
 Button.__widget_meta = {
   -- ===== 控件标识 =====
   id             = "lv_button_basic",
-  name           = "Custom Button",
+  name           = "Button",
   description    = "示例按钮，包含 label 与尺寸/位置/样式属性",
   category       = "基础控件",
   icon           = "img/widgets/button.png",
@@ -156,17 +157,6 @@ function Button.new(parent, state)
   state = state or {}
   local self = {}
 
-  -- ---------------- 工具：颜色解析 ----------------
-  local function parse_color(c, fallback)
-    fallback = fallback or 0x007acc
-    if type(c) == "string" and c:match("^#%x%x%x%x%x%x$") then
-      return tonumber(c:sub(2), 16) or fallback
-    elseif type(c) == "number" then
-      return c
-    end
-    return fallback
-  end
-
   local function alignment_to_lv(align)
     if align == "left"  then return lv.TEXT_ALIGN_LEFT  or 0 end
     if align == "right" then return lv.TEXT_ALIGN_RIGHT or 2 end
@@ -222,7 +212,7 @@ function Button.new(parent, state)
       self.btn:set_style_border_width(self.props.border_width or 0, 0)
     end
     if self.btn and self.btn.set_style_border_color then
-      self.btn:set_style_border_color(parse_color(self.props.border_color, 0x005a9e), 0)
+      self.btn:set_style_border_color(common.colorToNumber(self.props.border_color, 0x005a9e), 0)
     end
   end
 
@@ -242,9 +232,9 @@ function Button.new(parent, state)
   local function apply_enabled_visual()
     local col
     if self.props.enabled then
-      col = parse_color(self.props.bg_color, 0x007acc)
+      col = common.colorToNumber(self.props.bg_color, 0x007acc)
     else
-      col = parse_color(self.props.disabled_bg_color, 0x888888)
+      col = common.colorToNumber(self.props.disabled_bg_color, 0x888888)
     end
     apply_bg_color(col)
   end
@@ -261,7 +251,7 @@ function Button.new(parent, state)
 
     -- 应用全部初始样式
     apply_enabled_visual()
-    apply_text_color(parse_color(self.props.color, 0xffffff))
+    apply_text_color(common.colorToNumber(self.props.color, 0xffffff))
     apply_font_size()
     apply_alignment()
     apply_radius()
@@ -313,7 +303,7 @@ function Button.new(parent, state)
         self.label:set_text(value)
       end
     elseif name == "color" then
-      apply_text_color(parse_color(value, 0xffffff))
+      apply_text_color(common.colorToNumber(value, 0xffffff))
     elseif name == "bg_color" or name == "disabled_bg_color" then
       apply_enabled_visual()
     elseif name == "font_size" then

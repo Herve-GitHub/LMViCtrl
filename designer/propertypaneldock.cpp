@@ -8,6 +8,7 @@
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHash>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -93,6 +94,8 @@ void PropertyPanelDock::setCurrentScene(CanvasScene *scene)
                 this, &PropertyPanelDock::onSceneSelectionChanged);
         connect(m_scene.data(), &CanvasScene::instanceChanged,
                 this, &PropertyPanelDock::onInstanceChangedFromScene);
+        connect(m_scene.data(), &CanvasScene::instanceGeometryChanged,
+                this, &PropertyPanelDock::onInstanceGeometryChangedFromScene);
     }
     onSceneSelectionChanged();
 }
@@ -121,9 +124,36 @@ void PropertyPanelDock::onInstanceChangedFromScene(const QString &instanceId)
     onSceneSelectionChanged();
 }
 
+void PropertyPanelDock::onInstanceGeometryChangedFromScene(const QString &instanceId)
+{
+    if (instanceId != m_currentInstanceId || !m_scene) return;
+    WidgetInstance inst;
+    if (!m_scene->instance(instanceId, &inst)) return;
+    refreshGeometryEditors(inst);
+}
+
+void PropertyPanelDock::refreshGeometryEditors(const WidgetInstance &inst)
+{
+    auto setIfSpin = [](QWidget *w, int v) {
+        if (!w) return;
+        if (auto *sb = qobject_cast<QSpinBox*>(w)) {
+            QSignalBlocker b(sb);
+            sb->setValue(v);
+        } else if (auto *db = qobject_cast<QDoubleSpinBox*>(w)) {
+            QSignalBlocker b(db);
+            db->setValue(v);
+        }
+    };
+    setIfSpin(m_geometryEditors.value(QStringLiteral("x")).data(),      inst.x);
+    setIfSpin(m_geometryEditors.value(QStringLiteral("y")).data(),      inst.y);
+    setIfSpin(m_geometryEditors.value(QStringLiteral("width")).data(),  inst.width);
+    setIfSpin(m_geometryEditors.value(QStringLiteral("height")).data(), inst.height);
+}
+
 void PropertyPanelDock::clearPanel()
 {
     m_currentInstanceId.clear();
+    m_geometryEditors.clear();
 
     auto clearForm = [](QFormLayout *form) {
         if (!form) return;
@@ -155,25 +185,27 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
     };
     clearForm(m_metaForm);
     clearForm(m_propsForm);
-
-    // ===== 第一部分：不可编辑 =====
+    m_geometryEditors.clear();
     auto addReadOnly = [this](const QString &label, const QString &val) {
         auto *le = new QLineEdit(val);
-        le->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);  // 设置从左向右显示
+        le->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         le->setReadOnly(true);
         le->setStyleSheet("QLineEdit { background:#2a2a2a; color:#aaa; }");
         m_metaForm->addRow(new QLabel(label), le);
     };
     addReadOnly(tr("id"),             meta.id);
+    addReadOnly(tr("type"),           meta.type);
+    addReadOnly(tr("render_mode"),    meta.renderMode);
+    addReadOnly(tr("category"),       meta.category);
     addReadOnly(tr("description"),    meta.description);
     addReadOnly(tr("schema_version"), meta.schemaVersion);
     addReadOnly(tr("version"),        meta.version);
 
-    // ===== 第二部分：name + properties =====
+    // ===== 第二部分：name + properties（按 group 分组） =====
     // -- name (可编辑) --
     {
         auto *nameEdit = new QLineEdit(inst.name);
-        nameEdit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);  // 设置从左向右显示
+        nameEdit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         connect(nameEdit, &QLineEdit::editingFinished, this, [this, nameEdit]() {
             if (!m_scene || m_currentInstanceId.isEmpty()) return;
             m_scene->setInstanceName(m_currentInstanceId, nameEdit->text());
@@ -181,19 +213,109 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
         m_propsForm->addRow(new QLabel(tr("name")), nameEdit);
     }
 
-    // -- properties --
+    // 按 group 把属性分桶（保留首次出现顺序）
+    QStringList groupOrder;
+    QHash<QString, QList<PropertyMeta>> normal;
+    QHash<QString, QList<PropertyMeta>> advanced;
     for (const PropertyMeta &pm : meta.properties) {
-        const QVariant value = inst.properties.value(pm.name, pm.defaultValue);
+        if (pm.hidden) continue;
+        const QString g = pm.group.isEmpty() ? tr("其它") : pm.group;
+        if (!groupOrder.contains(g)) groupOrder << g;
+        if (pm.advanced) advanced[g].append(pm);
+        else             normal[g].append(pm);
+    }
+
+    auto addPropertyRow = [this, &inst](QFormLayout *form, const PropertyMeta &pm) {
+        // 几何属性：x/y/width/height 优先从 WidgetInstance 顶层字段读取实时值
+        QVariant value;
+        if (pm.name == QLatin1String("x"))           value = inst.x;
+        else if (pm.name == QLatin1String("y"))      value = inst.y;
+        else if (pm.name == QLatin1String("width"))  value = inst.width;
+        else if (pm.name == QLatin1String("height")) value = inst.height;
+        else value = inst.properties.value(pm.name, pm.defaultValue);
+
         QWidget *editor = makeEditor(pm, value);
-        if (!editor) continue;
-        const QString label = pm.label.isEmpty() ? pm.name : pm.label;
-        m_propsForm->addRow(new QLabel(label), editor);
+        if (!editor) return;
+        if (pm.readOnly) editor->setEnabled(false);
+        if (!pm.description.isEmpty()) editor->setToolTip(pm.description);
+
+        // 缓存几何编辑器供实时回填使用
+        if (pm.name == QLatin1String("x") || pm.name == QLatin1String("y") ||
+            pm.name == QLatin1String("width") || pm.name == QLatin1String("height")) {
+            m_geometryEditors.insert(pm.name, editor);
+        }
+
+        QString labelText = pm.label.isEmpty() ? pm.name : pm.label;
+        if (pm.bindable) labelText += QStringLiteral(" \u26A1"); // 绑定标记
+        auto *labelW = new QLabel(labelText);
+        if (!pm.description.isEmpty()) labelW->setToolTip(pm.description);
+        form->addRow(labelW, editor);
+    };
+
+    for (const QString &g : std::as_const(groupOrder)) {
+        auto *box  = new QGroupBox(g, m_propsBox);
+        box->setStyleSheet("QGroupBox { font-weight: bold; margin-top: 6px; }");
+        auto *form = new QFormLayout(box);
+        form->setLabelAlignment(Qt::AlignRight);
+        for (const auto &pm : normal.value(g))
+            addPropertyRow(form, pm);
+
+        // 高级属性折叠：用一个嵌套 QGroupBox + checkable 实现
+        const auto advList = advanced.value(g);
+        if (!advList.isEmpty()) {
+            auto *adv = new QGroupBox(tr("高级"), box);
+            adv->setCheckable(true);
+            adv->setChecked(false);
+            adv->setStyleSheet("QGroupBox { color:#aaa; }");
+            auto *advForm = new QFormLayout(adv);
+            advForm->setLabelAlignment(Qt::AlignRight);
+            for (const auto &pm : advList)
+                addPropertyRow(advForm, pm);
+            // 折叠/展开切换显隐
+            auto applyVis = [adv](bool checked){
+                if (auto *l = adv->layout())
+                    for (int i = 0; i < l->count(); ++i)
+                        if (auto *w = l->itemAt(i)->widget()) w->setVisible(checked);
+            };
+            applyVis(false);
+            connect(adv, &QGroupBox::toggled, this, [applyVis](bool c){ applyVis(c); });
+            form->addRow(adv);
+        }
+        m_propsForm->addRow(box);
     }
 
     if (meta.properties.isEmpty()) {
         auto *lbl = new QLabel(tr("（该组件没有可编辑属性）"));
         lbl->setStyleSheet("color: #888;");
         m_propsForm->addRow(lbl);
+    }
+
+    // ===== 第三部分：事件处理代码 =====
+    if (!meta.eventProperties.isEmpty()) {
+        auto *evBox  = new QGroupBox(tr("事件"), m_propsBox);
+        evBox->setStyleSheet("QGroupBox { font-weight: bold; margin-top: 6px; }");
+        auto *evForm = new QFormLayout(evBox);
+        evForm->setLabelAlignment(Qt::AlignRight);
+        for (const PropertyMeta &pm : meta.eventProperties) {
+            if (pm.hidden) continue;
+            addPropertyRow(evForm, pm);
+        }
+        m_propsForm->addRow(evBox);
+    }
+
+    // ===== 第四部分：数据绑定（只读概览） =====
+    if (!meta.bindings.isEmpty()) {
+        auto *bBox  = new QGroupBox(tr("数据绑定"), m_propsBox);
+        auto *bForm = new QFormLayout(bBox);
+        bForm->setLabelAlignment(Qt::AlignRight);
+        for (const BindingDef &b : meta.bindings) {
+            const QString text = QStringLiteral("%1 [%2]").arg(b.target, b.direction);
+            auto *le = new QLineEdit(text);
+            le->setReadOnly(true);
+            le->setStyleSheet("QLineEdit { background:#2a2a2a; color:#aaa; }");
+            bForm->addRow(new QLabel(b.name), le);
+        }
+        m_propsForm->addRow(bBox);
     }
 }
 
@@ -220,10 +342,12 @@ QWidget *PropertyPanelDock::makeEditor(const PropertyMeta &pm, const QVariant &v
         type == QLatin1String("integer") || type == QLatin1String("float") ||
         type == QLatin1String("double")) {
         const bool isInt = (type == QLatin1String("int") || type == QLatin1String("integer"));
+        const QString suffix = pm.unit.isEmpty() ? QString() : QStringLiteral(" ") + pm.unit;
         if (isInt) {
             auto *sb = new QSpinBox;
             sb->setRange(int(pm.min), int(pm.max));
             sb->setValue(value.toInt());
+            if (!suffix.isEmpty()) sb->setSuffix(suffix);
             connect(sb, QOverload<int>::of(&QSpinBox::valueChanged),
                     this, [pushValue](int v){ pushValue(v); });
             return sb;
@@ -232,6 +356,7 @@ QWidget *PropertyPanelDock::makeEditor(const PropertyMeta &pm, const QVariant &v
         sb->setRange(pm.min, pm.max);
         sb->setDecimals(3);
         sb->setValue(value.toDouble());
+        if (!suffix.isEmpty()) sb->setSuffix(suffix);
         connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 this, [pushValue](double v){ pushValue(v); });
         return sb;

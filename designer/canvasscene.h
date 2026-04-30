@@ -67,6 +67,10 @@ signals:
     // 实例的某属性 / 名字 被外部修改后通知（属性面板用于回填）
     void instanceChanged(const QString &instanceId);
 
+    // 画布上拖动/缩放过程中的实时几何变化（只含 x/y/width/height，
+    // 属性面板可仅刷新占位编辑器而不重建）
+    void instanceGeometryChanged(const QString &instanceId);
+
 protected:
     void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
     void dragMoveEvent (QGraphicsSceneDragDropEvent *event) override;

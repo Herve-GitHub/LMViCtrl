@@ -1,5 +1,6 @@
 #pragma once
 #include <QDockWidget>
+#include <QHash>
 #include <QPointer>
 #include "WidgetMeta.h"
 
@@ -24,11 +25,14 @@ public:
 private slots:
     void onSceneSelectionChanged();
     void onInstanceChangedFromScene(const QString &instanceId);
+    void onInstanceGeometryChangedFromScene(const QString &instanceId);
 
 private:
     void clearPanel();
     void buildPanel(const WidgetInstance &inst, const WidgetMeta &meta);
     QWidget *makeEditor(const PropertyMeta &pm, const QVariant &value);
+    // 仅刷新 x/y/width/height 编辑器的当前值（不重建面板）
+    void refreshGeometryEditors(const WidgetInstance &inst);
 
     QPointer<CanvasScene> m_scene;
     QString               m_currentInstanceId;
@@ -40,4 +44,7 @@ private:
     QGroupBox   *m_propsBox    = nullptr;   // 第二部分
     QFormLayout *m_metaForm    = nullptr;
     QFormLayout *m_propsForm   = nullptr;
+
+    // 实时回填使用：name -> editor widget（只缓存 x/y/width/height）
+    QHash<QString, QPointer<QWidget>> m_geometryEditors;
 };

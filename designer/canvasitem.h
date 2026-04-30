@@ -43,6 +43,9 @@ signals:
                          const QRectF  &before,
                          const QRectF  &after);
 
+    // 拖动 / 缩放过程中的实时几何变化通知（供属性面板实时回填）
+    void geometryChanged(const QString &instanceId);
+
 protected:
     void mousePressEvent  (QGraphicsSceneMouseEvent *event) override;
     void mouseMoveEvent   (QGraphicsSceneMouseEvent *event) override;

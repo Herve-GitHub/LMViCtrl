@@ -168,6 +168,8 @@ CanvasItem *CanvasScene::makeItem(const WidgetInstance &inst)
     auto *ci = new CanvasItem(inst, meta);
     connect(ci, &CanvasItem::resizeCommitted,
             this, &CanvasScene::onResizeCommitted);
+    connect(ci, &CanvasItem::geometryChanged,
+            this, &CanvasScene::instanceGeometryChanged);
     return ci;
 }
 
@@ -325,16 +327,29 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     const QString widgetId    = obj[QStringLiteral("widgetId")].toString();
     const QString luaFilePath = obj[QStringLiteral("luaFilePath")].toString();
 
-    // 默认宽高从 meta 中取（若有）
+    // 默认宽高：优先使用 meta.defaultSize；其次 width/height 属性默认值
     int defW = 120, defH = 60;
 
     WidgetInstance inst;
     if (m_metaMap.contains(widgetId)) {
         const auto &meta = m_metaMap.value(widgetId);
+        if (meta.defaultSize.isValid()) {
+            defW = meta.defaultSize.width();
+            defH = meta.defaultSize.height();
+        }
         for (const auto &p : meta.properties) {
             if (p.name == QLatin1String("width"))  defW = p.defaultValue.toInt();
             if (p.name == QLatin1String("height")) defH = p.defaultValue.toInt();
             inst.properties[p.name] = p.defaultValue;
+        }
+        // 兜底：min/max 限制
+        if (meta.minSize.isValid()) {
+            defW = qMax(defW, meta.minSize.width());
+            defH = qMax(defH, meta.minSize.height());
+        }
+        if (meta.maxSize.isValid()) {
+            defW = qMin(defW, meta.maxSize.width());
+            defH = qMin(defH, meta.maxSize.height());
         }
     }
     inst.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
