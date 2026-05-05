@@ -249,6 +249,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
             s << "      {\n";
             s << "        instanceId = " << luaQuote(w.instanceId) << ",\n";
             s << "        widgetId   = " << luaQuote(w.widgetId)   << ",\n";
+            s << "        name       = " << luaQuote(w.name)       << ",\n";
             s << "        zOrder     = " << w.zOrder               << ",\n";
             s << "        x          = " << w.x                    << ",\n";
             s << "        y          = " << w.y                    << ",\n";

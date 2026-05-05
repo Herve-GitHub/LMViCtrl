@@ -19,6 +19,25 @@ local lv = require("lvgl")
 
 local M = {}
 
+-- 全局命名的控件实例表：可在事件代码中通过 widgets.<Name> 访问
+-- 例如：widgets.Button_1:set_property("label", "Hi")
+M.widgets = {}
+_G.widgets = M.widgets
+
+-- 事件处理代码运行时的环境：
+--   1) widgets.<Name>      —— 始终可用
+--   2) <Name>              —— 直接以控件名作为全局访问（按需在 widgets 表里查找）
+--   3) 其他名字回退到 _G   —— 让 print 等标准库可用
+-- 写入未知名字时落到 _G，避免污染 widgets 表
+local g_handler_env = setmetatable({ widgets = M.widgets }, {
+    __index = function(_, k)
+        local w = M.widgets[k]
+        if w ~= nil then return w end
+        return _G[k]
+    end,
+    __newindex = _G,
+})
+
 local function log_warn(fmt, ...)
     io.stderr:write(string.format("[runtime] " .. fmt .. "\n", ...))
 end
@@ -169,6 +188,63 @@ local function build_state(inst)
     return state
 end
 
+-- 把字符串形式的 Lua 事件处理代码编译成函数
+-- 上下文中暴露 self（控件实例）与 e（事件对象）
+local function compile_event_handler(code, widget_id, prop_name)
+    if type(code) ~= "string" then return nil end
+    -- 去掉首尾空白后判定是否为空
+    if code:match("^%s*$") then return nil end
+
+    local loader = load or loadstring
+    if type(loader) ~= "function" then
+        log_warn("event: no load/loadstring available")
+        return nil
+    end
+
+    -- 把用户代码包装为接收 (self, e) 的函数体
+    local chunk_src = "local self, e = ...\n" .. code
+    local chunk_name = string.format("=[%s.%s]", tostring(widget_id), tostring(prop_name))
+
+    local fn, err
+    if load then
+        fn, err = load(chunk_src, chunk_name, "t", g_handler_env)
+    else
+        fn, err = loadstring(chunk_src, chunk_name)
+        if fn and type(setfenv) == "function" then setfenv(fn, g_handler_env) end
+    end
+    if not fn then
+        log_warn("event: compile failed for %s.%s: %s",
+                 tostring(widget_id), tostring(prop_name), tostring(err))
+        return nil
+    end
+    return fn
+end
+
+-- 把 inst.properties 里的 on_xxx_handler 代码绑定到 widget:on(event, fn)
+local function bind_event_handlers(widget, mod, inst)
+    if type(widget) ~= "table" or type(widget.on) ~= "function" then return end
+    local meta = mod.__widget_meta
+    if type(meta) ~= "table" then return end
+    local ev_props = meta.event_properties
+    if type(ev_props) ~= "table" then return end
+
+    local props = inst.properties or {}
+    for _, ep in ipairs(ev_props) do
+        local code = props[ep.name]
+        local event_name = ep.event
+        if event_name and code and code ~= "" then
+            local fn = compile_event_handler(code, inst.widgetId, ep.name)
+            if fn then
+                local ok, err = pcall(widget.on, widget, event_name, fn)
+                if not ok then
+                    log_warn("event: bind %s.%s failed: %s",
+                             tostring(inst.widgetId), tostring(event_name), tostring(err))
+                end
+            end
+        end
+    end
+end
+
 -- ─── 5. 构建单个控件 ─────────────────────────────────────────────────
 local function build_widget(parent, inst)
     local mod = lookup_widget(inst.widgetId)
@@ -188,6 +264,17 @@ local function build_widget(parent, inst)
         log_warn("new() failed for %s: %s", tostring(inst.widgetId), tostring(ret))
         return nil
     end
+
+    -- 按 instance.name 注册到全局 widgets 表，便于跨控件互操作
+    local nm = inst.name
+    if type(nm) == "string" and nm ~= "" then
+        if M.widgets[nm] ~= nil then
+            log_warn("widget name conflict: %s (overwriting)", nm)
+        end
+        M.widgets[nm] = ret
+    end
+
+    bind_event_handlers(ret, mod, inst)
     return ret
 end
 
@@ -216,6 +303,9 @@ function M.run(project)
         log_warn("run: invalid project")
         return
     end
+
+    -- 重置 widgets 注册表（保留同一张表的引用，便于已持有该表的代码继续生效）
+    for k in pairs(M.widgets) do M.widgets[k] = nil end
     if type(project.screens) ~= "table" or #project.screens == 0 then
         log_warn("run: no screens to render")
         return
