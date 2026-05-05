@@ -3,7 +3,7 @@
 #include <QColor>
 #include <QFont>
 #include "WidgetMeta.h"
-
+#include "drawHints.h"
 // 8 个缩放控制点方向
 enum class HandlePos { None, TL, T, TR, L, R, BL, B, BR };
 
@@ -78,4 +78,5 @@ private:
     QPointF   m_pressScenePos;
     QRectF    m_resizeStartRect;   // resize 开始时的场景矩形
     bool      m_inResize = false;
+    drawHints m_drawHints;
 };

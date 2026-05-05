@@ -63,10 +63,6 @@ struct WidgetApi {
     bool hasDestroy          = false;
 };
 
-// 自定义渲染提示（render_mode = "custom" 时供 Qt 端通用绘制使用）
-// key: 提示项名称（shape/fill_from/text_from/...），value: 字符串
-using DrawHints = QVariantMap;
-
 // Widget 元数据
 struct WidgetMeta {
     // 标识
@@ -104,7 +100,7 @@ struct WidgetMeta {
     bool hasDataBinding = false;
 
     // 自定义绘制提示
-    DrawHints drawHints;
+    QVariantMap drawHints;
 
     // API 契约
     WidgetApi api;

@@ -63,7 +63,9 @@ local function detect_widgets_dir()
     return nil
 end
 
--- ─── 2. 列出 widgets/ 下的 *.lua（仅取短名，不带扩展名） ──────────────
+-- ─── 2. 列出 widgets/ 下的 *.lua（递归子目录，返回模块的相对路径短名） ──
+-- 例如 widgets/button.lua            -> "button"
+--      widgets/custom/valve.lua      -> "custom/valve"
 local function list_widget_basenames()
     local dir = detect_widgets_dir()
     if not dir then
@@ -74,9 +76,10 @@ local function list_widget_basenames()
     local sep = package.config:sub(1, 1)
     local cmd
     if sep == "\\" then
-        cmd = string.format('dir /b "%s\\*.lua" 2>NUL', dir)
+        -- /s 递归，/b 仅文件名（带相对路径），/a-d 排除目录
+        cmd = string.format('dir /s /b /a-d "%s\\*.lua" 2>NUL', dir)
     else
-        cmd = string.format('ls "%s"/*.lua 2>/dev/null', dir)
+        cmd = string.format('find "%s" -type f -name "*.lua" 2>/dev/null', dir)
     end
 
     local p = io.popen(cmd)
@@ -85,23 +88,45 @@ local function list_widget_basenames()
         log_warn("io.popen failed for: %s", cmd)
         return names
     end
+
+    -- 计算相对于 widgets/ 的路径（去扩展名），统一用 "/" 分隔
+    -- Windows 上 dir 输出可能用 "\\"，detect_widgets_dir 可能用 "/"，
+    -- 因此先把两边都归一化为 "/" 再做（大小写不敏感的）前缀剥离。
+    local prefix_norm = dir:gsub("\\", "/"):lower()
+    local prefix_len  = #prefix_norm
     for line in p:lines() do
-        local short = line:match("([^/\\]+)%.lua$")
-        if short then table.insert(names, short) end
+        local full = line:gsub("\r$", "")
+        if full ~= "" then
+            local norm = full:gsub("\\", "/")
+            local rel
+            if norm:sub(1, prefix_len):lower() == prefix_norm then
+                rel = norm:sub(prefix_len + 1)
+            else
+                -- 退化：找最后一次出现的 "/widgets/"
+                local s = norm:lower():find("/widgets/", 1, true)
+                if s then rel = norm:sub(s + #"/widgets/") else rel = norm end
+            end
+            -- 去掉前导分隔符
+            rel = rel:gsub("^[/\\]+", "")
+            -- 去掉 .lua 后缀
+            rel = rel:gsub("%.[Ll][Uu][Aa]$", "")
+            if rel ~= "" then names[#names + 1] = rel end
+        end
     end
     p:close()
     return names
 end
 
 -- ─── 3. 加载并注册全部 widget 模块 ───────────────────────────────────
--- registry 同时按 widgetId / type / 短名 索引，方便兼容
+-- registry 同时按 widgetId / type / 短名（含子目录）索引，方便兼容
 local function build_registry()
     local registry = {}
     local count = 0
 
     local basenames = list_widget_basenames()
     for _, short in ipairs(basenames) do
-        local modname = "widgets." .. short
+        -- short 形如 "button" 或 "custom/valve"，转成 "widgets.button" / "widgets.custom.valve"
+        local modname = "widgets." .. (short:gsub("/", "."))
         local ok, mod = pcall(require, modname)
         if not ok or type(mod) ~= "table" then
             log_warn("failed to load %s: %s", modname, tostring(mod))
@@ -110,7 +135,10 @@ local function build_registry()
             local keys = {}
             if meta.id   and meta.id   ~= "" then keys[#keys + 1] = meta.id   end
             if meta.type and meta.type ~= "" then keys[#keys + 1] = meta.type end
+            -- 完整相对短名（含目录），以及最末段（去目录）的 leaf 名
             keys[#keys + 1] = short
+            local leaf = short:match("([^/]+)$")
+            if leaf and leaf ~= short then keys[#keys + 1] = leaf end
             for _, k in ipairs(keys) do
                 if registry[k] == nil then
                     registry[k] = mod

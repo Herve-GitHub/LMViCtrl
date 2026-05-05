@@ -36,6 +36,7 @@ static const QStringList &preferredCategoryOrder()
         QStringLiteral("数据展示"),
         QStringLiteral("容器与页面组织"),
         QStringLiteral("绘制与媒体"),
+        QStringLiteral("自定义控件"),
     };
     return order;
 }

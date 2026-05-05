@@ -1,6 +1,7 @@
 #include "luawidgetparser.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -299,9 +300,9 @@ QList<BindingDef> LuaWidgetParser::parseBindings(const QString &metaBlock)
     return out;
 }
 
-DrawHints LuaWidgetParser::parseDrawHints(const QString &metaBlock)
+QVariantMap LuaWidgetParser::parseDrawHints(const QString &metaBlock)
 {
-    DrawHints out;
+    QVariantMap out;
     const QString block = extractTableField(metaBlock, "draw_hints");
     if (block.isEmpty()) return out;
 
@@ -447,14 +448,48 @@ WidgetMeta LuaWidgetParser::parse(const QString &filePath)
 QList<WidgetMeta> LuaWidgetParser::parseDirectory(const QString &dirPath)
 {
     QList<WidgetMeta> result;
-    QDir dir(dirPath);
-    if (!dir.exists()) return result;
+    QDir rootDir(dirPath);
+    if (!rootDir.exists()) return result;
 
-    const QStringList files = dir.entryList({QStringLiteral("*.lua")}, QDir::Files, QDir::Name);
-    for (const QString &fileName : files) {
-        WidgetMeta meta = parse(dir.absoluteFilePath(fileName));
+    // 1) 顶层 .lua 文件（按文件名排序）
+    const QStringList topFiles = rootDir.entryList(
+        {QStringLiteral("*.lua")}, QDir::Files, QDir::Name);
+    for (const QString &fileName : topFiles) {
+        WidgetMeta meta = parse(rootDir.absoluteFilePath(fileName));
         if (!meta.id.isEmpty())
             result.append(std::move(meta));
     }
+
+    // 2) 递归扫描子目录（用于自定义控件分组等）
+    //    - 子目录名作为默认 category（脚本未显式声明 category 时使用）
+    //    - 内置目录名 -> 中文显示名 的映射
+    static const QHash<QString, QString> kFolderCategoryMap = {
+        { QStringLiteral("custom"), QStringLiteral("自定义控件") },
+    };
+
+    const QStringList subDirs = rootDir.entryList(
+        QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QString &subName : subDirs) {
+        const QString subPath = rootDir.absoluteFilePath(subName);
+        const QString fallbackCategory =
+            kFolderCategoryMap.value(subName.toLower(), subName);
+
+        QDirIterator it(subPath,
+                        {QStringLiteral("*.lua")},
+                        QDir::Files,
+                        QDirIterator::Subdirectories);
+        QStringList files;
+        while (it.hasNext()) files << it.next();
+        std::sort(files.begin(), files.end());
+
+        for (const QString &filePath : std::as_const(files)) {
+            WidgetMeta meta = parse(filePath);
+            if (meta.id.isEmpty()) continue;
+            if (meta.category.isEmpty())
+                meta.category = fallbackCategory;
+            result.append(std::move(meta));
+        }
+    }
+
     return result;
 }

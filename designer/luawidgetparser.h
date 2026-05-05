@@ -36,7 +36,7 @@ private:
     // bindings 列表
     static QList<BindingDef>   parseBindings(const QString &metaBlock);
     // draw_hints 表（kv 字符串）
-    static DrawHints           parseDrawHints(const QString &metaBlock);
+    static QVariantMap           parseDrawHints(const QString &metaBlock);
     // api 表
     static WidgetApi           parseApi(const QString &metaBlock);
     // size 类子表 { w=..., h=... } -> QSize
