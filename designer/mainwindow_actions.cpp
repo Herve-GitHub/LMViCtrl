@@ -28,16 +28,70 @@
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
+#include <QProcess>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTranslator>
+#include <QUndoCommand>
 #include <QUndoStack>
 #include <QUuid>
 
 namespace {
-constexpr const char *kProjectFilter = "QtLvglDesigner Project (*.json *.qlproj)";
-}
+constexpr const char *kProjectFilter =
+    "QtLvglDesigner Project (*.qlvgl.json *.json *.qlproj)";
+
+// ------------------------------------------------------------
+// 图页 Undo 命令
+// ------------------------------------------------------------
+class AddScreenCommand : public QUndoCommand
+{
+public:
+    AddScreenCommand(MainWindow *mw, const ScreenData &data)
+        : QUndoCommand(QObject::tr("新增图页 %1").arg(data.name))
+        , m_mw(mw)
+        , m_data(data)
+        , m_order(data.order)
+    {}
+
+    void redo() override { m_mw->cmdAddScreen(m_data, m_order); }
+    void undo() override { m_mw->cmdRemoveScreen(m_data.id); }
+
+private:
+    MainWindow *m_mw;
+    ScreenData  m_data;
+    int         m_order;
+};
+
+class RemoveScreenCommand : public QUndoCommand
+{
+public:
+    RemoveScreenCommand(MainWindow *mw, const QString &screenId)
+        : QUndoCommand(QObject::tr("删除图页"))
+        , m_mw(mw)
+        , m_id(screenId)
+    {}
+
+    void redo() override
+    {
+        // 每次 redo 时重新快照，确保恢复最新画布内容
+        m_data  = m_mw->snapshotScreen(m_id);
+        m_order = m_data.order;
+        setText(QObject::tr("删除图页 %1").arg(m_data.name));
+        m_mw->cmdRemoveScreen(m_id);
+    }
+    void undo() override
+    {
+        m_mw->cmdAddScreen(m_data, m_order);
+    }
+
+private:
+    MainWindow *m_mw;
+    QString     m_id;
+    ScreenData  m_data;
+    int         m_order   = 0;
+};
+}  // namespace
 
 // ============================================================
 // 工程辅助函数
@@ -50,6 +104,7 @@ void MainWindow::resetProject()
         m_tabWidget->clear();
         m_openTabs.clear();
     }
+    resetUndoChains();
 
     m_project = ProjectData{};
     m_project.id        = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -86,6 +141,7 @@ void MainWindow::applyProjectToTabs()
     if (!m_tabWidget) return;
     m_tabWidget->clear();
     m_openTabs.clear();
+    resetUndoChains();
 
     // 为旧工程/缺失 name 的实例补一个唯一名
     ensureInstanceNamesAssigned();
@@ -121,6 +177,10 @@ void MainWindow::openScreenTab(const QString &screenId)
     // 安装名字生成器（拖入新组件时使用，确保工程内唯一）
     installSceneNameGenerator(tab->scene());
 
+    // 注册该图页的 undo 栈到链式调度
+    if (tab->scene())
+        registerUndoStack(tab->scene()->undoStack());
+
     const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
     m_tabWidget->addTab(tab, tabTitle);
     m_tabWidget->setCurrentWidget(tab);
@@ -132,12 +192,25 @@ void MainWindow::openScreenTab(const QString &screenId)
 
 void MainWindow::closeScreenTab(const QString &screenId)
 {
-    ScreenTab *tab = m_openTabs.value(screenId, nullptr);
+    ScreenTab* tab = m_openTabs.value(screenId, nullptr);
     if (!tab) return;
-    // 先同步数据再关闭
-    for (ScreenData &s : m_project.screens) {
+
+    // 先同步数据
+    for (ScreenData& s : m_project.screens) {
         if (s.id == screenId) { tab->syncToScreen(s); break; }
     }
+
+    // 在 tab 销毁前，主动清理 undo stack 的注册信息，
+    // 避免 destroyed 信号回调时 m_stackLastIndex 处于不确定状态
+    if (CanvasScene* scene = tab->scene()) {
+        if (QUndoStack* stack = scene->undoStack()) {
+            QObject::disconnect(stack, nullptr, this, nullptr); // 断开所有到 this 的连接
+            m_stackLastIndex.remove(stack);
+            m_undoChain.removeAll(stack);
+            m_redoChain.removeAll(stack);
+        }
+    }
+
     const int idx = m_tabWidget->indexOf(tab);
     if (idx >= 0) m_tabWidget->removeTab(idx);
     m_openTabs.remove(screenId);
@@ -329,17 +402,50 @@ void MainWindow::onNewProject()
     }
 
     // 保存到指定路径
-    if (!location.isEmpty() && !name.isEmpty()) {
-        const QString filePath = location + QLatin1Char('/') + name
-                                 + QStringLiteral(".json");
-        m_projectFilePath = filePath;
-        QString err;
-        if (!ProjectManager::saveToFile(m_project, filePath, &err)) {
-            QMessageBox::warning(this, tr("保存失败"),
-                                 tr("无法创建工程文件：%1").arg(err));
-        } else {
-            addRecentProject(filePath);
-        }
+    if (location.isEmpty() || name.isEmpty()) {
+        setProjectOpen(true);
+        return;
+    }
+
+    // 1) 在所选目录下新建工程同名文件夹
+    QDir parent(location);
+    if (!parent.exists()) {
+        QMessageBox::warning(this, tr("新建失败"),
+                             tr("存储路径不存在：%1").arg(location));
+        return;
+    }
+    if (parent.exists(name)) {
+        QMessageBox::warning(this, tr("新建失败"),
+                             tr("目录已存在：%1").arg(parent.filePath(name)));
+        return;
+    }
+    if (!parent.mkdir(name)) {
+        QMessageBox::warning(this, tr("新建失败"),
+                             tr("无法创建工程目录：%1").arg(parent.filePath(name)));
+        return;
+    }
+
+    const QString projectDir = parent.filePath(name);
+    const QString filePath   = projectDir + QLatin1Char('/')
+                               + ProjectManager::projectJsonFileName(name);
+
+    // 2) 写入工程 JSON
+    m_projectFilePath = filePath;
+    QString err;
+    if (!ProjectManager::saveToFile(m_project, filePath, &err)) {
+        QMessageBox::warning(this, tr("保存失败"),
+                             tr("无法创建工程文件：%1").arg(err));
+    } else {
+        addRecentProject(filePath);
+    }
+
+    // 3) 把 designer 自带的 lua 运行时（runtime.lua / common / widgets）
+    //    拷贝到工程目录，供后续编译产物 require 与仿真器加载
+    QString depErr;
+    if (!ProjectManager::deployRuntime(projectDir, /*overwriteWidgets=*/false, &depErr)) {
+        QMessageBox::warning(this, tr("部署运行时失败"),
+                             tr("拷贝 lua 运行时到工程目录失败：%1\n"
+                                "仿真功能在此工程中可能不可用。").arg(depErr));
     }
 
     setProjectOpen(true);
@@ -377,6 +483,7 @@ void MainWindow::onCloseProject()
         m_tabWidget->clear();
         m_openTabs.clear();
     }
+    resetUndoChains();
     m_project = ProjectData{};
     m_projectFilePath.clear();
     if (m_screenManager)
@@ -444,7 +551,11 @@ void MainWindow::onProjectProperties()
 {
     if (!m_projectOpen) return;
 
-    ProjectPropertiesDialog dlg(m_project, this);
+    const QString projectDir = m_projectFilePath.isEmpty()
+        ? QString()
+        : QFileInfo(m_projectFilePath).absolutePath();
+
+    ProjectPropertiesDialog dlg(m_project, projectDir, this);
     if (dlg.exec() != QDialog::Accepted) return;
 
     const ProjectData newData = dlg.projectData();
@@ -473,9 +584,29 @@ void MainWindow::onExit()
 // 编辑
 // ============================================================
 
-void MainWindow::onUndo() { if (auto *s = currentScene()) s->undoStack()->undo(); }
+void MainWindow::onUndo()
+{
+    if (m_undoChain.isEmpty()) return;
+    QUndoStack *top = m_undoChain.last();
+    if (!top || !top->canUndo()) {
+        m_undoChain.removeLast();
+        return;
+    }
+    top->undo();   // indexChanged 处理器会负责把 stack 从 undoChain 转到 redoChain
+}
 
-void MainWindow::onRedo() { if (auto *s = currentScene()) s->undoStack()->redo(); }
+void MainWindow::onRedo()
+{
+    if (m_redoChain.isEmpty()) return;
+    QUndoStack *top = m_redoChain.last();
+    if (!top || !top->canRedo()) {
+        m_redoChain.removeLast();
+        return;
+    }
+    m_inRedoOp = true;
+    top->redo();   // indexChanged 处理器会负责把 stack 从 redoChain 转回 undoChain
+    m_inRedoOp = false;
+}
 
 void MainWindow::onCut()
 {
@@ -562,7 +693,7 @@ void MainWindow::onProjectPermission() {}
 void MainWindow::onNewScreen()
 {
     if (!m_screenManager) return;
-    // 委托给图页管理器（它会发 screensChanged + openScreenRequested 信号）
+    // 委托给图页管理器（它会发 addScreenRequested 信号）
     m_screenManager->onAddScreen();
 }
 
@@ -761,7 +892,82 @@ void MainWindow::onStopRun() {}
 
 void MainWindow::onPauseRun() {}
 
-void MainWindow::onStartSimulate() {}
+void MainWindow::onStartSimulate()
+{
+    if (!m_projectOpen) {
+        QMessageBox::information(this, tr("启动仿真"),
+                                 tr("请先打开或新建一个工程。"));
+        return;
+    }
+    if (m_projectFilePath.isEmpty()) {
+        QMessageBox::information(this, tr("启动仿真"),
+                                 tr("当前工程尚未保存，请先保存到工程目录后再启动仿真。"));
+        return;
+    }
+
+    // 1) 同步当前画布到工程数据并落盘
+    syncSceneToProject();
+    QString err;
+    if (!ProjectManager::saveToFile(m_project, m_projectFilePath, &err)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("保存工程失败：%1").arg(err));
+        return;
+    }
+
+    // 2) 推断工程目录与产物路径：<projectDir>/<name>.lua
+    const QFileInfo jsonFi(m_projectFilePath);
+    const QString projectDir = jsonFi.absolutePath();
+    const QString projectName =
+        m_project.name.isEmpty()
+            ? jsonFi.completeBaseName().section(QLatin1Char('.'), 0, 0)
+            : m_project.name;
+    const QString luaPath = projectDir + QLatin1Char('/')
+                            + ProjectManager::projectLuaFileName(projectName);
+
+    // 3) 确保运行时已部署（若工程目录里 widgets/runtime 缺失则补齐）
+    if (!QFile::exists(projectDir + QStringLiteral("/runtime.lua"))) {
+        QString depErr;
+        if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
+            QMessageBox::warning(this, tr("启动仿真"),
+                                 tr("部署运行时失败：%1").arg(depErr));
+            return;
+        }
+    }
+
+    // 4) 编译 JSON -> Lua
+    if (!ProjectManager::compileFileToLua(m_projectFilePath, luaPath, &err)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("编译为 Lua 失败：%1").arg(err));
+        return;
+    }
+
+    // 5) 拉起仿真子进程：<appDir>/QtLvglSimu(.exe)（与 designer 同目录）
+    const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+    const QString exeName = QStringLiteral("simulator.exe");
+#else
+    const QString exeName = QStringLiteral("simulator");
+#endif
+    const QString simuExe = QDir(appDir).filePath(exeName);
+    if (!QFile::exists(simuExe)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("未找到仿真器可执行文件：%1").arg(simuExe));
+        return;
+    }
+
+    const QStringList args = {
+        luaPath,
+        QStringLiteral("--width"),  QString::number(m_project.target.width),
+        QStringLiteral("--height"), QString::number(m_project.target.height),
+        QStringLiteral("--title"),  projectName,
+    };
+
+    qint64 pid = 0;
+    if (!QProcess::startDetached(simuExe, args, projectDir, &pid)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("无法启动仿真器：%1").arg(simuExe));
+    }
+}
 
 void MainWindow::onSimulateVarSetting() {}
 
@@ -1053,5 +1259,138 @@ void MainWindow::ensureInstanceNamesAssigned()
             QString base = idToBase.value(inst.widgetId, inst.widgetId);
             inst.name = nextName(base);
         }
+    }
+}
+
+// ============================================================
+// 图页 Undo / Redo 支持
+// ============================================================
+
+void MainWindow::onScreenAddRequested(const QString &name)
+{
+    if (!m_projectUndoStack) return;
+
+    ScreenData s;
+    s.id    = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    s.name  = name;
+    s.order = m_project.screens.size();
+    m_projectUndoStack->push(new AddScreenCommand(this, s));
+}
+
+void MainWindow::onScreenDeleteRequested(const QString &screenId)
+{
+    if (!m_projectUndoStack) return;
+    if (m_project.screens.size() <= 1) return;   // 只有一个图页时禁止删除
+    m_projectUndoStack->push(new RemoveScreenCommand(this, screenId));
+}
+
+void MainWindow::cmdAddScreen(const ScreenData &screen, int order)
+{
+    const int insertIdx = qBound(0, order, m_project.screens.size());
+    m_project.screens.insert(insertIdx, screen);
+    // 重建 order 字段
+    for (int i = 0; i < m_project.screens.size(); ++i)
+        m_project.screens[i].order = i;
+    if (m_screenManager)
+        m_screenManager->setScreens(m_project.screens);
+    openScreenTab(screen.id);
+}
+
+void MainWindow::cmdRemoveScreen(const QString &screenId)
+{
+    closeScreenTab(screenId);
+    for (int i = 0; i < m_project.screens.size(); ++i) {
+        if (m_project.screens[i].id == screenId) {
+            m_project.screens.removeAt(i);
+            break;
+        }
+    }
+    for (int i = 0; i < m_project.screens.size(); ++i)
+        m_project.screens[i].order = i;
+    if (m_screenManager)
+        m_screenManager->setScreens(m_project.screens);
+    // 若没有打开的 tab，自动打开第一个图页（若仍有）
+    if (m_tabWidget && m_tabWidget->count() == 0 && !m_project.screens.isEmpty())
+        openScreenTab(m_project.screens.first().id);
+}
+
+ScreenData MainWindow::snapshotScreen(const QString &screenId) const
+{
+    // 若该图页对应的 tab 已打开，先把画布上的最新内容同步出来
+    for (const ScreenData &s : m_project.screens) {
+        if (s.id != screenId) continue;
+        ScreenData copy = s;
+        if (ScreenTab *tab = m_openTabs.value(screenId, nullptr))
+            tab->syncToScreen(copy);
+        return copy;
+    }
+    return ScreenData{};
+}
+
+// ============================================================
+// 跨多 stack 的 Undo/Redo 链式调度
+// ============================================================
+
+void MainWindow::registerUndoStack(QUndoStack *stack)
+{
+    if (!stack || m_stackLastIndex.contains(stack)) return;
+    m_stackLastIndex.insert(stack, stack->index());
+
+    connect(stack, &QUndoStack::indexChanged, this, [this, stack](int newIdx) {
+        onAnyStackIndexChanged(stack, newIdx);
+    });
+    connect(stack, &QObject::destroyed, this, [this, stack]() {
+        m_stackLastIndex.remove(stack);
+        m_undoChain.removeAll(stack);
+        m_redoChain.removeAll(stack);
+    });
+}
+
+void MainWindow::onAnyStackIndexChanged(QUndoStack *stack, int newIdx)
+{
+    const int prev = m_stackLastIndex.value(stack, 0);
+    if (newIdx > prev) {
+        int diff = newIdx - prev;
+        if (m_inRedoOp && !m_redoChain.isEmpty() && m_redoChain.last() == stack) {
+            // 一次 redo()：从 redoChain 顶移回 undoChain 顶
+            m_redoChain.removeLast();
+            m_undoChain.append(stack);
+            --diff;
+        }
+        for (int i = 0; i < diff; ++i)
+            m_undoChain.append(stack);
+        if (!m_inRedoOp) {
+            // 任意新 push 后，原有 redo 历史失效
+            m_redoChain.clear();
+        }
+    } else if (newIdx < prev) {
+        int diff = prev - newIdx;
+        for (int i = 0; i < diff; ++i) {
+            for (int j = m_undoChain.size() - 1; j >= 0; --j) {
+                if (m_undoChain[j] == stack) {
+                    m_undoChain.removeAt(j);
+                    m_redoChain.append(stack);
+                    break;
+                }
+            }
+        }
+    }
+    m_stackLastIndex[stack] = newIdx;
+}
+
+void MainWindow::resetUndoChains()
+{
+    // 断开所有已跟踪的 stack，防止 MainWindow 析构时 destroyed 回调访问已释放的成员
+    for (auto it = m_stackLastIndex.keyBegin(); it != m_stackLastIndex.keyEnd(); ++it) {
+        QObject::disconnect(*it, nullptr, this, nullptr);
+    }
+
+    m_undoChain.clear();
+    m_redoChain.clear();
+    m_stackLastIndex.clear();
+
+    if (m_projectUndoStack) {
+        m_projectUndoStack->clear();
+        m_stackLastIndex.insert(m_projectUndoStack, 0);
     }
 }

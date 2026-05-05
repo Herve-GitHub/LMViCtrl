@@ -140,6 +140,14 @@ struct ProjectResources {
     QString linuxPath = "/root/image/";// Linux 图片资源路径
 };
 
+// 项目字体配置
+// file: 相对于工程目录的字体文件路径（如 "fonts/MyFont.ttf"）；为空表示使用默认字体
+// size: 默认字号
+struct ProjectFont {
+    QString file;
+    int size = 16;
+};
+
 // 项目目标配置
 struct ProjectTarget {
     int width = 1024;// 分辨率
@@ -159,6 +167,7 @@ struct ProjectData {
     QString updatedAt;//工程更新时间
     ProjectTarget target;//目标配置
     ProjectResources resources;//资源配置   
+    ProjectFont font;//字体配置
     QList<ScreenData> screens;//页面列表
 };
 
@@ -172,4 +181,5 @@ Q_DECLARE_METATYPE(WidgetInstance)
 Q_DECLARE_METATYPE(ScreenData)
 Q_DECLARE_METATYPE(ProjectResources)
 Q_DECLARE_METATYPE(ProjectTarget)
+Q_DECLARE_METATYPE(ProjectFont)
 Q_DECLARE_METATYPE(ProjectData)

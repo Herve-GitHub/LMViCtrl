@@ -123,8 +123,12 @@ function TileView.new(parent, state)
     local DIR_ALL = (lv.DIR_TOP or 1) | (lv.DIR_BOTTOM or 2) | (lv.DIR_LEFT or 4) | (lv.DIR_RIGHT or 8)
     for r = 0, (self.props.rows or 1) - 1 do
       for c = 0, (self.props.cols or 1) - 1 do
-        local t = self.tv:tileview_add_tile and self.tv:tileview_add_tile(c, r, DIR_ALL)
-                  or lv.tileview_add_tile(self.tv, c, r, DIR_ALL)
+        local t
+        if self.tv.tileview_add_tile then
+          t = self.tv:tileview_add_tile(c, r, DIR_ALL)
+        else
+          t = lv.tileview_add_tile(self.tv, c, r, DIR_ALL)
+        end
         table.insert(self._tiles, t)
       end
     end

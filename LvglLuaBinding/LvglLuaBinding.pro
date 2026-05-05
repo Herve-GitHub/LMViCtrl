@@ -745,7 +745,8 @@ SOURCES += \
     lvgl_chart_lua_bindings.c \
     lvgl_slider_lua_bindings.c \
     lvgl_textarea_lua_bindings.c \
-    lvgl_lua_mongoose.c
+    lvgl_lua_mongoose.c \
+    lvgl_simulator.c
 
 win32:CONFIG(release, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$DESTDIR/ -lSDL2

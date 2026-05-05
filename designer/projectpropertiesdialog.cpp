@@ -2,17 +2,27 @@
 
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QTextEdit>
 #include <QVBoxLayout>
 
-ProjectPropertiesDialog::ProjectPropertiesDialog(const ProjectData &project, QWidget *parent)
+ProjectPropertiesDialog::ProjectPropertiesDialog(const ProjectData &project,
+                                                 const QString &projectDir,
+                                                 QWidget *parent)
     : QDialog(parent)
     , m_data(project)
+    , m_projectDir(projectDir)
 {
     setWindowTitle(tr("工程属性"));
     setMinimumWidth(420);
@@ -35,6 +45,9 @@ ProjectData ProjectPropertiesDialog::projectData() const
 
     d.resources.imagePath = m_imagePathEdit->text().trimmed();
     d.resources.linuxPath = m_linuxPathEdit->text().trimmed();
+
+    d.font.file = m_fontFileEdit->text().trimmed();
+    d.font.size = m_fontSizeSpin->value();
 
     return d;
 }
@@ -100,6 +113,37 @@ void ProjectPropertiesDialog::buildUi()
 
     mainLayout->addWidget(resGroup);
 
+    // ---- 字体配置 ----
+    auto *fontGroup = new QGroupBox(tr("字体"), this);
+    auto *fontForm  = new QFormLayout(fontGroup);
+
+    auto *fontFileLayout = new QHBoxLayout;
+    m_fontFileEdit = new QLineEdit(this);
+    m_fontFileEdit->setReadOnly(true);
+    m_fontFileEdit->setPlaceholderText(tr("（未选择，使用默认字体）"));
+    m_fontBrowseBtn = new QPushButton(tr("浏览…"), this);
+    m_fontClearBtn  = new QPushButton(tr("清除"),  this);
+    if (m_projectDir.isEmpty()) {
+        m_fontBrowseBtn->setEnabled(false);
+        m_fontBrowseBtn->setToolTip(tr("请先保存工程后再选择字体文件"));
+    }
+    fontFileLayout->addWidget(m_fontFileEdit, 1);
+    fontFileLayout->addWidget(m_fontBrowseBtn);
+    fontFileLayout->addWidget(m_fontClearBtn);
+    fontForm->addRow(tr("字体文件："), fontFileLayout);
+
+    m_fontSizeSpin = new QSpinBox(this);
+    m_fontSizeSpin->setRange(6, 200);
+    m_fontSizeSpin->setSuffix(tr(" px"));
+    fontForm->addRow(tr("默认字号："), m_fontSizeSpin);
+
+    connect(m_fontBrowseBtn, &QPushButton::clicked,
+            this, &ProjectPropertiesDialog::onBrowseFont);
+    connect(m_fontClearBtn,  &QPushButton::clicked,
+            this, &ProjectPropertiesDialog::onClearFont);
+
+    mainLayout->addWidget(fontGroup);
+
     // ---- 只读信息 ----
     auto *infoGroup = new QGroupBox(tr("工程信息"), this);
     auto *infoForm  = new QFormLayout(infoGroup);
@@ -133,4 +177,53 @@ void ProjectPropertiesDialog::loadData()
 
     m_imagePathEdit->setText(m_data.resources.imagePath);
     m_linuxPathEdit->setText(m_data.resources.linuxPath);
+
+    m_fontFileEdit->setText(m_data.font.file);
+    m_fontSizeSpin->setValue(m_data.font.size > 0 ? m_data.font.size : 16);
+}
+
+// 用户点击"浏览…"，把所选 TTF/OTF 文件拷贝到 <projectDir>/fonts/ 中，
+// 并把相对路径（如 "fonts/MyFont.ttf"）写入字体文件输入框。
+void ProjectPropertiesDialog::onBrowseFont()
+{
+    if (m_projectDir.isEmpty()) return;
+
+    const QString picked = QFileDialog::getOpenFileName(
+        this, tr("选择字体文件"), QString(),
+        tr("字体文件 (*.ttf *.otf);;所有文件 (*.*)"));
+    if (picked.isEmpty()) return;
+
+    const QString fontsDirRel = QStringLiteral("fonts");
+    QDir projDir(m_projectDir);
+    if (!projDir.exists(fontsDirRel) && !projDir.mkpath(fontsDirRel)) {
+        QMessageBox::warning(this, tr("字体"),
+                             tr("无法创建字体目录：%1")
+                                 .arg(projDir.filePath(fontsDirRel)));
+        return;
+    }
+
+    const QFileInfo srcFi(picked);
+    const QString dstAbs = projDir.absoluteFilePath(
+        fontsDirRel + QLatin1Char('/') + srcFi.fileName());
+
+    // 若已存在，先尝试删除以便覆盖（同名不同源会被覆盖）
+    if (QFile::exists(dstAbs) && QFileInfo(picked) != QFileInfo(dstAbs)) {
+        QFile::remove(dstAbs);
+    }
+
+    if (QFileInfo(picked) != QFileInfo(dstAbs)) {
+        if (!QFile::copy(picked, dstAbs)) {
+            QMessageBox::warning(this, tr("字体"),
+                                 tr("无法拷贝字体文件到：%1").arg(dstAbs));
+            return;
+        }
+    }
+
+    const QString relPath = fontsDirRel + QLatin1Char('/') + srcFi.fileName();
+    m_fontFileEdit->setText(relPath);
+}
+
+void ProjectPropertiesDialog::onClearFont()
+{
+    m_fontFileEdit->clear();
 }

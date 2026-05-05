@@ -26,6 +26,9 @@ signals:
     void openScreenRequested(const QString &screenId);
     // 列表发生变化（新增/删除/改名/排序），携带最新列表
     void screensChanged(const QList<ScreenData> &screens);
+    // 新增/删除请求（由 MainWindow 通过 Undo 命令执行）
+    void addScreenRequested(const QString &name);
+    void deleteScreenRequested(const QString &screenId);
 
 public slots:
     void onAddScreen();
@@ -35,6 +38,7 @@ public slots:
 
 private:
     void rebuildOrderField();
+    void updateButtonState();
 
     QListWidget  *m_list       = nullptr;
     QPushButton  *m_addBtn     = nullptr;

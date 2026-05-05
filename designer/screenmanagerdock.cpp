@@ -49,6 +49,14 @@ ScreenManagerDock::ScreenManagerDock(QWidget *parent)
                 rebuildOrderField();
                 emit screensChanged(screens());
             });
+    // 行数或选中变化时刷新按钮启用状态
+    connect(m_list->model(), &QAbstractItemModel::rowsInserted,
+            this, [this]() { updateButtonState(); });
+    connect(m_list->model(), &QAbstractItemModel::rowsRemoved,
+            this, [this]() { updateButtonState(); });
+    connect(m_list, &QListWidget::itemSelectionChanged,
+            this, &ScreenManagerDock::updateButtonState);
+    updateButtonState();
 }
 
 void ScreenManagerDock::setScreens(const QList<ScreenData> &screenList)
@@ -91,20 +99,8 @@ void ScreenManagerDock::onAddScreen()
         QStringLiteral("Screen%1").arg(m_list->count() + 1), &ok);
     if (!ok || name.trimmed().isEmpty()) return;
 
-    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    const int order  = m_list->count();
-
-    auto *item = new QListWidgetItem(
-        QStringLiteral("%1. %2").arg(order + 1).arg(name.trimmed()));
-    item->setData(Qt::UserRole,     id);
-    item->setData(Qt::UserRole + 1, name.trimmed());
-    item->setFlags(item->flags() | Qt::ItemIsEditable);
-    m_list->addItem(item);
-    m_list->setCurrentItem(item);
-
-    rebuildOrderField();
-    emit screensChanged(screens());
-    emit openScreenRequested(id);
+    // 实际新增逻辑由 MainWindow 通过 Undo 命令执行
+    emit addScreenRequested(name.trimmed());
 }
 
 void ScreenManagerDock::onDeleteScreen()
@@ -112,15 +108,21 @@ void ScreenManagerDock::onDeleteScreen()
     QListWidgetItem *item = m_list->currentItem();
     if (!item) return;
     if (m_list->count() <= 1) {
-        QMessageBox::information(this, tr("提示"), tr("至少保留一个图页。"));
+        QMessageBox::information(this, tr("提示"), tr("至少保留一个图页，无法删除。"));
         return;
     }
-    const QString id = item->data(Qt::UserRole).toString();
-    delete m_list->takeItem(m_list->row(item));
-    rebuildOrderField();
-    emit screensChanged(screens());
-    // 通知主窗口关闭对应 tab（用 openScreenRequested 携带空字符串表示删除）
-    emit openScreenRequested(QStringLiteral("__delete__:") + id);
+    const QString id   = item->data(Qt::UserRole).toString();
+    const QString name = item->data(Qt::UserRole + 1).toString();
+
+    const auto ret = QMessageBox::question(
+        this, tr("确认删除"),
+        tr("确定要删除图页 \"%1\" 吗？此操作可通过撤销恢复。").arg(name),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
+    // 实际删除逻辑由 MainWindow 通过 Undo 命令执行
+    emit deleteScreenRequested(id);
 }
 
 void ScreenManagerDock::onItemDoubleClicked(QListWidgetItem *item)
@@ -150,4 +152,12 @@ void ScreenManagerDock::rebuildOrderField()
         item->setText(QStringLiteral("%1. %2").arg(i + 1).arg(name));
     }
     m_blockSignals = false;
+}
+
+void ScreenManagerDock::updateButtonState()
+{
+    if (!m_deleteBtn) return;
+    // 只有当列表中存在多个图页且有当前选中项时才允许删除
+    const bool canDelete = (m_list->count() > 1) && (m_list->currentItem() != nullptr);
+    m_deleteBtn->setEnabled(canDelete);
 }

@@ -32,6 +32,34 @@ public:
                                  const QString &luaPath,
                                  QString *errorMessage = nullptr);
 
+    // ---- 工程目录布局 ----
+    /**
+     * @brief 工程数据 JSON 文件名（位于工程目录内）
+     *        约定：<projectName>.qlvgl.json
+     */
+    static QString projectJsonFileName(const QString &projectName);
+
+    /**
+     * @brief 编译产物 Lua 入口文件名（位于工程目录内）
+     *        约定：<projectName>.lua
+     */
+    static QString projectLuaFileName(const QString &projectName);
+
+    /**
+     * @brief 把 designer 的运行时 lua 资源（runtime.lua / common / widgets）
+     *        部署到工程目录，供仿真器 require。
+     *
+     * 运行时来源（按顺序探测）：
+     *   1. <applicationDirPath>/lua          （发布场景，由 designer.pro 的 POST_LINK 拷入）
+     *   2. <applicationDirPath>/../lua / ../../lua  （开发期回退）
+     *
+     * 已存在的 widgets/common 目录默认不覆盖（避免覆盖用户的本地修改），
+     * 仅当 overwriteWidgets=true 时全量覆盖。
+     */
+    static bool deployRuntime(const QString &projectDir,
+                              bool overwriteWidgets = false,
+                              QString *errorMessage = nullptr);
+
 private:
     static QJsonObject screenToJson  (const ScreenData &screen);
     static ScreenData  screenFromJson(const QJsonObject &obj);

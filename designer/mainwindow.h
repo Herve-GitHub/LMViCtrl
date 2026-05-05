@@ -21,6 +21,7 @@ class QMenu;
 class QAction;
 class QTabWidget;
 class QStackedWidget;
+class QUndoStack;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -240,6 +241,15 @@ private slots:
     void onScreensChanged(const QList<ScreenData> &screens);
     void onTabCloseRequested(int index);
     void onOpenRecentProject(const QString &path);
+    // 来自 ScreenManagerDock 的新增/删除请求（走 Undo 命令）
+    void onScreenAddRequested(const QString &name);
+    void onScreenDeleteRequested(const QString &screenId);
+
+public:
+    // ===== 供 Undo 命令调用的内部接口（不要在其他地方直接调用） =====
+    void cmdAddScreen(const ScreenData &screen, int order);
+    void cmdRemoveScreen(const QString &screenId);
+    ScreenData snapshotScreen(const QString &screenId) const;
 
 private:
     Ui::MainWindow    *ui;
@@ -288,5 +298,18 @@ private:
     QString generateUniqueWidgetName(const QString &baseName) const;
     void    installSceneNameGenerator(CanvasScene *scene);
     void    ensureInstanceNamesAssigned();
+
+    // ===== Undo / Redo 跨多 stack 的链式调度 =====
+    QUndoStack              *m_projectUndoStack = nullptr;
+    QList<QUndoStack *>      m_undoChain;        // 按时间顺序记录每次 push 的 stack
+    QList<QUndoStack *>      m_redoChain;        // 与 m_undoChain 对偶
+    QHash<QUndoStack *, int> m_stackLastIndex;
+    bool                     m_inRedoOp = false; // 调用 stack->redo() 时设为 true
+    void registerUndoStack(QUndoStack *stack);
+    void onAnyStackIndexChanged(QUndoStack *stack, int newIdx);
+    void resetUndoChains();
+
+public:
+    QUndoStack *projectUndoStack() const { return m_projectUndoStack; }
 };
 #endif // MAINWINDOW_H

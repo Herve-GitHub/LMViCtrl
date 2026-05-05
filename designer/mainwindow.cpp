@@ -14,6 +14,7 @@
 #include <QMenuBar>
 #include <QStackedWidget>
 #include <QTabWidget>
+#include <QUndoStack>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -25,6 +26,10 @@ MainWindow::MainWindow(QWidget *parent)
     qApp->setFont(font);
     applyDarkTheme();
     setupMenus();
+
+    // 项目级 Undo 栈（图页新增/删除命令）
+    m_projectUndoStack = new QUndoStack(this);
+    registerUndoStack(m_projectUndoStack);
 
     // 图页管理器（停靠在左侧上方）
     m_screenManager = new ScreenManagerDock(this);
@@ -42,6 +47,10 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onScreenManagerOpenRequested);
     connect(m_screenManager, &ScreenManagerDock::screensChanged,
             this, &MainWindow::onScreensChanged);
+    connect(m_screenManager, &ScreenManagerDock::addScreenRequested,
+            this, &MainWindow::onScreenAddRequested);
+    connect(m_screenManager, &ScreenManagerDock::deleteScreenRequested,
+            this, &MainWindow::onScreenDeleteRequested);
 
     // 多图页 TabWidget
     m_tabWidget = new QTabWidget;
@@ -82,6 +91,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    // 在成员变量析构前，主动断开所有 QUndoStack 的 destroyed 连接，
+    // 防止 ~QObject() 销毁子对象时触发访问已销毁成员的回调
+    resetUndoChains();
     delete ui;
 }
 void MainWindow::applyDarkTheme()

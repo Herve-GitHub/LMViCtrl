@@ -1,7 +1,8 @@
 TEMPLATE = subdirs
 SUBDIRS += \
-    #sdl2 \
-    #LvglLuaBinding \
+    sdl2 \
+    LvglLuaBinding \
+    simulator\
     designer
 	
 CONFIG += ordered \

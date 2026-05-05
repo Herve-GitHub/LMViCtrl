@@ -529,13 +529,13 @@ void NewProjectDialog::validate()
     }
     if (error.isEmpty()) {
         const QString loc = m_locationEdit->text().trimmed();
-        if (!loc.isEmpty()) {
-            const QString projFile = loc + QLatin1Char('/') + name
-                                    + QStringLiteral(".json");
-            if (QDir(loc).exists(name + QStringLiteral(".json"))
-                || QDir(loc).exists(name)) {
-                error = tr("该路径下已存在同名工程，请修改工程名称。");
-            }
+        if (loc.isEmpty()) {
+            error = tr("请选择存储路径。");
+        } else if (!QDir(loc).exists()) {
+            error = tr("存储路径不存在，请选择有效目录。");
+        } else if (QDir(loc).exists(name)) {
+            // 工程现以同名子目录形式存放，目录已存在视为冲突
+            error = tr("该路径下已存在同名目录，请修改工程名称。");
         }
     }
     m_errorLabel->setVisible(!error.isEmpty());
@@ -545,11 +545,10 @@ void NewProjectDialog::validate()
 QString NewProjectDialog::uniqueProjectName(const QString &base) const
 {
     const QString loc = m_locationEdit->text().trimmed();
-    if (loc.isEmpty()) return base;
+    if (loc.isEmpty() || !QDir(loc).exists()) return base;
     QString name = base;
     int i = 1;
-    while (QDir(loc).exists(name + QStringLiteral(".json"))
-           || QDir(loc).exists(name)) {
+    while (QDir(loc).exists(name)) {
         name = base + QString::number(i++);
     }
     return name;
