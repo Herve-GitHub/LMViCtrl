@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneHoverEvent>
@@ -13,6 +14,76 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QStyleOptionGraphicsItem>
+
+// ---------------------------------------------------------------------------
+// 工程字体（全局）
+//   - 工程属性中配置的字体文件被加载到 QFontDatabase 中，
+//     之后所有 CanvasItem 在绘制文字时使用该字体作为基础字体。
+//   - 各处只在该字体上覆盖 pointSizeF / bold 等局部属性，从而让用户
+//     选择的字体自动应用到所有组态元素。
+// ---------------------------------------------------------------------------
+namespace {
+QFont   g_projectFont;       // 默认即 Qt 系统字体
+int     g_projectFontId = -1; // QFontDatabase::addApplicationFont 返回值
+QString g_projectFontPath;   // 当前已加载的字体文件绝对路径
+}
+
+void CanvasItem::setProjectFont(const QString &fontFile,
+                                int            defaultSize,
+                                const QString &projectDir)
+{
+    // 先卸载旧字体
+    auto unload = []() {
+        if (g_projectFontId >= 0) {
+            QFontDatabase::removeApplicationFont(g_projectFontId);
+            g_projectFontId = -1;
+        }
+        g_projectFontPath.clear();
+    };
+
+    QFont f; // 默认系统字体
+    if (defaultSize > 0)
+        f.setPointSize(defaultSize);
+
+    if (fontFile.isEmpty()) {
+        unload();
+        g_projectFont = f;
+        return;
+    }
+
+    // 解析为绝对路径（工程相对路径优先）
+    QString absPath = fontFile;
+    if (QFileInfo(absPath).isRelative()) {
+        if (!projectDir.isEmpty())
+            absPath = QDir(projectDir).absoluteFilePath(fontFile);
+        else
+            absPath = QFileInfo(fontFile).absoluteFilePath();
+    }
+
+    // 路径相同则无需重新加载
+    if (absPath != g_projectFontPath) {
+        unload();
+        if (QFile::exists(absPath)) {
+            const int id = QFontDatabase::addApplicationFont(absPath);
+            if (id >= 0) {
+                g_projectFontId  = id;
+                g_projectFontPath = absPath;
+            }
+        }
+    }
+
+    if (g_projectFontId >= 0) {
+        const QStringList fams = QFontDatabase::applicationFontFamilies(g_projectFontId);
+        if (!fams.isEmpty())
+            f.setFamily(fams.first());
+    }
+    g_projectFont = f;
+}
+
+const QFont &CanvasItem::projectFont()
+{
+    return g_projectFont;
+}
 
 // ---------------------------------------------------------------------------
 // 加载 widget 预览图（带缓存）
@@ -1747,6 +1818,8 @@ void CanvasItem::paint(QPainter *p,
 
     // --- 透明矩形框 + widget 预览图 ---
     p->save();
+    // 使用工程级字体作为所有文字绘制的基础字体（用户在工程属性中配置）
+    p->setFont(CanvasItem::projectFont());
     p->setRenderHint(QPainter::SmoothPixmapTransform, true);
     p->setRenderHint(QPainter::Antialiasing,           true);
 

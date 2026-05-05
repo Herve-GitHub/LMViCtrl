@@ -1,6 +1,7 @@
 #pragma once
 #include <QGraphicsObject>
 #include <QColor>
+#include <QFont>
 #include "WidgetMeta.h"
 
 // 8 个缩放控制点方向
@@ -18,6 +19,14 @@ public:
     explicit CanvasItem(const WidgetInstance &inst,
                         const WidgetMeta     &meta,
                         QGraphicsItem        *parent = nullptr);
+
+    // ----- 工程字体（全局，应用到所有画布元素的文字绘制）-----
+    // fontFile 既可为绝对路径，也可为相对工程目录的相对路径（如 "fonts/MyFont.ttf"）。
+    // 为空时将清除工程字体，回退到默认字体。
+    static void  setProjectFont(const QString &fontFile,
+                                int            defaultSize,
+                                const QString &projectDir = QString());
+    static const QFont &projectFont();
 
     const WidgetInstance &instance() const { return m_inst; }
 

@@ -8,6 +8,7 @@
 
 #include "mainwindow.h"
 #include "canvasscene.h"
+#include "canvasitem.h"
 #include "newprojectdialog.h"
 #include "projectmanager.h"
 #include "projectpropertiesdialog.h"
@@ -145,6 +146,16 @@ void MainWindow::applyProjectToTabs()
 
     // 为旧工程/缺失 name 的实例补一个唯一名
     ensureInstanceNamesAssigned();
+
+    // 应用工程字体（影响所有画布元素的文字绘制）
+    {
+        const QString projDir = m_projectFilePath.isEmpty()
+            ? QString()
+            : QFileInfo(m_projectFilePath).absolutePath();
+        CanvasItem::setProjectFont(m_project.font.file,
+                                   m_project.font.size,
+                                   projDir);
+    }
 
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
@@ -488,6 +499,8 @@ void MainWindow::onCloseProject()
     m_projectFilePath.clear();
     if (m_screenManager)
         m_screenManager->setScreens({});
+    // 清除工程字体
+    CanvasItem::setProjectFont(QString(), 0);
     setProjectOpen(false);
 }
 
@@ -564,12 +577,25 @@ void MainWindow::onProjectProperties()
         (newData.target.width  != m_project.target.width ||
          newData.target.height != m_project.target.height);
 
+    const bool fontChanged =
+        (newData.font.file != m_project.font.file ||
+         newData.font.size != m_project.font.size);
+
     m_project = newData;
     m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
 
     if (resolutionChanged) {
         for (ScreenTab *tab : std::as_const(m_openTabs))
             tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
+    }
+
+    if (fontChanged) {
+        CanvasItem::setProjectFont(m_project.font.file,
+                                   m_project.font.size,
+                                   projectDir);
+        for (ScreenTab *tab : std::as_const(m_openTabs)) {
+            if (tab->scene()) tab->scene()->update();
+        }
     }
 
     updateWindowTitle();
