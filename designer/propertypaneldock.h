@@ -47,4 +47,7 @@ private:
 
     // 实时回填使用：name -> editor widget（只缓存 x/y/width/height）
     QHash<QString, QPointer<QWidget>> m_geometryEditors;
+
+    // 当本面板正在向场景推送属性变化时，避免回环触发面板重建（导致编辑器丢失焦点）
+    bool m_pushingValue = false;
 };

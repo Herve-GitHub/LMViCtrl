@@ -120,6 +120,8 @@ void PropertyPanelDock::onSceneSelectionChanged()
 void PropertyPanelDock::onInstanceChangedFromScene(const QString &instanceId)
 {
     if (instanceId != m_currentInstanceId) return;
+    // 当变化来源于本面板自身的编辑器输入时，跳过重建以避免焦点丢失
+    if (m_pushingValue) return;
     // 重新拉取并刷新
     onSceneSelectionChanged();
 }
@@ -208,7 +210,9 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
         nameEdit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         connect(nameEdit, &QLineEdit::editingFinished, this, [this, nameEdit]() {
             if (!m_scene || m_currentInstanceId.isEmpty()) return;
+            m_pushingValue = true;
             m_scene->setInstanceName(m_currentInstanceId, nameEdit->text());
+            m_pushingValue = false;
         });
         m_propsForm->addRow(new QLabel(tr("name")), nameEdit);
     }
@@ -324,7 +328,9 @@ QWidget *PropertyPanelDock::makeEditor(const PropertyMeta &pm, const QVariant &v
     const QString key = pm.name;
     auto pushValue = [this, key](const QVariant &v) {
         if (!m_scene || m_currentInstanceId.isEmpty()) return;
+        m_pushingValue = true;
         m_scene->setInstanceProperty(m_currentInstanceId, key, v);
+        m_pushingValue = false;
     };
 
     const QString type = pm.type.toLower();
