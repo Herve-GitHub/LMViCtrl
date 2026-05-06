@@ -67,6 +67,11 @@ void setupSimulatorLogging(const QString &scriptPath)
 
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_WIN
+    // 将控制台设置为 UTF-8 以支持中文输出
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("QtLvglSimu"));
     QCoreApplication::setApplicationVersion(QStringLiteral("1.0.0"));
