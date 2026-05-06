@@ -43,7 +43,7 @@ List.__widget_meta = {
     { group = "布局", name = "height", type = "number", default = 220, label = "高度", unit = "px", min = 40, max = 4096 },
 
     { group = "数据", name = "items", type = "string",
-      default = "首页\n设置\n关于\n退出",
+      default = "",
       label = "条目(每行一项)", multiline = true, lines = 6,
       description = "每行一个条目；若以 [#] 开头将作为分组标题" },
     { group = "数据", name = "selected_index", type = "number", default = 0,

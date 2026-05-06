@@ -69,7 +69,7 @@ Chart.__widget_meta = {
 
     -- 数据序列
     { group = "数据", name = "series1_data", type = "string",
-      default = "10,30,55,40,72,60,85,68",
+      default = "1",
       label = "序列1 数据(逗号分隔)", multiline = true, lines = 3, bindable = true },
     { group = "数据", name = "series1_color", type = "color", default = "#1976d2",
       label = "序列1 颜色" },

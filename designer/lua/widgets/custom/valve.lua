@@ -65,8 +65,6 @@ Valve.__widget_meta = {
       advanced = true },
 
     -- 行为
-    { group = "行为", name = "design_mode", type = "boolean", default = true,  label = "设计模式",
-      description = "勾选时点击控件不弹出确认对话框，也不会改变状态" },
     { group = "行为", name = "enabled",     type = "boolean", default = true,  label = "启用",
       bindable = true },
     { group = "行为", name = "visible",     type = "boolean", default = true,  label = "可见",
@@ -293,9 +291,7 @@ function Valve.new(parent, state)
     -- 内置点击：非设计模式弹出确认对话框
     local function on_internal_click()
       fire("clicked")
-      if not self.props.design_mode then
-        self:show_confirm_dialog()
-      end
+      self:show_confirm_dialog()
     end
     if self.container.add_event_cb and lv.EVENT_CLICKED then
       self.container:add_event_cb(on_internal_click, lv.EVENT_CLICKED, nil)
@@ -316,26 +312,22 @@ function Valve.new(parent, state)
   function self:get_angle() return self.props.angle end
 
   function self:open()
-    if self.props.design_mode then return end
     self:set_angle(self.props.open_angle)
     self.is_open = true
     fire("toggled", true)
   end
 
   function self:close()
-    if self.props.design_mode then return end
     self:set_angle(self.props.close_angle)
     self.is_open = false
     fire("toggled", false)
   end
 
   function self:toggle()
-    if self.props.design_mode then return end
     if self.is_open then self:close() else self:open() end
   end
 
   function self:show_confirm_dialog()
-    if self.props.design_mode then return end
     local scr = lv.scr_act and lv.scr_act() or nil
     if not scr then return end
 

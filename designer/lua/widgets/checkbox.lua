@@ -257,12 +257,22 @@ function Checkbox.new(parent, state)
     end
   end
 
+  local function apply_text(value)
+    if not self.cb then return end
+    value = value or ""
+    if self.cb.set_checkbox_text then
+      self.cb:set_checkbox_text(value)
+    elseif lv.checkbox_set_text then
+      lv.checkbox_set_text(self.cb, value)
+    elseif self.cb.set_text then
+      self.cb:set_text(value)
+    end
+  end
+
   -- ---------------- 创建 LVGL 对象 ----------------
   function self.draw()
     self.cb = lv.checkbox_create(parent)
-    if self.cb.set_text then
-      self.cb:set_text(self.props.text)
-    end
+    apply_text(self.props.text)
     self.cb:set_pos(self.props.x, self.props.y)
     if self.props.width and self.props.width > 0
        and self.props.height and self.props.height > 0 then
@@ -328,9 +338,7 @@ function Checkbox.new(parent, state)
     self.props[name] = value
 
     if name == "text" then
-      if self.cb and self.cb.set_text then
-        self.cb:set_text(value)
-      end
+      apply_text(value)
     elseif name == "color" then
       apply_text_color(common.colorToNumber(value, 0x000000))
     elseif name == "font_size" then
@@ -382,8 +390,12 @@ function Checkbox.new(parent, state)
   -- ---------------- 销毁：释放 LVGL 对象与回调 ----------------
   function self:destroy()
     self._cb_handles = {}
-    if self.cb and self.cb.del then
+    if self.cb and self.cb.delete then
+      self.cb:delete()
+    elseif self.cb and self.cb.del then
       self.cb:del()
+    elseif self.cb and lv.obj_delete then
+      lv.obj_delete(self.cb)
     elseif self.cb and lv.obj_del then
       lv.obj_del(self.cb)
     end

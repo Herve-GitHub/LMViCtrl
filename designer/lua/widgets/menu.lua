@@ -42,7 +42,7 @@ Menu.__widget_meta = {
     { group = "布局", name = "height", type = "number", default = 240, label = "高度", unit = "px", min = 60, max = 4096 },
 
     { group = "结构", name = "items", type = "string",
-      default = "通用\n显示\n声音\n网络\n关于",
+      default = "",
       label = "主菜单项(每行一项)", multiline = true, lines = 6 },
     { group = "结构", name = "selected_index", type = "number", default = 0,
       label = "选中项", min = 0, max = 9999, bindable = true },

@@ -47,6 +47,23 @@ LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void);
 LVGLLUABINDING_API int lvgl_simulator_run(const char * lua_script_path,
                                           int hor_res, int ver_res,
                                           const char * window_title);
+
+/**
+ * @brief Render a Lua widget module with a real offscreen LVGL display.
+ *
+ * The output buffer uses Qt/QImage::Format_ARGB32 byte order on little-endian
+ * platforms: B, G, R, A per pixel.
+ */
+LVGLLUABINDING_API int lvgl_lua_render_widget_to_argb32(const char * lua_widget_path,
+                                                        const char * state_json,
+                                                        const char * font_path,
+                                                        int font_size,
+                                                        int width,
+                                                        int height,
+                                                        unsigned char * out_argb32,
+                                                        int out_stride,
+                                                        char * error_buf,
+                                                        int error_buf_size);
 #ifdef __cplusplus
 }
 #endif

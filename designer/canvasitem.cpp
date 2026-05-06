@@ -1,4 +1,5 @@
 #include "canvasitem.h"
+#include "lvglpreviewrenderer.h"
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -10,6 +11,8 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneHoverEvent>
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -26,6 +29,7 @@ namespace {
 QFont   g_projectFont;       // 默认即 Qt 系统字体
 int     g_projectFontId = -1; // QFontDatabase::addApplicationFont 返回值
 QString g_projectFontPath;   // 当前已加载的字体文件绝对路径
+int     g_projectFontSize = 16;
 }
 
 void CanvasItem::setProjectFont(const QString &fontFile,
@@ -42,6 +46,7 @@ void CanvasItem::setProjectFont(const QString &fontFile,
     };
 
     QFont f; // 默认系统字体
+    g_projectFontSize = defaultSize > 0 ? defaultSize : 16;
     if (defaultSize > 0)
         f.setPointSize(defaultSize);
 
@@ -83,6 +88,16 @@ void CanvasItem::setProjectFont(const QString &fontFile,
 const QFont &CanvasItem::projectFont()
 {
     return g_projectFont;
+}
+
+QString CanvasItem::projectFontFilePath()
+{
+    return g_projectFontPath;
+}
+
+int CanvasItem::projectFontSize()
+{
+    return g_projectFontSize;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +145,20 @@ static QPixmap loadWidgetPixmap(const WidgetMeta &meta)
     }
     cache.insert(cacheKey, pix);
     return pix;
+}
+
+static QString lvglPreviewKey(const WidgetMeta &meta, const WidgetInstance &inst)
+{
+    QJsonObject props;
+    for (auto it = inst.properties.cbegin(); it != inst.properties.cend(); ++it)
+        props.insert(it.key(), QJsonValue::fromVariant(it.value()));
+
+    const QFileInfo luaFi(meta.luaFilePath);
+    return meta.luaFilePath
+        + QLatin1Char('|') + QString::number(luaFi.exists() ? luaFi.lastModified().toMSecsSinceEpoch() : 0)
+        + QLatin1Char('|') + QString::number(inst.width)
+        + QLatin1Char('x') + QString::number(inst.height)
+        + QLatin1Char('|') + QString::fromUtf8(QJsonDocument(props).toJson(QJsonDocument::Compact));
 }
 
 // ---------------------------------------------------------------------------
@@ -283,8 +312,21 @@ void CanvasItem::paint(QPainter *p,
     p->setRenderHint(QPainter::Antialiasing,           true);
 
     bool painted = false;
-    // render_mode == "custom" 优先走 draw_hints 通用绘制
-    if (m_meta.renderMode == QLatin1String("custom") && !m_meta.drawHints.isEmpty()) {
+
+    // Lua 脚本控件优先使用真实 LVGL 离屏渲染；失败时再走 draw_hints/图片降级。
+    if (!m_meta.luaFilePath.isEmpty()) {
+        const QString key = lvglPreviewKey(m_meta, m_inst);
+        if (key != m_lvglPreviewKey) {
+            m_lvglPreviewKey = key;
+            m_lvglPreview = LvglPreviewRenderer::renderWidget(m_meta, m_inst, m_inst.width, m_inst.height);
+        }
+        if (!m_lvglPreview.isNull()) {
+            p->drawImage(body, m_lvglPreview);
+            painted = true;
+        }
+    }
+
+    if (!painted && !m_meta.drawHints.isEmpty()) {
         painted = m_drawHints.paintWithDrawHints(p, body, m_inst, m_meta);
     }
     if (!painted) {
@@ -293,10 +335,6 @@ void CanvasItem::paint(QPainter *p,
             p->drawPixmap(body, pix, QRectF(pix.rect()));
             painted = true;
         }
-    }
-    // builtin / image 且有 draw_hints 时，也允许叠加绘制以实时反映属性（可选）
-    if (!painted && !m_meta.drawHints.isEmpty()) {
-        painted = m_drawHints.paintWithDrawHints(p, body, m_inst, m_meta);
     }
     if (!painted) {
         // 占位虚线框

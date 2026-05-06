@@ -49,7 +49,7 @@ Roller.__widget_meta = {
 
     -- 数据
     { group = "数据", name = "options", type = "string",
-      default = "Jan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nOct\nNov\nDec",
+      default = "1",
       label = "选项列表", multiline = true, lines = 8,
       description = "每行一个选项" },
     { group = "数据", name = "selected", type = "number", default = 0, label = "选中索引",

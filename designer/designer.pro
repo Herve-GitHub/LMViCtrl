@@ -31,7 +31,8 @@ SOURCES += \
     screenmanagerdock.cpp \
     welcomewidget.cpp \
     newprojectdialog.cpp \
-    drawHints.cpp
+    drawHints.cpp \
+    lvglpreviewrenderer.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -48,7 +49,8 @@ HEADERS += \
     screenmanagerdock.h \
     welcomewidget.h \
     newprojectdialog.h \
-    drawHints.h
+    drawHints.h \
+    lvglpreviewrenderer.h
 
 FORMS += \
     mainwindow.ui

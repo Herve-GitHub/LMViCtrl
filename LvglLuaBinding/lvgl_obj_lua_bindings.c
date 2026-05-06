@@ -473,10 +473,14 @@ static int l_obj_set_text(lua_State* L) {
     const char* text = luaL_checkstring(L, 2);
     if (obj) {
         // Check object type and call appropriate function
-        if (lv_obj_check_type(obj, &lv_textarea_class)) {
+        if (lv_obj_check_type(obj, &lv_checkbox_class)) {
+            lv_checkbox_set_text(obj, text);
+        } else if (lv_obj_check_type(obj, &lv_textarea_class)) {
             lv_textarea_set_text(obj, text);
-        } else {
+        } else if (lv_obj_check_type(obj, &lv_label_class)) {
             lv_label_set_text(obj, text);
+        } else {
+            luaL_error(L, "set_text is not supported for this LVGL object type");
         }
     }
     return 0;
@@ -488,6 +492,9 @@ static int l_obj_get_text(lua_State* L) {
     if (obj) {
         if (lv_obj_check_type(obj, &lv_textarea_class)) {
             const char* text = lv_textarea_get_text(obj);
+            lua_pushstring(L, text ? text : "");
+        } else if (lv_obj_check_type(obj, &lv_checkbox_class)) {
+            const char* text = lv_checkbox_get_text(obj);
             lua_pushstring(L, text ? text : "");
         } else if (lv_obj_check_type(obj, &lv_label_class)) {
             const char* text = lv_label_get_text(obj);
@@ -772,6 +779,7 @@ static const luaL_Reg lv_obj_methods[] = {
     {"set_flex_align", l_obj_set_flex_align},
     {"clear_layout", l_obj_clear_layout},
     {"delete", l_obj_delete},
+    {"del", l_obj_delete},
     {"get_child_count", l_obj_get_child_count},
     {"get_child", l_obj_get_child},
     {"get_parent", l_obj_get_parent},

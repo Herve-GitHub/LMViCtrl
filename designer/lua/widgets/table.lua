@@ -58,7 +58,7 @@ Table.__widget_meta = {
       label = "列宽(逗号分隔)", description = "例如 80,120,60；空表示均分",
       advanced = true },
     { group = "数据", name = "data",        type = "string",
-      default = "标题1,标题2,标题3\n行1A,行1B,行1C\n行2A,行2B,行2C\n行3A,行3B,行3C",
+      default = "",
       label = "单元格内容", multiline = true, lines = 6,
       description = "每行用换行分隔，单元格用半角逗号分隔" },
 

@@ -1,4 +1,4 @@
-﻿#include "drawHints.h"
+#include "drawHints.h"
 #include <qpainterpath.h>
 #include "canvasitem.h"
 // ---------------------------------------------------------------------------

@@ -48,7 +48,7 @@ Dropdown.__widget_meta = {
       min = 16, max = 4096 },
 
     -- 数据
-    { group = "数据", name = "options", type = "string", default = "Option 1\nOption 2\nOption 3",
+    { group = "数据", name = "options", type = "string", default = "Option 1",
       label = "选项列表", multiline = true, lines = 6,
       description = "每行一个选项" },
     { group = "数据", name = "selected", type = "number", default = 0, label = "选中索引",

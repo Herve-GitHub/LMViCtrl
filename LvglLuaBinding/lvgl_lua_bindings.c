@@ -348,6 +348,16 @@ static int l_lv_checkbox_create(lua_State* L) {
     return 1;
 }
 
+// lv.checkbox_set_text(obj, text)
+static int l_lv_checkbox_set_text(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+    if (obj && lv_obj_check_type(obj, &lv_checkbox_class)) {
+        lv_checkbox_set_text(obj, text);
+    }
+    return 0;
+}
+
 // lv.dropdown_create(parent)
 static int l_lv_dropdown_create(lua_State* L) {
     push_lv_obj(L, lv_dropdown_create(check_lv_obj(L, 1)));
@@ -405,6 +415,22 @@ static int l_led_set_color(lua_State* L) {
         lv_led_set_color(obj, lv_color_hex(color_hex));
     }
     return 0;
+}
+
+// ========== CHECKBOX methods ==========
+static int l_checkbox_set_text(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o && lv_obj_check_type(o, &lv_checkbox_class)) {
+        lv_checkbox_set_text(o, luaL_checkstring(L, 2));
+    }
+    return 0;
+}
+
+static int l_checkbox_get_text(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    const char* text = (o && lv_obj_check_type(o, &lv_checkbox_class)) ? lv_checkbox_get_text(o) : "";
+    lua_pushstring(L, text ? text : "");
+    return 1;
 }
 
 // led:set_brightness(b)  b: 0..255
@@ -738,6 +764,9 @@ static const luaL_Reg lv_widget_extra_methods[] = {
     // label
     {"set_long_mode",          l_label_set_long_mode},
     {"set_recolor",            l_label_set_recolor},
+    // checkbox
+    {"set_checkbox_text",      l_checkbox_set_text},
+    {"get_checkbox_text",      l_checkbox_get_text},
     // list
     {"clean",                  l_list_clean},
     {"add_text",               l_list_add_text},
@@ -966,6 +995,7 @@ static const luaL_Reg lvgl_funcs[] = {
     {"textarea_create", l_lv_textarea_create},
     {"textarea_get_text", l_lv_textarea_get_text},
     {"checkbox_create", l_lv_checkbox_create},
+    {"checkbox_set_text", l_lv_checkbox_set_text},
     {"dropdown_create", l_lv_dropdown_create},
     {"slider_create", l_lv_slider_create},
     {"chart_create", l_lv_chart_create},

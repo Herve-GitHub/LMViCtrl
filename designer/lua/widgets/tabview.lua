@@ -42,7 +42,7 @@ TabView.__widget_meta = {
     { group = "布局", name = "height", type = "number", default = 220, label = "高度", unit = "px", min = 60, max = 4096 },
 
     { group = "结构", name = "tabs", type = "string",
-      default = "标签1\n标签2\n标签3",
+      default = "",
       label = "标签(每行一项)", multiline = true, lines = 4 },
     { group = "结构", name = "current_tab", type = "number", default = 0,
       label = "当前标签", min = 0, max = 64, bindable = true },

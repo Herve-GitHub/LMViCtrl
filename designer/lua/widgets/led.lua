@@ -106,6 +106,13 @@ function Led.new(parent, state)
 
   self._cb_handles = {}
 
+  local function clamp_brightness(value)
+    value = tonumber(value) or 0
+    if value < 0 then return 0 end
+    if value > 255 then return 255 end
+    return math.floor(value)
+  end
+
   local function apply_color()
     if self.led and self.led.set_color then
       self.led:set_color(common.colorToNumber(self.props.color, 0x22cc44))
@@ -116,11 +123,41 @@ function Led.new(parent, state)
     -- 熄灭态等价于亮度为 LV_LED_BRIGHT_MIN(80)；点亮态用 brightness
     local b
     if self.props.on then
-      b = self.props.brightness or 255
+      b = clamp_brightness(self.props.brightness or 255)
     else
       b = lv.LED_BRIGHT_MIN or 80
     end
     if self.led.set_brightness then self.led:set_brightness(b) end
+  end
+  local function apply_glow()
+    if not self.led then return end
+
+    local part = 0
+    local brightness = clamp_brightness(self.props.brightness or 255)
+    local strength = brightness / 255
+    local size = math.max(self.props.width or 32, self.props.height or 32)
+    local enabled = self.props.on and self.props.glow and brightness > 0
+
+    if enabled then
+      if self.led.set_style_shadow_width then
+        self.led:set_style_shadow_width(math.max(4, math.floor(size * 0.45)), part)
+      end
+      if self.led.set_style_shadow_color then
+        self.led:set_style_shadow_color(common.colorToNumber(self.props.color, 0x22cc44), part)
+      end
+      if self.led.set_style_shadow_opa then
+        self.led:set_style_shadow_opa(math.floor(180 * strength), part)
+      end
+      if self.led.set_style_shadow_spread then
+        self.led:set_style_shadow_spread(math.max(1, math.floor(size * 0.08)), part)
+      end
+      if self.led.set_style_shadow_offset_x then self.led:set_style_shadow_offset_x(0, part) end
+      if self.led.set_style_shadow_offset_y then self.led:set_style_shadow_offset_y(0, part) end
+    else
+      if self.led.set_style_shadow_width then self.led:set_style_shadow_width(0, part) end
+      if self.led.set_style_shadow_opa then self.led:set_style_shadow_opa(0, part) end
+      if self.led.set_style_shadow_spread then self.led:set_style_shadow_spread(0, part) end
+    end
   end
   local function apply_shape()
     -- LVGL 没有原生方/圆切换；通过 radius 模拟：圆形=圆角、方形=0
@@ -148,6 +185,7 @@ function Led.new(parent, state)
     apply_color()
     apply_brightness()
     apply_shape()
+    apply_glow()
     apply_visible()
   end
   self.draw()
@@ -178,13 +216,14 @@ function Led.new(parent, state)
 
   function self:set_property(name, value)
     self.props[name] = value
-    if     name == "color"       then apply_color()
-    elseif name == "on" or name == "brightness" then apply_brightness()
+    if     name == "color"       then apply_color(); apply_glow()
+    elseif name == "on" or name == "brightness" then apply_brightness(); apply_glow()
     elseif name == "shape"       then apply_shape()
     elseif name == "x" or name == "y" then
       if self.led then self.led:set_pos(self.props.x, self.props.y) end
     elseif name == "width" or name == "height" then
-      if self.led then self.led:set_size(self.props.width, self.props.height); apply_shape() end
+      if self.led then self.led:set_size(self.props.width, self.props.height); apply_shape(); apply_glow() end
+    elseif name == "glow"        then apply_glow()
     elseif name == "visible"     then apply_visible()
     end
     return true

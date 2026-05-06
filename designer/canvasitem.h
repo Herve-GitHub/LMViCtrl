@@ -2,6 +2,7 @@
 #include <QGraphicsObject>
 #include <QColor>
 #include <QFont>
+#include <QImage>
 #include "WidgetMeta.h"
 #include "drawHints.h"
 // 8 个缩放控制点方向
@@ -27,6 +28,8 @@ public:
                                 int            defaultSize,
                                 const QString &projectDir = QString());
     static const QFont &projectFont();
+    static QString projectFontFilePath();
+    static int     projectFontSize();
 
     const WidgetInstance &instance() const { return m_inst; }
 
@@ -73,6 +76,8 @@ private:
     WidgetInstance m_inst;
     WidgetMeta     m_meta;
     QPixmap        m_pixmap;
+    QImage         m_lvglPreview;
+    QString        m_lvglPreviewKey;
 
     HandlePos m_activeHandle   = HandlePos::None;
     QPointF   m_pressScenePos;
