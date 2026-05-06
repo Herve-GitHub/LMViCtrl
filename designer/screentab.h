@@ -20,7 +20,7 @@ public:
     CanvasScene *scene() const { return m_scene; }
     CanvasView  *view()  const { return m_view;  }
 
-    // 将当前画布内容同步回 ScreenData（widgets 字段）
+    // 将当前画布内容同步回 ScreenData
     void syncToScreen(ScreenData &screen) const;
 
 private:

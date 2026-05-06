@@ -7,13 +7,17 @@
 #include "canvasscene.h"
 #include "welcomewidget.h"
 #include <QAction>
+#include <QDateTime>
 #include <QDir>
+#include <QDockWidget>
 #include <QFont>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPlainTextEdit>
 #include <QStackedWidget>
 #include <QTabWidget>
+#include <QTextCursor>
 #include <QUndoStack>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -66,6 +70,8 @@ MainWindow::MainWindow(QWidget *parent)
     // 属性面板（停靠在右侧）
     m_propertyPanel = new PropertyPanelDock(this);
     addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
+
+        setupLogDock();
 
     // 欢迎页
     m_welcomeWidget = new WelcomeWidget;
@@ -128,8 +134,60 @@ QAction *MainWindow::addAction(QMenu *menu,
         action->setCheckable(true);
         action->setChecked(checked);
     }
+        connect(action, &QAction::triggered, this, [this, action](bool checked) {
+                QString actionText = action->text();
+                actionText.remove(QLatin1Char('&'));
+                if (action->isCheckable()) {
+                        appendLog(tr("菜单操作：%1（%2）")
+                                .arg(actionText, checked ? tr("开启") : tr("关闭")));
+                } else {
+                        appendLog(tr("菜单操作：%1").arg(actionText));
+                }
+        });
     menu->addAction(action);
     return action;
+}
+
+void MainWindow::setupLogDock()
+{
+        m_logDock = new QDockWidget(tr("日志"), this);
+        m_logDock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
+
+        m_logView = new QPlainTextEdit(m_logDock);
+        m_logView->setReadOnly(true);
+        m_logView->setMaximumBlockCount(1000);
+        m_logView->setLineWrapMode(QPlainTextEdit::NoWrap);
+        m_logView->setStyleSheet(QStringLiteral(
+                "QPlainTextEdit { background:#1e1e1e; color:#cccccc; border:0; }"));
+
+        m_logDock->setWidget(m_logView);
+        addDockWidget(Qt::BottomDockWidgetArea, m_logDock);
+        resizeDocks({m_logDock}, {140}, Qt::Vertical);
+        appendLog(tr("日志窗口已启动"));
+}
+
+void MainWindow::appendLog(const QString &message)
+{
+        if (!m_logView || message.isEmpty()) return;
+        const QString time = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        m_logView->appendPlainText(QStringLiteral("[%1] %2").arg(time, message));
+        m_logView->moveCursor(QTextCursor::End);
+}
+
+void MainWindow::connectSceneLogging(CanvasScene *scene, const QString &screenId)
+{
+        if (!scene) return;
+        connect(scene, &CanvasScene::operationLogged, this, [this, screenId](const QString &message) {
+                QString screenName;
+                for (const ScreenData &screen : std::as_const(m_project.screens)) {
+                        if (screen.id == screenId) {
+                                screenName = screen.name;
+                                break;
+                        }
+                }
+                if (screenName.isEmpty()) screenName = screenId;
+                appendLog(tr("画面[%1]：%2").arg(screenName, message));
+        });
 }
 
 void MainWindow::setupMenus()
@@ -139,16 +197,20 @@ void MainWindow::setupMenus()
 
     setupFileMenu();
     setupEditMenu();
+#if 0
     setupViewMenu();
     setupProjectMenu();
     setupDrawMenu();
     setupComponentMenu();
     setupCommunicationMenu();
+#endif
     setupRunMenu();
+#if 0
     setupToolsMenu();
     setupWindowMenu();
     setupLanguageMenu();
     setupHelpMenu();
+#endif
 }
 
 void MainWindow::setupFileMenu()
@@ -166,7 +228,8 @@ void MainWindow::setupFileMenu()
             &QAction::triggered, this, &MainWindow::onSave);
     connect(addAction(fileMenu, tr("另存为"), QKeySequence::SaveAs),
             &QAction::triggered, this, &MainWindow::onSaveAs);
-
+#if 0
+	//目前不需要导入导出工程功能，先隐藏相关菜单项
     QMenu *exportMenu = fileMenu->addMenu(tr("导出工程"));
     connect(addAction(exportMenu, tr("导出为 ZIP")),
             &QAction::triggered, this, &MainWindow::onExportZip);
@@ -177,6 +240,7 @@ void MainWindow::setupFileMenu()
 
     connect(addAction(fileMenu, tr("导入工程")),
             &QAction::triggered, this, &MainWindow::onImportProject);
+#endif
     fileMenu->addSeparator();
     connect(addAction(fileMenu, tr("工程属性")),
             &QAction::triggered, this, &MainWindow::onProjectProperties);
@@ -209,12 +273,14 @@ void MainWindow::setupEditMenu()
     connect(addAction(editMenu, tr("全选"), QKeySequence::SelectAll),
             &QAction::triggered, this, &MainWindow::onSelectAll);
     editMenu->addSeparator();
+#if 0
+	// 目前不需要查找替换功能，先隐藏相关菜单项
     connect(addAction(editMenu, tr("查找"), QKeySequence::Find),
             &QAction::triggered, this, &MainWindow::onFind);
     connect(addAction(editMenu, tr("替换"), QKeySequence::Replace),
             &QAction::triggered, this, &MainWindow::onReplace);
     editMenu->addSeparator();
-
+#endif
     QMenu *alignMenu = editMenu->addMenu(tr("对齐方式"));
     connect(addAction(alignMenu, tr("左对齐")),
             &QAction::triggered, this, &MainWindow::onAlignLeft);
@@ -235,6 +301,8 @@ void MainWindow::setupEditMenu()
 
 void MainWindow::setupViewMenu()
 {
+#if 0
+	//目前不需要视图相关功能，先隐藏相关菜单项
     QMenu *viewMenu = menuBar()->addMenu(tr("视图(&V)"));
 
     QMenu *toolbarMenu = viewMenu->addMenu(tr("工具栏"));
@@ -274,6 +342,7 @@ void MainWindow::setupViewMenu()
 
     connect(addAction(viewMenu, tr("全屏"), QKeySequence(Qt::Key_F11)),
             &QAction::triggered, this, &MainWindow::onFullScreen);
+#endif
 }
 
 void MainWindow::setupProjectMenu()
@@ -517,10 +586,14 @@ void MainWindow::setupRunMenu()
             &QAction::triggered, this, &MainWindow::onStartRun);
     connect(addAction(runMenu, tr("停止运行"), QKeySequence(Qt::Key_F6)),
             &QAction::triggered, this, &MainWindow::onStopRun);
+#if 0
     connect(addAction(runMenu, tr("暂停运行")),
             &QAction::triggered, this, &MainWindow::onPauseRun);
+#endif
     runMenu->addSeparator();
-
+    connect(addAction(runMenu, tr("编译工程"), QKeySequence(Qt::Key_F7)),
+        &QAction::triggered, this, &MainWindow::onCompileProject);
+#if 0
     QMenu *simMenu = runMenu->addMenu(tr("模拟运行"));
     connect(addAction(simMenu, tr("开始模拟")),
             &QAction::triggered, this, &MainWindow::onStartSimulate);
@@ -540,6 +613,7 @@ void MainWindow::setupRunMenu()
     runMenu->addSeparator();
     connect(addAction(runMenu, tr("运行参数设置")),
             &QAction::triggered, this, &MainWindow::onRunParameterSettings);
+#endif
 }
 
 void MainWindow::setupToolsMenu()

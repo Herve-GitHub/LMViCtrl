@@ -14,6 +14,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -96,6 +97,8 @@ void PropertyPanelDock::setCurrentScene(CanvasScene *scene)
                 this, &PropertyPanelDock::onInstanceChangedFromScene);
         connect(m_scene.data(), &CanvasScene::instanceGeometryChanged,
                 this, &PropertyPanelDock::onInstanceGeometryChangedFromScene);
+        connect(m_scene.data(), &CanvasScene::canvasChanged,
+            this, &PropertyPanelDock::onCanvasChangedFromScene);
     }
     onSceneSelectionChanged();
 }
@@ -106,6 +109,7 @@ void PropertyPanelDock::onSceneSelectionChanged()
 
     // 仅在单选时显示
     const auto sel = m_scene->selectedItems();
+    if (sel.isEmpty()) { buildCanvasPanel(); return; }
     if (sel.count() != 1) { clearPanel(); return; }
 
     auto *ci = qgraphicsitem_cast<CanvasItem*>(sel.first());
@@ -134,6 +138,12 @@ void PropertyPanelDock::onInstanceGeometryChangedFromScene(const QString &instan
     refreshGeometryEditors(inst);
 }
 
+void PropertyPanelDock::onCanvasChangedFromScene()
+{
+    if (!m_scene || m_pushingValue || !m_scene->selectedItems().isEmpty()) return;
+    buildCanvasPanel();
+}
+
 void PropertyPanelDock::refreshGeometryEditors(const WidgetInstance &inst)
 {
     auto setIfSpin = [](QWidget *w, int v) {
@@ -152,7 +162,7 @@ void PropertyPanelDock::refreshGeometryEditors(const WidgetInstance &inst)
     setIfSpin(m_geometryEditors.value(QStringLiteral("height")).data(), inst.height);
 }
 
-void PropertyPanelDock::clearPanel()
+void PropertyPanelDock::clearForms()
 {
     m_currentInstanceId.clear();
     m_geometryEditors.clear();
@@ -168,26 +178,58 @@ void PropertyPanelDock::clearPanel()
     };
     clearForm(m_metaForm);
     clearForm(m_propsForm);
+}
 
-    auto *placeholder = new QLabel(tr("（请选中单个控件）"), m_propsBox);
+void PropertyPanelDock::clearPanel()
+{
+    clearForms();
+
+    auto *placeholder = new QLabel(tr("（请选择单个控件，或点击空白处编辑画布）"), m_propsBox);
     placeholder->setStyleSheet("color: #888;");
     m_propsForm->addRow(placeholder);
+}
+
+void PropertyPanelDock::buildCanvasPanel()
+{
+    if (!m_scene) { clearPanel(); return; }
+
+    clearForms();
+
+    auto addReadOnly = [](QFormLayout *form, const QString &label, const QString &val) {
+        auto *le = new QLineEdit(val);
+        le->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        le->setReadOnly(true);
+        le->setStyleSheet("QLineEdit { background:#2a2a2a; color:#aaa; }");
+        form->addRow(new QLabel(label), le);
+    };
+
+    addReadOnly(m_metaForm, tr("对象"), tr("画布"));
+
+    const QSize size = m_scene->canvasSize();
+    addReadOnly(m_propsForm, tr("width"), QString::number(size.width()));
+    addReadOnly(m_propsForm, tr("height"), QString::number(size.height()));
+
+    auto *bgBtn = new QPushButton;
+    styleColorButton(bgBtn, m_scene->canvasBackgroundColor());
+    connect(bgBtn, &QPushButton::clicked, this, [this, bgBtn]() {
+        if (!m_scene) return;
+        const QColor cur(bgBtn->text());
+        const QColor picked = QColorDialog::getColor(
+            cur.isValid() ? cur : m_scene->canvasBackgroundColor(),
+            bgBtn, tr("选择画布背景色"), QColorDialog::ShowAlphaChannel);
+        if (!picked.isValid()) return;
+        styleColorButton(bgBtn, picked);
+        m_pushingValue = true;
+        m_scene->setCanvasBackgroundColor(picked);
+        m_pushingValue = false;
+    });
+    m_propsForm->addRow(new QLabel(tr("背景颜色")), bgBtn);
 }
 
 void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta &meta)
 {
     // 清空旧控件
-    auto clearForm = [](QFormLayout *form) {
-        while (form->count() > 0) {
-            QLayoutItem *item = form->takeAt(0);
-            if (!item) break;
-            if (QWidget *w = item->widget()) w->deleteLater();
-            delete item;
-        }
-    };
-    clearForm(m_metaForm);
-    clearForm(m_propsForm);
-    m_geometryEditors.clear();
+    clearForms();
     auto addReadOnly = [this](const QString &label, const QString &val) {
         auto *le = new QLineEdit(val);
         le->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);

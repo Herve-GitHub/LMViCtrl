@@ -187,6 +187,7 @@ void MainWindow::openScreenTab(const QString &screenId)
 
     // 安装名字生成器（拖入新组件时使用，确保工程内唯一）
     installSceneNameGenerator(tab->scene());
+    connectSceneLogging(tab->scene(), screenId);
 
     // 注册该图页的 undo 栈到链式调度
     if (tab->scene())
@@ -277,12 +278,16 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
 
     // 更新 m_project.screens（保留 widgets）
     QHash<QString, QList<WidgetInstance>> widgetMap;
-    for (const ScreenData &s : std::as_const(m_project.screens))
+    QHash<QString, QString> bgColorMap;
+    for (const ScreenData &s : std::as_const(m_project.screens)) {
         widgetMap.insert(s.id, s.widgets);
+        bgColorMap.insert(s.id, s.bgColor);
+    }
 
     m_project.screens.clear();
     for (ScreenData s : updatedScreens) {
         s.widgets = widgetMap.value(s.id);
+        s.bgColor = bgColorMap.value(s.id, s.bgColor);
         m_project.screens.append(s);
     }
 
@@ -912,12 +917,62 @@ void MainWindow::onCommLog() {}
 // 运行
 // ============================================================
 
-void MainWindow::onStartRun() {}
+void MainWindow::onStartRun() {
+    onStartSimulate();
+}
 
 void MainWindow::onStopRun() {}
 
 void MainWindow::onPauseRun() {}
+void MainWindow::onCompileProject()
+{
+    if (!m_projectOpen) {
+        QMessageBox::information(this, tr("启动编译"),
+            tr("请先打开或新建一个工程。"));
+        return;
+    }
+    if (m_projectFilePath.isEmpty()) {
+        QMessageBox::information(this, tr("启动编译"),
+            tr("当前工程尚未保存，请先保存到工程目录后再启动编译。"));
+        return;
+    }
 
+    // 1) 同步当前画布到工程数据并落盘
+    syncSceneToProject();
+    QString err;
+    if (!ProjectManager::saveToFile(m_project, m_projectFilePath, &err)) {
+        QMessageBox::warning(this, tr("启动编译"),
+            tr("保存工程失败：%1").arg(err));
+        return;
+    }
+
+    // 2) 推断工程目录与产物路径：<projectDir>/<name>.lua
+    const QFileInfo jsonFi(m_projectFilePath);
+    const QString projectDir = jsonFi.absolutePath();
+    const QString projectName =
+        m_project.name.isEmpty()
+        ? jsonFi.completeBaseName().section(QLatin1Char('.'), 0, 0)
+        : m_project.name;
+    const QString luaPath = projectDir + QLatin1Char('/')
+        + ProjectManager::projectLuaFileName(projectName);
+
+    // 3) 确保运行时已部署（若工程目录里 widgets/runtime 缺失则补齐）
+    if (!QFile::exists(projectDir + QStringLiteral("/runtime.lua"))) {
+        QString depErr;
+        if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
+            QMessageBox::warning(this, tr("启动编译"),
+                tr("部署运行时失败：%1").arg(depErr));
+            return;
+        }
+    }
+
+    // 4) 编译 JSON -> Lua
+    if (!ProjectManager::compileFileToLua(m_projectFilePath, luaPath, &err)) {
+        QMessageBox::warning(this, tr("启动编译"),
+            tr("编译为 Lua 失败：%1").arg(err));
+        return;
+    }
+}
 void MainWindow::onStartSimulate()
 {
     if (!m_projectOpen) {

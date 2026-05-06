@@ -26,9 +26,12 @@ private slots:
     void onSceneSelectionChanged();
     void onInstanceChangedFromScene(const QString &instanceId);
     void onInstanceGeometryChangedFromScene(const QString &instanceId);
+    void onCanvasChangedFromScene();
 
 private:
+    void clearForms();
     void clearPanel();
+    void buildCanvasPanel();
     void buildPanel(const WidgetInstance &inst, const WidgetMeta &meta);
     QWidget *makeEditor(const PropertyMeta &pm, const QVariant &value);
     // 仅刷新 x/y/width/height 编辑器的当前值（不重建面板）

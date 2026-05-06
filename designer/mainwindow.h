@@ -19,6 +19,8 @@ class MainWindow;
 }
 class QMenu;
 class QAction;
+class QDockWidget;
+class QPlainTextEdit;
 class QTabWidget;
 class QStackedWidget;
 class QUndoStack;
@@ -55,6 +57,9 @@ private:
                        const QKeySequence &shortcut = QKeySequence(),
                        bool checkable = false,
                        bool checked = false);
+    void setupLogDock();
+    void appendLog(const QString &message);
+    void connectSceneLogging(CanvasScene *scene, const QString &screenId);
 
 private slots:
     // ===== 文件 =====
@@ -192,6 +197,7 @@ private slots:
     void onStartRun();
     void onStopRun();
     void onPauseRun();
+	void onCompileProject();
     void onStartSimulate();
     void onSimulateVarSetting();
     void onScriptDebug();
@@ -259,6 +265,8 @@ private:
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
+    QDockWidget       *m_logDock          = nullptr;
+    QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;
 
     // screenId → ScreenTab*（已打开的图页）
