@@ -40,9 +40,12 @@ public:
     void setNameGenerator(NameGenerator g) { m_nameGen = std::move(g); }
 
     // 公共编辑操作（均入 undo 栈）
+    enum class AlignMode { Left, Right, Top, Bottom, Center };
+
     void deleteSelected();
     void copySelected();
     void pasteClipboard();
+    void alignSelected(AlignMode mode);
 
     // 所有实例（用于序列化）
     QList<WidgetInstance> allInstances() const;

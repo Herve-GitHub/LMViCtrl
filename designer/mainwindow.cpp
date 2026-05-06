@@ -18,6 +18,7 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextCursor>
+#include <QToolBar>
 #include <QUndoStack>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -30,6 +31,7 @@ MainWindow::MainWindow(QWidget *parent)
     qApp->setFont(font);
     applyDarkTheme();
     setupMenus();
+        setupToolBars();
 
     // 项目级 Undo 栈（图页新增/删除命令）
     m_projectUndoStack = new QUndoStack(this);
@@ -99,7 +101,7 @@ MainWindow::~MainWindow()
 {
     // 在成员变量析构前，主动断开所有 QUndoStack 的 destroyed 连接，
     // 防止 ~QObject() 销毁子对象时触发访问已销毁成员的回调
-    resetUndoChains();
+        resetUndoChains(false);
     delete ui;
 }
 void MainWindow::applyDarkTheme()
@@ -217,17 +219,17 @@ void MainWindow::setupFileMenu()
 {
     QMenu *fileMenu = menuBar()->addMenu(tr("文件(&F)"));
 
-    connect(addAction(fileMenu, tr("新建工程"), QKeySequence::New),
-            &QAction::triggered, this, &MainWindow::onNewProject);
-    connect(addAction(fileMenu, tr("打开工程"), QKeySequence::Open),
-            &QAction::triggered, this, &MainWindow::onOpenProject);
-    connect(addAction(fileMenu, tr("关闭工程")),
-            &QAction::triggered, this, &MainWindow::onCloseProject);
+    m_newProjectAction = addAction(fileMenu, tr("新建工程"), QKeySequence::New);
+    connect(m_newProjectAction, &QAction::triggered, this, &MainWindow::onNewProject);
+    m_openProjectAction = addAction(fileMenu, tr("打开工程"), QKeySequence::Open);
+    connect(m_openProjectAction, &QAction::triggered, this, &MainWindow::onOpenProject);
+    m_closeProjectAction = addAction(fileMenu, tr("关闭工程"));
+    connect(m_closeProjectAction, &QAction::triggered, this, &MainWindow::onCloseProject);
     fileMenu->addSeparator();
-    connect(addAction(fileMenu, tr("保存"), QKeySequence::Save),
-            &QAction::triggered, this, &MainWindow::onSave);
-    connect(addAction(fileMenu, tr("另存为"), QKeySequence::SaveAs),
-            &QAction::triggered, this, &MainWindow::onSaveAs);
+    m_saveAction = addAction(fileMenu, tr("保存"), QKeySequence::Save);
+    connect(m_saveAction, &QAction::triggered, this, &MainWindow::onSave);
+    m_saveAsAction = addAction(fileMenu, tr("另存为"), QKeySequence::SaveAs);
+    connect(m_saveAsAction, &QAction::triggered, this, &MainWindow::onSaveAs);
 #if 0
 	//目前不需要导入导出工程功能，先隐藏相关菜单项
     QMenu *exportMenu = fileMenu->addMenu(tr("导出工程"));
@@ -242,36 +244,36 @@ void MainWindow::setupFileMenu()
             &QAction::triggered, this, &MainWindow::onImportProject);
 #endif
     fileMenu->addSeparator();
-    connect(addAction(fileMenu, tr("工程属性")),
-            &QAction::triggered, this, &MainWindow::onProjectProperties);
+    m_projectPropertiesAction = addAction(fileMenu, tr("工程属性"));
+    connect(m_projectPropertiesAction, &QAction::triggered, this, &MainWindow::onProjectProperties);
 
     m_recentMenu = fileMenu->addMenu(tr("最近打开工程"));
     updateRecentMenu();
 
     fileMenu->addSeparator();
-    connect(addAction(fileMenu, tr("退出"), QKeySequence(Qt::ALT | Qt::Key_F4)),
-            &QAction::triggered, this, &MainWindow::onExit);
+    m_exitAction = addAction(fileMenu, tr("退出"), QKeySequence(Qt::ALT | Qt::Key_F4));
+    connect(m_exitAction, &QAction::triggered, this, &MainWindow::onExit);
 }
 
 void MainWindow::setupEditMenu()
 {
     QMenu *editMenu = menuBar()->addMenu(tr("编辑(&E)"));
 
-    connect(addAction(editMenu, tr("撤销"), QKeySequence::Undo),
-            &QAction::triggered, this, &MainWindow::onUndo);
-    connect(addAction(editMenu, tr("重做"), QKeySequence::Redo),
-            &QAction::triggered, this, &MainWindow::onRedo);
+    m_undoAction = addAction(editMenu, tr("撤销"), QKeySequence::Undo);
+    connect(m_undoAction, &QAction::triggered, this, &MainWindow::onUndo);
+    m_redoAction = addAction(editMenu, tr("重做"), QKeySequence::Redo);
+    connect(m_redoAction, &QAction::triggered, this, &MainWindow::onRedo);
     editMenu->addSeparator();
-    connect(addAction(editMenu, tr("剪切"), QKeySequence::Cut),
-            &QAction::triggered, this, &MainWindow::onCut);
-    connect(addAction(editMenu, tr("复制"), QKeySequence::Copy),
-            &QAction::triggered, this, &MainWindow::onCopy);
-    connect(addAction(editMenu, tr("粘贴"), QKeySequence::Paste),
-            &QAction::triggered, this, &MainWindow::onPaste);
-    connect(addAction(editMenu, tr("删除"), QKeySequence::Delete),
-            &QAction::triggered, this, &MainWindow::onDelete);
-    connect(addAction(editMenu, tr("全选"), QKeySequence::SelectAll),
-            &QAction::triggered, this, &MainWindow::onSelectAll);
+    m_cutAction = addAction(editMenu, tr("剪切"), QKeySequence::Cut);
+    connect(m_cutAction, &QAction::triggered, this, &MainWindow::onCut);
+    m_copyAction = addAction(editMenu, tr("复制"), QKeySequence::Copy);
+    connect(m_copyAction, &QAction::triggered, this, &MainWindow::onCopy);
+    m_pasteAction = addAction(editMenu, tr("粘贴"), QKeySequence::Paste);
+    connect(m_pasteAction, &QAction::triggered, this, &MainWindow::onPaste);
+    m_deleteAction = addAction(editMenu, tr("删除"), QKeySequence::Delete);
+    connect(m_deleteAction, &QAction::triggered, this, &MainWindow::onDelete);
+    m_selectAllAction = addAction(editMenu, tr("全选"), QKeySequence::SelectAll);
+    connect(m_selectAllAction, &QAction::triggered, this, &MainWindow::onSelectAll);
     editMenu->addSeparator();
 #if 0
 	// 目前不需要查找替换功能，先隐藏相关菜单项
@@ -282,21 +284,84 @@ void MainWindow::setupEditMenu()
     editMenu->addSeparator();
 #endif
     QMenu *alignMenu = editMenu->addMenu(tr("对齐方式"));
-    connect(addAction(alignMenu, tr("左对齐")),
-            &QAction::triggered, this, &MainWindow::onAlignLeft);
-    connect(addAction(alignMenu, tr("右对齐")),
-            &QAction::triggered, this, &MainWindow::onAlignRight);
-    connect(addAction(alignMenu, tr("顶部对齐")),
-            &QAction::triggered, this, &MainWindow::onAlignTop);
-    connect(addAction(alignMenu, tr("底部对齐")),
-            &QAction::triggered, this, &MainWindow::onAlignBottom);
-    connect(addAction(alignMenu, tr("居中对齐")),
-            &QAction::triggered, this, &MainWindow::onAlignCenter);
+    m_alignLeftAction = addAction(alignMenu, tr("左对齐"));
+    connect(m_alignLeftAction, &QAction::triggered, this, &MainWindow::onAlignLeft);
+    m_alignRightAction = addAction(alignMenu, tr("右对齐"));
+    connect(m_alignRightAction, &QAction::triggered, this, &MainWindow::onAlignRight);
+    m_alignTopAction = addAction(alignMenu, tr("顶部对齐"));
+    connect(m_alignTopAction, &QAction::triggered, this, &MainWindow::onAlignTop);
+    m_alignBottomAction = addAction(alignMenu, tr("底部对齐"));
+    connect(m_alignBottomAction, &QAction::triggered, this, &MainWindow::onAlignBottom);
+    m_alignCenterAction = addAction(alignMenu, tr("居中对齐"));
+    connect(m_alignCenterAction, &QAction::triggered, this, &MainWindow::onAlignCenter);
 
-    connect(addAction(editMenu, tr("组合"), QKeySequence(Qt::CTRL | Qt::Key_G)),
-            &QAction::triggered, this, &MainWindow::onGroup);
-    connect(addAction(editMenu, tr("取消组合"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G)),
-            &QAction::triggered, this, &MainWindow::onUngroup);
+    m_groupAction = addAction(editMenu, tr("组合"), QKeySequence(Qt::CTRL | Qt::Key_G));
+    connect(m_groupAction, &QAction::triggered, this, &MainWindow::onGroup);
+    m_ungroupAction = addAction(editMenu, tr("取消组合"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G));
+    connect(m_ungroupAction, &QAction::triggered, this, &MainWindow::onUngroup);
+}
+
+void MainWindow::setupToolBars()
+{
+    setupFileToolBar();
+    setupEditToolBar();
+    setupRunToolBar();
+}
+
+void MainWindow::setupFileToolBar()
+{
+    m_fileToolBar = addToolBar(tr("文件"));
+    m_fileToolBar->setObjectName(QStringLiteral("fileToolBar"));
+    m_fileToolBar->setMovable(false);
+    m_fileToolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+
+    m_fileToolBar->addAction(m_newProjectAction);
+    m_fileToolBar->addAction(m_openProjectAction);
+    m_fileToolBar->addAction(m_closeProjectAction);
+    m_fileToolBar->addSeparator();
+    m_fileToolBar->addAction(m_saveAction);
+    m_fileToolBar->addAction(m_saveAsAction);
+    m_fileToolBar->addSeparator();
+    m_fileToolBar->addAction(m_projectPropertiesAction);
+}
+
+void MainWindow::setupEditToolBar()
+{
+    m_editToolBar = addToolBar(tr("编辑"));
+    m_editToolBar->setObjectName(QStringLiteral("editToolBar"));
+    m_editToolBar->setMovable(false);
+    m_editToolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+
+    m_editToolBar->addAction(m_undoAction);
+    m_editToolBar->addAction(m_redoAction);
+    m_editToolBar->addSeparator();
+    m_editToolBar->addAction(m_cutAction);
+    m_editToolBar->addAction(m_copyAction);
+    m_editToolBar->addAction(m_pasteAction);
+    m_editToolBar->addAction(m_deleteAction);
+    m_editToolBar->addAction(m_selectAllAction);
+    m_editToolBar->addSeparator();
+    m_editToolBar->addAction(m_alignLeftAction);
+    m_editToolBar->addAction(m_alignRightAction);
+    m_editToolBar->addAction(m_alignTopAction);
+    m_editToolBar->addAction(m_alignBottomAction);
+    m_editToolBar->addAction(m_alignCenterAction);
+    m_editToolBar->addSeparator();
+    m_editToolBar->addAction(m_groupAction);
+    m_editToolBar->addAction(m_ungroupAction);
+}
+
+void MainWindow::setupRunToolBar()
+{
+    m_runToolBar = addToolBar(tr("运行"));
+    m_runToolBar->setObjectName(QStringLiteral("runToolBar"));
+    m_runToolBar->setMovable(false);
+    m_runToolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+
+    m_runToolBar->addAction(m_startRunAction);
+    m_runToolBar->addAction(m_stopRunAction);
+    m_runToolBar->addSeparator();
+    m_runToolBar->addAction(m_compileProjectAction);
 }
 
 void MainWindow::setupViewMenu()
@@ -582,17 +647,17 @@ void MainWindow::setupRunMenu()
 {
     QMenu *runMenu = menuBar()->addMenu(tr("运行(&R)"));
 
-    connect(addAction(runMenu, tr("启动运行"), QKeySequence(Qt::Key_F5)),
-            &QAction::triggered, this, &MainWindow::onStartRun);
-    connect(addAction(runMenu, tr("停止运行"), QKeySequence(Qt::Key_F6)),
-            &QAction::triggered, this, &MainWindow::onStopRun);
+        m_startRunAction = addAction(runMenu, tr("启动运行"), QKeySequence(Qt::Key_F5));
+        connect(m_startRunAction, &QAction::triggered, this, &MainWindow::onStartRun);
+        m_stopRunAction = addAction(runMenu, tr("停止运行"), QKeySequence(Qt::Key_F6));
+        connect(m_stopRunAction, &QAction::triggered, this, &MainWindow::onStopRun);
 #if 0
     connect(addAction(runMenu, tr("暂停运行")),
             &QAction::triggered, this, &MainWindow::onPauseRun);
 #endif
     runMenu->addSeparator();
-    connect(addAction(runMenu, tr("编译工程"), QKeySequence(Qt::Key_F7)),
-        &QAction::triggered, this, &MainWindow::onCompileProject);
+        m_compileProjectAction = addAction(runMenu, tr("编译工程"), QKeySequence(Qt::Key_F7));
+        connect(m_compileProjectAction, &QAction::triggered, this, &MainWindow::onCompileProject);
 #if 0
     QMenu *simMenu = runMenu->addMenu(tr("模拟运行"));
     connect(addAction(simMenu, tr("开始模拟")),

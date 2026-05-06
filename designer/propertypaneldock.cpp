@@ -164,7 +164,6 @@ void PropertyPanelDock::refreshGeometryEditors(const WidgetInstance &inst)
 
 void PropertyPanelDock::clearForms()
 {
-    m_currentInstanceId.clear();
     m_geometryEditors.clear();
 
     auto clearForm = [](QFormLayout *form) {
@@ -182,6 +181,7 @@ void PropertyPanelDock::clearForms()
 
 void PropertyPanelDock::clearPanel()
 {
+    m_currentInstanceId.clear();
     clearForms();
 
     auto *placeholder = new QLabel(tr("（请选择单个控件，或点击空白处编辑画布）"), m_propsBox);

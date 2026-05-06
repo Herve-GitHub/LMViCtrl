@@ -271,6 +271,16 @@ QString ProjectManager::compileToLua(const ProjectData &p)
         s << "  },\n";
     }
     s << "}\n\n";
+    // 页面跳转动作模块：按钮等控件的事件代码可直接调用 PageNavigation.*
+    s << "local ok_nav, page_navigation = pcall(require, \"common.page_navigation\")\n";
+    s << "if ok_nav and page_navigation then\n";
+    s << "    PageNavigation = page_navigation\n";
+    s << "    _G.PageNavigation = page_navigation\n";
+    s << "    project.page_navigation = page_navigation\n";
+    s << "else\n";
+    s << "    print(\"[project] warning: failed to load common.page_navigation: \" .. tostring(page_navigation))\n";
+    s << "end\n\n";
+
     // 引导仿真：调用部署在工程目录中的 runtime.lua，根据 project 表实例化 LVGL 界面
     s << "local ok, runtime = pcall(require, \"runtime\")\n";
     s << "if ok and runtime and type(runtime.run) == \"function\" then\n";

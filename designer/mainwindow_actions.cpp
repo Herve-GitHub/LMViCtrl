@@ -191,7 +191,7 @@ void MainWindow::openScreenTab(const QString &screenId)
 
     // 注册该图页的 undo 栈到链式调度
     if (tab->scene())
-        registerUndoStack(tab->scene()->undoStack());
+        registerUndoStack(tab->scene()->undoStack(), screenId);
 
     const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
     m_tabWidget->addTab(tab, tabTitle);
@@ -218,6 +218,7 @@ void MainWindow::closeScreenTab(const QString &screenId)
         if (QUndoStack* stack = scene->undoStack()) {
             QObject::disconnect(stack, nullptr, this, nullptr); // 断开所有到 this 的连接
             m_stackLastIndex.remove(stack);
+            m_stackScreenIds.remove(stack);
             m_undoChain.removeAll(stack);
             m_redoChain.removeAll(stack);
         }
@@ -617,26 +618,38 @@ void MainWindow::onExit()
 
 void MainWindow::onUndo()
 {
-    if (m_undoChain.isEmpty()) return;
-    QUndoStack *top = m_undoChain.last();
-    if (!top || !top->canUndo()) {
-        m_undoChain.removeLast();
+    while (!m_undoChain.isEmpty()) {
+        QUndoStack *top = m_undoChain.last();
+        if (!top || !top->canUndo()) {
+            m_undoChain.removeLast();
+            continue;
+        }
+        if (!activateUndoStackPage(top)) {
+            m_undoChain.removeLast();
+            continue;
+        }
+        top->undo();   // indexChanged 处理器会负责把 stack 从 undoChain 转到 redoChain
         return;
     }
-    top->undo();   // indexChanged 处理器会负责把 stack 从 undoChain 转到 redoChain
 }
 
 void MainWindow::onRedo()
 {
-    if (m_redoChain.isEmpty()) return;
-    QUndoStack *top = m_redoChain.last();
-    if (!top || !top->canRedo()) {
-        m_redoChain.removeLast();
+    while (!m_redoChain.isEmpty()) {
+        QUndoStack *top = m_redoChain.last();
+        if (!top || !top->canRedo()) {
+            m_redoChain.removeLast();
+            continue;
+        }
+        if (!activateUndoStackPage(top)) {
+            m_redoChain.removeLast();
+            continue;
+        }
+        m_inRedoOp = true;
+        top->redo();   // indexChanged 处理器会负责把 stack 从 redoChain 转回 undoChain
+        m_inRedoOp = false;
         return;
     }
-    m_inRedoOp = true;
-    top->redo();   // indexChanged 处理器会负责把 stack 从 redoChain 转回 undoChain
-    m_inRedoOp = false;
 }
 
 void MainWindow::onCut()
@@ -661,15 +674,35 @@ void MainWindow::onFind() {}
 
 void MainWindow::onReplace() {}
 
-void MainWindow::onAlignLeft() {}
+void MainWindow::onAlignLeft()
+{
+    if (auto *s = currentScene())
+        s->alignSelected(CanvasScene::AlignMode::Left);
+}
 
-void MainWindow::onAlignRight() {}
+void MainWindow::onAlignRight()
+{
+    if (auto *s = currentScene())
+        s->alignSelected(CanvasScene::AlignMode::Right);
+}
 
-void MainWindow::onAlignTop() {}
+void MainWindow::onAlignTop()
+{
+    if (auto *s = currentScene())
+        s->alignSelected(CanvasScene::AlignMode::Top);
+}
 
-void MainWindow::onAlignBottom() {}
+void MainWindow::onAlignBottom()
+{
+    if (auto *s = currentScene())
+        s->alignSelected(CanvasScene::AlignMode::Bottom);
+}
 
-void MainWindow::onAlignCenter() {}
+void MainWindow::onAlignCenter()
+{
+    if (auto *s = currentScene())
+        s->alignSelected(CanvasScene::AlignMode::Center);
+}
 
 void MainWindow::onGroup() {}
 
@@ -956,14 +989,12 @@ void MainWindow::onCompileProject()
     const QString luaPath = projectDir + QLatin1Char('/')
         + ProjectManager::projectLuaFileName(projectName);
 
-    // 3) 确保运行时已部署（若工程目录里 widgets/runtime 缺失则补齐）
-    if (!QFile::exists(projectDir + QStringLiteral("/runtime.lua"))) {
-        QString depErr;
-        if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
-            QMessageBox::warning(this, tr("启动编译"),
-                tr("部署运行时失败：%1").arg(depErr));
-            return;
-        }
+    // 3) 部署运行时。顶层 runtime.lua 始终刷新，common/widgets 默认不覆盖用户修改。
+    QString depErr;
+    if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
+        QMessageBox::warning(this, tr("启动编译"),
+            tr("部署运行时失败：%1").arg(depErr));
+        return;
     }
 
     // 4) 编译 JSON -> Lua
@@ -1005,14 +1036,12 @@ void MainWindow::onStartSimulate()
     const QString luaPath = projectDir + QLatin1Char('/')
                             + ProjectManager::projectLuaFileName(projectName);
 
-    // 3) 确保运行时已部署（若工程目录里 widgets/runtime 缺失则补齐）
-    if (!QFile::exists(projectDir + QStringLiteral("/runtime.lua"))) {
-        QString depErr;
-        if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
-            QMessageBox::warning(this, tr("启动仿真"),
-                                 tr("部署运行时失败：%1").arg(depErr));
-            return;
-        }
+    // 3) 部署运行时。顶层 runtime.lua 始终刷新，common/widgets 默认不覆盖用户修改。
+    QString depErr;
+    if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("部署运行时失败：%1").arg(depErr));
+        return;
     }
 
     // 4) 编译 JSON -> Lua
@@ -1412,19 +1441,39 @@ ScreenData MainWindow::snapshotScreen(const QString &screenId) const
 // 跨多 stack 的 Undo/Redo 链式调度
 // ============================================================
 
-void MainWindow::registerUndoStack(QUndoStack *stack)
+void MainWindow::registerUndoStack(QUndoStack *stack, const QString &screenId)
 {
     if (!stack || m_stackLastIndex.contains(stack)) return;
     m_stackLastIndex.insert(stack, stack->index());
+    if (!screenId.isEmpty())
+        m_stackScreenIds.insert(stack, screenId);
 
     connect(stack, &QUndoStack::indexChanged, this, [this, stack](int newIdx) {
         onAnyStackIndexChanged(stack, newIdx);
     });
     connect(stack, &QObject::destroyed, this, [this, stack]() {
         m_stackLastIndex.remove(stack);
+        m_stackScreenIds.remove(stack);
         m_undoChain.removeAll(stack);
         m_redoChain.removeAll(stack);
     });
+}
+
+bool MainWindow::activateUndoStackPage(QUndoStack *stack)
+{
+    const QString screenId = m_stackScreenIds.value(stack);
+    if (screenId.isEmpty())
+        return true;
+
+    ScreenTab *tab = m_openTabs.value(screenId, nullptr);
+    if (!tab)
+        return false;
+
+    if (m_tabWidget && m_tabWidget->currentWidget() != tab)
+        m_tabWidget->setCurrentWidget(tab);
+    if (m_propertyPanel)
+        m_propertyPanel->setCurrentScene(tab->scene());
+    return true;
 }
 
 void MainWindow::onAnyStackIndexChanged(QUndoStack *stack, int newIdx)
@@ -1459,7 +1508,7 @@ void MainWindow::onAnyStackIndexChanged(QUndoStack *stack, int newIdx)
     m_stackLastIndex[stack] = newIdx;
 }
 
-void MainWindow::resetUndoChains()
+void MainWindow::resetUndoChains(bool keepProjectStackRegistered)
 {
     // 断开所有已跟踪的 stack，防止 MainWindow 析构时 destroyed 回调访问已释放的成员
     for (auto it = m_stackLastIndex.keyBegin(); it != m_stackLastIndex.keyEnd(); ++it) {
@@ -1469,9 +1518,10 @@ void MainWindow::resetUndoChains()
     m_undoChain.clear();
     m_redoChain.clear();
     m_stackLastIndex.clear();
+    m_stackScreenIds.clear();
 
-    if (m_projectUndoStack) {
+    if (keepProjectStackRegistered && m_projectUndoStack) {
         m_projectUndoStack->clear();
-        m_stackLastIndex.insert(m_projectUndoStack, 0);
+        registerUndoStack(m_projectUndoStack);
     }
 }

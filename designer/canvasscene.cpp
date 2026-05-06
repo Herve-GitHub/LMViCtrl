@@ -58,8 +58,10 @@ class MoveItemsCommand : public QUndoCommand
 {
 public:
     MoveItemsCommand(CanvasScene *scene, const QList<MoveData> &moves,
-                     QUndoCommand *parent = nullptr)
-        : QUndoCommand(QStringLiteral("移动 %1 个元素").arg(moves.size()), parent)
+                     const QString &text = QString(), QUndoCommand *parent = nullptr)
+        : QUndoCommand(text.isEmpty()
+              ? QStringLiteral("移动 %1 个元素").arg(moves.size())
+              : text, parent)
         , m_scene(scene), m_moves(moves) {}
 
     void undo() override {
@@ -319,6 +321,62 @@ void CanvasScene::pasteClipboard()
     }
 }
 
+void CanvasScene::alignSelected(AlignMode mode)
+{
+    QList<CanvasItem *> selectedCanvasItems;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            selectedCanvasItems.append(ci);
+    }
+    if (selectedCanvasItems.size() < 2) return;
+
+    QRectF bounds;
+    for (CanvasItem *ci : selectedCanvasItems) {
+        const WidgetInstance inst = ci->instance();
+        const QRectF itemRect(ci->pos(), QSizeF(inst.width, inst.height));
+        bounds = bounds.isNull() ? itemRect : bounds.united(itemRect);
+    }
+
+    QList<MoveData> moves;
+    for (CanvasItem *ci : selectedCanvasItems) {
+        const WidgetInstance inst = ci->instance();
+        const QPointF oldPos = ci->pos();
+        QPointF newPos = oldPos;
+
+        switch (mode) {
+        case AlignMode::Left:
+            newPos.setX(bounds.left());
+            break;
+        case AlignMode::Right:
+            newPos.setX(bounds.right() - inst.width);
+            break;
+        case AlignMode::Top:
+            newPos.setY(bounds.top());
+            break;
+        case AlignMode::Bottom:
+            newPos.setY(bounds.bottom() - inst.height);
+            break;
+        case AlignMode::Center:
+            newPos.setX(bounds.center().x() - inst.width / 2.0);
+            break;
+        }
+
+        if (newPos != oldPos)
+            moves.append({inst.instanceId, oldPos, newPos});
+    }
+    if (moves.isEmpty()) return;
+
+    QString text;
+    switch (mode) {
+    case AlignMode::Left:   text = tr("左对齐 %1 个元素"); break;
+    case AlignMode::Right:  text = tr("右对齐 %1 个元素"); break;
+    case AlignMode::Top:    text = tr("顶部对齐 %1 个元素"); break;
+    case AlignMode::Bottom: text = tr("底部对齐 %1 个元素"); break;
+    case AlignMode::Center: text = tr("居中对齐 %1 个元素"); break;
+    }
+    m_undoStack->push(new MoveItemsCommand(this, moves, text.arg(selectedCanvasItems.size())));
+}
+
 QList<WidgetInstance> CanvasScene::allInstances() const
 {
     QList<WidgetInstance> result;
@@ -489,11 +547,11 @@ void CanvasScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     m_pressPositions.clear();
     m_resizingIds.clear();
 
+    QGraphicsScene::mousePressEvent(event);
     for (QGraphicsItem *gi : selectedItems()) {
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
             m_pressPositions.insert(ci->instance().instanceId, ci->pos());
     }
-    QGraphicsScene::mousePressEvent(event);
 }
 
 void CanvasScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)

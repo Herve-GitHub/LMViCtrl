@@ -23,6 +23,7 @@ class QDockWidget;
 class QPlainTextEdit;
 class QTabWidget;
 class QStackedWidget;
+class QToolBar;
 class QUndoStack;
 QT_END_NAMESPACE
 
@@ -50,6 +51,10 @@ private:
     void setupWindowMenu();
     void setupLanguageMenu();
     void setupHelpMenu();
+    void setupToolBars();
+    void setupFileToolBar();
+    void setupEditToolBar();
+    void setupRunToolBar();
 
     // 工具函数：创建带快捷键的 QAction 并添加到菜单
     QAction *addAction(QMenu *menu,
@@ -268,6 +273,36 @@ private:
     QDockWidget       *m_logDock          = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;
+    QToolBar          *m_fileToolBar      = nullptr;
+    QToolBar          *m_editToolBar      = nullptr;
+    QToolBar          *m_runToolBar       = nullptr;
+
+    QAction           *m_newProjectAction        = nullptr;
+    QAction           *m_openProjectAction       = nullptr;
+    QAction           *m_closeProjectAction      = nullptr;
+    QAction           *m_saveAction              = nullptr;
+    QAction           *m_saveAsAction            = nullptr;
+    QAction           *m_projectPropertiesAction = nullptr;
+    QAction           *m_exitAction              = nullptr;
+
+    QAction           *m_undoAction        = nullptr;
+    QAction           *m_redoAction        = nullptr;
+    QAction           *m_cutAction         = nullptr;
+    QAction           *m_copyAction        = nullptr;
+    QAction           *m_pasteAction       = nullptr;
+    QAction           *m_deleteAction      = nullptr;
+    QAction           *m_selectAllAction   = nullptr;
+    QAction           *m_alignLeftAction   = nullptr;
+    QAction           *m_alignRightAction  = nullptr;
+    QAction           *m_alignTopAction    = nullptr;
+    QAction           *m_alignBottomAction = nullptr;
+    QAction           *m_alignCenterAction = nullptr;
+    QAction           *m_groupAction       = nullptr;
+    QAction           *m_ungroupAction     = nullptr;
+
+    QAction           *m_startRunAction       = nullptr;
+    QAction           *m_stopRunAction        = nullptr;
+    QAction           *m_compileProjectAction = nullptr;
 
     // screenId → ScreenTab*（已打开的图页）
     QHash<QString, ScreenTab *> m_openTabs;
@@ -312,10 +347,12 @@ private:
     QList<QUndoStack *>      m_undoChain;        // 按时间顺序记录每次 push 的 stack
     QList<QUndoStack *>      m_redoChain;        // 与 m_undoChain 对偶
     QHash<QUndoStack *, int> m_stackLastIndex;
+    QHash<QUndoStack *, QString> m_stackScreenIds;
     bool                     m_inRedoOp = false; // 调用 stack->redo() 时设为 true
-    void registerUndoStack(QUndoStack *stack);
+    void registerUndoStack(QUndoStack *stack, const QString &screenId = QString());
+    bool activateUndoStackPage(QUndoStack *stack);
     void onAnyStackIndexChanged(QUndoStack *stack, int newIdx);
-    void resetUndoChains();
+    void resetUndoChains(bool keepProjectStackRegistered = true);
 
 public:
     QUndoStack *projectUndoStack() const { return m_projectUndoStack; }

@@ -324,6 +324,53 @@ local function build_screen(scr)
     return screen
 end
 
+local function load_screen_object(screen_obj)
+    if not screen_obj then return false end
+    if type(lv.screen_load) == "function" then
+        lv.screen_load(screen_obj)
+        return true
+    elseif type(lv.scr_load) == "function" then
+        lv.scr_load(screen_obj)
+        return true
+    end
+    log_warn("page: lv.screen_load/lv.scr_load is not available")
+    return false
+end
+
+local function create_page_manager(pages)
+    local manager = {
+        pages = pages or {},
+        current_index = 0,
+    }
+
+    function manager.get_page_count()
+        return #manager.pages
+    end
+
+    function manager.goto_page(page_index)
+        page_index = tonumber(page_index)
+        if not page_index then
+            log_warn("page: invalid page index")
+            return false
+        end
+        page_index = math.floor(page_index)
+        if page_index < 1 or page_index > #manager.pages then
+            log_warn("page: index %s out of range 1-%d", tostring(page_index), #manager.pages)
+            return false
+        end
+
+        local page = manager.pages[page_index]
+        if not load_screen_object(page and page.object) then
+            return false
+        end
+        manager.current_index = page_index
+        return true
+    end
+
+    manager.select_page = manager.goto_page
+    return manager
+end
+
 -- ─── 7. 主入口 ──────────────────────────────────────────────────────
 --- @param project table  由 compileToLua 生成的工程数据
 function M.run(project)
@@ -347,21 +394,20 @@ function M.run(project)
     for i, s in ipairs(project.screens) do screens[i] = s end
     table.sort(screens, function(a, b) return (a.order or 0) < (b.order or 0) end)
 
-    local first_obj
+    local pages = {}
     for i, scr in ipairs(screens) do
         local obj = build_screen(scr)
-        if i == 1 then first_obj = obj end
+        pages[i] = {
+            id = scr.id,
+            name = scr.name,
+            order = scr.order,
+            data = scr,
+            object = obj,
+        }
     end
 
-    -- 把首屏切换为活动屏（若绑定暴露了 screen_load）
-    print(first_obj)
-	print(type(lv.screen_load))
-	print(type(lv.scr_load))
-    if first_obj and type(lv.screen_load) == "function" then
-        lv.screen_load(first_obj)
-    elseif first_obj and type(lv.scr_load) == "function" then
-        lv.scr_load(first_obj)
-    end
+    _G.PageManager = create_page_manager(pages)
+    _G.PageManager.goto_page(1)
 end
 
 return M
