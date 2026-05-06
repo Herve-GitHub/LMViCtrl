@@ -1203,6 +1203,7 @@ static int luaopen_lvgl(lua_State* L) {
     lua_pushinteger(L, LV_PART_MAIN); lua_setfield(L, -2, "PART_MAIN");
     lua_pushinteger(L, LV_PART_INDICATOR); lua_setfield(L, -2, "PART_INDICATOR");
     lua_pushinteger(L, LV_PART_KNOB); lua_setfield(L, -2, "PART_KNOB");
+    lua_pushinteger(L, LV_PART_ITEMS); lua_setfield(L, -2, "PART_ITEMS");
     
     // Border side constants
     lua_pushinteger(L, LV_BORDER_SIDE_NONE); lua_setfield(L, -2, "BORDER_SIDE_NONE");

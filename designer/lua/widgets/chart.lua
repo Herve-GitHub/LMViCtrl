@@ -186,8 +186,32 @@ function Chart.new(parent, state)
   end
   local function apply_grid()
     if self.chart and self.chart.set_div_line_count then
-      self.chart:set_div_line_count(self.props.div_y, self.props.div_x)
+      local div_y = self.props.show_grid and self.props.div_y or 0
+      local div_x = self.props.show_grid and self.props.div_x or 0
+      self.chart:set_div_line_count(div_y, div_x)
     end
+  end
+  local function apply_appearance()
+    if not self.chart then return end
+    local PART_MAIN  = lv.PART_MAIN or 0
+    local PART_ITEMS = lv.PART_ITEMS or 0x050000
+    local bg_color   = common.colorToNumber(self.props.bg_color, 0xffffff)
+    local grid_color = common.colorToNumber(self.props.grid_color, 0xdde2e8)
+    local axis_color = common.colorToNumber(self.props.axis_color, 0x7a8290)
+    local line_width = tonumber(self.props.line_width) or 2
+    local point_size = tonumber(self.props.point_size) or 3
+
+    if self.chart.set_style_bg_color then self.chart:set_style_bg_color(bg_color, PART_MAIN) end
+    if self.chart.set_style_bg_opa   then self.chart:set_style_bg_opa(lv.OPA_COVER or 255, PART_MAIN) end
+    if self.chart.set_style_border_color then self.chart:set_style_border_color(axis_color, PART_MAIN) end
+    if self.chart.set_style_border_opa   then self.chart:set_style_border_opa(lv.OPA_COVER or 255, PART_MAIN) end
+    if self.chart.set_style_line_color then self.chart:set_style_line_color(grid_color, PART_MAIN) end
+    if self.chart.set_style_line_opa then
+      self.chart:set_style_line_opa(self.props.show_grid and (lv.OPA_COVER or 255) or (lv.OPA_TRANSP or 0), PART_MAIN)
+    end
+    if self.chart.set_style_line_width then self.chart:set_style_line_width(line_width, PART_ITEMS) end
+    if self.chart.set_style_width  then self.chart:set_style_width(self.props.show_points and point_size or 0, PART_ITEMS) end
+    if self.chart.set_style_height then self.chart:set_style_height(self.props.show_points and point_size or 0, PART_ITEMS) end
   end
   local function apply_point_count()
     if self.chart and self.chart.set_point_count then
@@ -255,6 +279,7 @@ function Chart.new(parent, state)
     apply_type()
     apply_range()
     apply_grid()
+    apply_appearance()
     apply_point_count()
     rebuild_series()
     apply_enabled()
@@ -284,7 +309,10 @@ function Chart.new(parent, state)
     self.props[name] = value
     if     name == "chart_type"  then apply_type()
     elseif name == "y_min" or name == "y_max" then apply_range()
-    elseif name == "div_x" or name == "div_y" then apply_grid()
+    elseif name == "div_x" or name == "div_y" or name == "show_grid" then apply_grid(); apply_appearance()
+    elseif name == "bg_color" or name == "grid_color" or name == "axis_color"
+        or name == "line_width" or name == "point_size" or name == "show_points" then
+      apply_appearance()
     elseif name == "point_count" then apply_point_count(); rebuild_series()
     elseif name == "series1_data" or name == "series1_color"
         or name == "series2_data" or name == "series2_color" then

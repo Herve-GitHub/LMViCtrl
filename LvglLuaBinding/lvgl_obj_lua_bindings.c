@@ -115,6 +115,51 @@ static int l_obj_set_style_bg_opa(lua_State* L) {
     return 0;
 }
 
+// obj:set_style_line_color(color, selector)
+static int l_obj_set_style_line_color(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    uint32_t color_hex = (uint32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_color(obj, lv_color_hex(color_hex), selector);
+    return 0;
+}
+
+// obj:set_style_line_opa(opa, selector)
+static int l_obj_set_style_line_opa(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    lv_opa_t opa = (lv_opa_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_opa(obj, opa, selector);
+    return 0;
+}
+
+// obj:set_style_line_width(width, selector)
+static int l_obj_set_style_line_width(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t width = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_width(obj, width, selector);
+    return 0;
+}
+
+// obj:set_style_width(width, selector)
+static int l_obj_set_style_width(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t width = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_width(obj, width, selector);
+    return 0;
+}
+
+// obj:set_style_height(height, selector)
+static int l_obj_set_style_height(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t height = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_height(obj, height, selector);
+    return 0;
+}
+
 // obj:set_style_text_color(color, selector)
 static int l_obj_set_style_text_color(lua_State* L) {
     lv_obj_t* obj = check_lv_obj(L, 1);
@@ -739,6 +784,11 @@ static const luaL_Reg lv_obj_methods[] = {
     {"center", l_obj_center},
     {"set_style_bg_color", l_obj_set_style_bg_color},
     {"set_style_bg_opa", l_obj_set_style_bg_opa},
+    {"set_style_line_color", l_obj_set_style_line_color},
+    {"set_style_line_opa", l_obj_set_style_line_opa},
+    {"set_style_line_width", l_obj_set_style_line_width},
+    {"set_style_width", l_obj_set_style_width},
+    {"set_style_height", l_obj_set_style_height},
     {"set_style_text_color", l_obj_set_style_text_color},
     {"set_style_text_font", l_obj_set_style_text_font},
     {"set_style_border_width", l_obj_set_style_border_width},
