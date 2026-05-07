@@ -4,74 +4,18 @@
  */
 
 #include "lvgl_lua_bindings.h"
+#include "lvgl_lua_runtime.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_window.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_mouse.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_keyboard.h"
 
 #include LV_SDL_INCLUDE_PATH
 #include <stdio.h>
-#include <string.h>
 
 /* 把 SDL_GetTicks 桥接给 LVGL，作为 LV_USE_OS == LV_OS_NONE 时的 tick 来源 */
 static uint32_t simu_tick_get_cb(void)
 {
     return (uint32_t)SDL_GetTicks();
-}
-
-/* 取脚本所在目录（不含末尾斜杠）。返回值需调用方 free。 */
-static char * simu_dirname_dup(const char * path)
-{
-    if (path == NULL) return NULL;
-    size_t len = strlen(path);
-    /* 找最后一个 '/' 或 '\\' */
-    const char * last = NULL;
-    for (size_t i = 0; i < len; ++i) {
-        if (path[i] == '/' || path[i] == '\\') last = path + i;
-    }
-    if (last == NULL) {
-        /* 无目录分隔符，认为在当前目录 */
-        char * d = (char *)malloc(2);
-        if (!d) return NULL;
-        d[0] = '.'; d[1] = '\0';
-        return d;
-    }
-    size_t dlen = (size_t)(last - path);
-    if (dlen == 0) dlen = 1; /* 根 */
-    char * d = (char *)malloc(dlen + 1);
-    if (!d) return NULL;
-    memcpy(d, path, dlen);
-    d[dlen] = '\0';
-    return d;
-}
-
-/* 把工程目录及常用子目录加入 Lua package.path，使 require("runtime") /
- * require("widgets.xxx") / require("common.xxx") 都能在工程目录中找到。 */
-static void simu_setup_lua_path(lua_State * L, const char * script_dir)
-{
-    if (L == NULL || script_dir == NULL) return;
-
-    lua_getglobal(L, "package");
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        return;
-    }
-
-    /* 取原有 package.path 以兼容 Lua 内置标准库路径 */
-    lua_getfield(L, -1, "path");
-    const char * old_path = lua_tostring(L, -1);
-
-    lua_pushfstring(L,
-        "%s/?.lua;%s/?/init.lua;"
-        "%s/widgets/?.lua;%s/widgets/?/init.lua;"
-        "%s/common/?.lua;%s/common/?/init.lua;%s",
-        script_dir, script_dir,
-        script_dir, script_dir,
-        script_dir, script_dir,
-        old_path ? old_path : "");
-
-    /* stack: package, oldpath, newpath */
-    lua_setfield(L, -3, "path");
-    lua_pop(L, 2); /* pop oldpath + package */
 }
 
 /**
@@ -114,29 +58,18 @@ LVGLLUABINDING_API int lvgl_simulator_run(const char * lua_script_path,
     lv_sdl_keyboard_create();
 
     /* 3. Lua 状态机与绑定 */
-    lua_State * L = luaL_newstate();
+    lua_State * L = lvgl_lua_runtime_create_state();
     if (L == NULL) {
         fprintf(stderr, "[simu] failed to create Lua state\n");
         return 3;
     }
-    luaL_openlibs(L);
-    lvgl_lua_register(L);
-
-    /* 让 require 能从工程目录解析 runtime / widgets.* / common.* */
-    char * script_dir = simu_dirname_dup(lua_script_path);
-    if (script_dir != NULL) {
-        simu_setup_lua_path(L, script_dir);
-    }
 
     /* 4. 加载并执行设计器生成的 Lua 脚本 */
-    if (luaL_dofile(L, lua_script_path) != LUA_OK) {
-        const char * msg = lua_tostring(L, -1);
-        fprintf(stderr, "[simu] lua error: %s\n", msg ? msg : "(unknown)");
-        if (script_dir) free(script_dir);
+    int rc = lvgl_lua_runtime_run_script(L, lua_script_path, "simu");
+    if (rc != 0) {
         lua_close(L);
-        return 4;
+        return rc;
     }
-    if (script_dir) { free(script_dir); script_dir = NULL; }
 
     /* 5. 主循环：让 LVGL 内部的 SDL 事件 timer 处理输入与刷新 */
     while (1) {

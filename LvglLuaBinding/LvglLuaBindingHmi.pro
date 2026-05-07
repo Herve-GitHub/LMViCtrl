@@ -1,6 +1,6 @@
 TEMPLATE = lib
 CONFIG += shared
-TARGET = LvglLuaBinding
+TARGET = LvglLuaBindingHmi
 
 QT -= core gui
 
@@ -17,19 +17,13 @@ UI_DIR =  $$BUILD_PATH/$$TARGET/ui
 
 # Preprocessor definitions
 DEFINES += LVGLLUABINDING_EXPORTS
-
-DEFINES += LV_CONF_INCLUDE_SIMPLE
+DEFINES += LV_CONF_PATH=\"$$PWD/lv_conf_hmi_drm.h\"
 
 # -------------------------------------------------------
 # Windows-specific
 # -------------------------------------------------------
 win32 {
-    DEFINES += _CRT_SECURE_NO_WARNINGS
-    DEFINES += _CRT_NONSTDC_NO_WARNINGS
-    DEFINES += WIN32 _WINDOWS _USRDLL
-    DEF_FILE = LvglLuaBinding.def
-    DISTFILES += LvglLuaBinding.def
-    LIBS += -luser32 -lgdi32 -limm32 -lwinmm -lshell32 -lws2_32
+    error("LvglLuaBindingHmi is only supported on Linux/Unix targets")
 }
 
 # -------------------------------------------------------
@@ -38,6 +32,8 @@ win32 {
 unix {
     QMAKE_CFLAGS += -fvisibility=hidden
     QMAKE_CXXFLAGS += -fvisibility=hidden
+    CONFIG += link_pkgconfig
+    PKGCONFIG += libdrm
 }
 
 # Include paths
@@ -51,8 +47,6 @@ INCLUDEPATH += freetype/include
 # -------------------------------------------------------
 HEADERS += \
     cJSON.h \
-    lv_conf.h \
-    lv_conf_sdl.h \
     lv_conf_hmi_drm.h \
     lvgl_lua_bindings.h \
     lvgl_lua_runtime.h \
@@ -255,12 +249,6 @@ SOURCES += \
     lvgl/src/draw/renesas/dave2d/lv_draw_dave2d_utils.c
 
 # -------------------------------------------------------
-# LVGL draw (sdl)
-# -------------------------------------------------------
-SOURCES += \
-    lvgl/src/draw/sdl/lv_draw_sdl.c
-
-# -------------------------------------------------------
 # LVGL draw (sw)
 # -------------------------------------------------------
 SOURCES += \
@@ -358,10 +346,6 @@ SOURCES += \
     lvgl/src/drivers/opengles/opengl_shader/lv_opengl_shader_manager.c \
     lvgl/src/drivers/opengles/opengl_shader/lv_opengl_shader_program.c \
     lvgl/src/drivers/qnx/lv_qnx.c \
-    lvgl/src/drivers/sdl/lv_sdl_keyboard.c \
-    lvgl/src/drivers/sdl/lv_sdl_mouse.c \
-    lvgl/src/drivers/sdl/lv_sdl_mousewheel.c \
-    lvgl/src/drivers/sdl/lv_sdl_window.c \
     lvgl/src/drivers/uefi/lv_uefi_context.c \
     lvgl/src/drivers/uefi/lv_uefi_display.c \
     lvgl/src/drivers/uefi/lv_uefi_indev_keyboard.c \
@@ -586,7 +570,6 @@ SOURCES += \
     lvgl/src/osal/lv_os_none.c \
     lvgl/src/osal/lv_pthread.c \
     lvgl/src/osal/lv_rtthread.c \
-    lvgl/src/osal/lv_sdl2.c \
     lvgl/src/osal/lv_windows.c
 
 # -------------------------------------------------------
@@ -750,12 +733,4 @@ SOURCES += \
     lvgl_textarea_lua_bindings.c \
     lvgl_lua_mongoose.c \
     lvgl_lua_runtime.c \
-    lvgl_simulator.c \
-    lvgl_offscreen_render.c
-
-win32:CONFIG(release, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
-else:unix: LIBS += -L$$DESTDIR/ -lSDL2
-
-INCLUDEPATH += $$PWD/../sdl2
-DEPENDPATH += $$PWD/../sdl2
+    lvgl_hmi.c

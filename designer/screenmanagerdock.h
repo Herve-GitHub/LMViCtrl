@@ -1,6 +1,7 @@
 #pragma once
 #include <QDockWidget>
 #include <QList>
+#include <QPoint>
 #include "WidgetMeta.h"
 
 class QListWidget;
@@ -35,6 +36,8 @@ public slots:
     void onDeleteScreen();
     void onItemDoubleClicked(QListWidgetItem *item);
     void onItemChanged(QListWidgetItem *item);
+    void onShowContextMenu(const QPoint &pos);
+    void onRenameScreen();
 
 private:
     void rebuildOrderField();

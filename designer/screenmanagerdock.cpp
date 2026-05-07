@@ -4,6 +4,7 @@
 #include <QInputDialog>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QUuid>
@@ -23,6 +24,8 @@ ScreenManagerDock::ScreenManagerDock(QWidget *parent)
     m_list = new QListWidget(container);
     m_list->setDragDropMode(QAbstractItemView::InternalMove);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_list->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     vlay->addWidget(m_list);
 
     auto *btnRow = new QHBoxLayout;
@@ -43,6 +46,8 @@ ScreenManagerDock::ScreenManagerDock(QWidget *parent)
             this, &ScreenManagerDock::onItemDoubleClicked);
     connect(m_list, &QListWidget::itemChanged,
             this, &ScreenManagerDock::onItemChanged);
+    connect(m_list, &QListWidget::customContextMenuRequested,
+            this, &ScreenManagerDock::onShowContextMenu);
     // 拖拽排序后触发
     connect(m_list->model(), &QAbstractItemModel::rowsMoved,
             this, [this]() {
@@ -68,7 +73,6 @@ void ScreenManagerDock::setScreens(const QList<ScreenData> &screenList)
             QStringLiteral("%1. %2").arg(s.order + 1).arg(s.name));
         item->setData(Qt::UserRole,     s.id);
         item->setData(Qt::UserRole + 1, s.name);
-        item->setFlags(item->flags() | Qt::ItemIsEditable);
         m_list->addItem(item);
     }
     m_blockSignals = false;
@@ -138,6 +142,37 @@ void ScreenManagerDock::onItemChanged(QListWidgetItem *item)
     // 格式为 "N. Name"，取 ". " 后面部分
     const int dotIdx = text.indexOf(QLatin1String(". "));
     const QString newName = (dotIdx >= 0) ? text.mid(dotIdx + 2).trimmed() : text.trimmed();
+    item->setData(Qt::UserRole + 1, newName);
+    rebuildOrderField();
+    emit screensChanged(screens());
+}
+
+void ScreenManagerDock::onShowContextMenu(const QPoint &pos)
+{
+    QListWidgetItem *item = m_list->itemAt(pos);
+    if (!item) return;
+
+    m_list->setCurrentItem(item);
+
+    QMenu menu(this);
+    QAction *renameAction = menu.addAction(tr("重命名"));
+    connect(renameAction, &QAction::triggered,
+            this, &ScreenManagerDock::onRenameScreen);
+    menu.exec(m_list->viewport()->mapToGlobal(pos));
+}
+
+void ScreenManagerDock::onRenameScreen()
+{
+    QListWidgetItem *item = m_list->currentItem();
+    if (!item) return;
+
+    const QString oldName = item->data(Qt::UserRole + 1).toString();
+    bool ok = false;
+    const QString newName = QInputDialog::getText(
+        this, tr("重命名图页"), tr("图页名称："),
+        QLineEdit::Normal, oldName, &ok).trimmed();
+    if (!ok || newName.isEmpty() || newName == oldName) return;
+
     item->setData(Qt::UserRole + 1, newName);
     rebuildOrderField();
     emit screensChanged(screens());

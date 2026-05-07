@@ -6,6 +6,8 @@
 #ifndef LVGL_LUA_BINDINGS_H
 #define LVGL_LUA_BINDINGS_H
 
+#include <stdint.h>
+
 // Platform-specific DLL export/import macros
 #if defined(_MSC_VER)
     #ifndef LVGLLUABINDING_EXPORTS
@@ -13,8 +15,9 @@
     #else
         #define LVGLLUABINDING_API __declspec(dllexport)
     #endif
+#elif defined(__GNUC__) && defined(LVGLLUABINDING_EXPORTS) && !defined(_WIN32)
+    #define LVGLLUABINDING_API __attribute__((visibility("default")))
 #else
-    // For GCC/non-Windows platforms, no DLL export needed
     #define LVGLLUABINDING_API
 #endif
 
@@ -47,6 +50,22 @@ LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void);
 LVGLLUABINDING_API int lvgl_simulator_run(const char * lua_script_path,
                                           int hor_res, int ver_res,
                                           const char * window_title);
+
+/**
+ * @brief 启动 Linux ARM HMI：创建 DRM/KMS 显示、evdev 输入，注册 Lua 绑定并运行指定脚本。
+ *
+ * @param lua_script_path  设计器生成的 Lua 入口脚本路径（必填）
+ * @param drm_path         DRM 设备路径（NULL 或空字符串时使用 /dev/dri/card0）
+ * @param connector_id     DRM connector id（-1 时自动选择）
+ * @param pointer_path     触摸/鼠标 evdev 路径（NULL 或空字符串时不创建）
+ * @param keypad_path      键盘/按键 evdev 路径（NULL 或空字符串时不创建）
+ * @return 0 成功，其它值为错误码（正常运行时通常不会返回）
+ */
+LVGLLUABINDING_API int lvgl_hmi_run(const char * lua_script_path,
+                                    const char * drm_path,
+                                    int64_t connector_id,
+                                    const char * pointer_path,
+                                    const char * keypad_path);
 
 /**
  * @brief Render a Lua widget module with a real offscreen LVGL display.

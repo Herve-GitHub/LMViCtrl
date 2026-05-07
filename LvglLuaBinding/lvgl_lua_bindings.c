@@ -11,12 +11,12 @@ static int luaopen_lvgl(lua_State* L);
 // Global TTF font storage (for applying to objects)
 static lv_font_t* g_current_ttf_font = NULL;
 
-void set_current_ttf_font(lv_font_t* font)
+LVGLLUABINDING_API void set_current_ttf_font(lv_font_t* font)
 {
     g_current_ttf_font = font;
 }
 
-lv_font_t* get_current_ttf_font(void)
+LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void)
 {
     return g_current_ttf_font;
 }
