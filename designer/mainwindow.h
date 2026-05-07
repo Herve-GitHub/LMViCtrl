@@ -21,6 +21,7 @@ class QMenu;
 class QAction;
 class QDockWidget;
 class QPlainTextEdit;
+class QProcess;
 class QTabWidget;
 class QStackedWidget;
 class QToolBar;
@@ -41,16 +42,9 @@ private:
     void setupMenus();
     void setupFileMenu();
     void setupEditMenu();
-    void setupViewMenu();
-    void setupProjectMenu();
-    void setupDrawMenu();
-    void setupComponentMenu();
-    void setupCommunicationMenu();
     void setupRunMenu();
-    void setupToolsMenu();
-    void setupWindowMenu();
     void setupLanguageMenu();
-    void setupHelpMenu();
+    
     void setupToolBars();
     void setupFileToolBar();
     void setupEditToolBar();
@@ -276,6 +270,7 @@ private:
     QToolBar          *m_fileToolBar      = nullptr;
     QToolBar          *m_editToolBar      = nullptr;
     QToolBar          *m_runToolBar       = nullptr;
+    QProcess          *m_simulatorProcess = nullptr;
 
     QAction           *m_newProjectAction        = nullptr;
     QAction           *m_openProjectAction       = nullptr;

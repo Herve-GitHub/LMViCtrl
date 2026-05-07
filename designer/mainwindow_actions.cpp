@@ -954,7 +954,28 @@ void MainWindow::onStartRun() {
     onStartSimulate();
 }
 
-void MainWindow::onStopRun() {}
+void MainWindow::onStopRun()
+{
+    if (!m_simulatorProcess || m_simulatorProcess->state() == QProcess::NotRunning) {
+        appendLog(tr("仿真器未运行"));
+        return;
+    }
+
+    appendLog(tr("正在停止仿真器..."));
+    m_simulatorProcess->terminate();
+    if (!m_simulatorProcess->waitForFinished(3000)) {
+        appendLog(tr("仿真器未响应，正在强制结束..."));
+        m_simulatorProcess->kill();
+        if (!m_simulatorProcess->waitForFinished(3000)) {
+            QMessageBox::warning(this, tr("停止运行"),
+                                 tr("无法停止仿真器：%1")
+                                     .arg(m_simulatorProcess->errorString()));
+            return;
+        }
+    }
+
+    appendLog(tr("仿真器已停止"));
+}
 
 void MainWindow::onPauseRun() {}
 void MainWindow::onCompileProject()
@@ -1072,11 +1093,34 @@ void MainWindow::onStartSimulate()
         QStringLiteral("--title"),  projectName,
     };
 
-    qint64 pid = 0;
-    if (!QProcess::startDetached(simuExe, args, projectDir, &pid)) {
-        QMessageBox::warning(this, tr("启动仿真"),
-                             tr("无法启动仿真器：%1").arg(simuExe));
+    if (!m_simulatorProcess) {
+        m_simulatorProcess = new QProcess(this);
+        connect(m_simulatorProcess, &QProcess::finished, this,
+                [this](int exitCode, QProcess::ExitStatus exitStatus) {
+                    appendLog(tr("仿真器已退出，退出码：%1，状态：%2")
+                                  .arg(exitCode)
+                                  .arg(exitStatus == QProcess::NormalExit
+                                           ? tr("正常退出")
+                                           : tr("异常退出")));
+                });
     }
+
+    if (m_simulatorProcess->state() != QProcess::NotRunning) {
+        QMessageBox::information(this, tr("启动仿真"),
+                                 tr("仿真器已在运行。"));
+        return;
+    }
+
+    m_simulatorProcess->setWorkingDirectory(projectDir);
+    m_simulatorProcess->start(simuExe, args);
+    if (!m_simulatorProcess->waitForStarted(3000)) {
+        QMessageBox::warning(this, tr("启动仿真"),
+                             tr("无法启动仿真器：%1\n%2")
+                                 .arg(simuExe, m_simulatorProcess->errorString()));
+        return;
+    }
+
+    appendLog(tr("仿真器已启动：%1").arg(simuExe));
 }
 
 void MainWindow::onSimulateVarSetting() {}

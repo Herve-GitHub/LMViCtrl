@@ -16,7 +16,12 @@
 --------------------------------------------------------------------
 
 local lv = require("lvgl")
-
+local ok_nav, common = pcall(require, "common.common")
+if not ok_nav then
+    io.stderr:write("[runtime] warning: common.common module not found, some features may be unavailable\n")
+    common = {}
+end
+local parse_hex_color = common.colorToNumber
 local M = {}
 
 -- 全局命名的控件实例表：可在事件代码中通过 widgets.<Name> 访问
@@ -310,7 +315,11 @@ end
 local function build_screen(scr)
     local screen = lv.obj_create(nil)
 
-    -- TODO: 按 scr.bgColor 设置屏幕背景色（待 lv 绑定补 set_style_bg_color）
+    local bg = parse_hex_color(scr.bgColor,nil)
+    if bg and type(screen.set_style_bg_color) == "function" then
+        screen:set_style_bg_color(bg, 0)
+        screen:set_style_bg_opa(255, 0)
+    end
 
     if type(scr.widgets) == "table" then
         -- 按 zOrder 升序构建，使 z 大的覆盖在上
