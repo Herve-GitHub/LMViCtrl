@@ -1,7 +1,7 @@
 #pragma once
 #include <QDockWidget>
 #include <QList>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class QTreeWidget;
 class QLineEdit;

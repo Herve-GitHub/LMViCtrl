@@ -14,6 +14,71 @@
 // ===========================================================================
 // JSON 序列化
 // ===========================================================================
+namespace {
+
+QJsonObject eventActionToJson(const EventAction &action)
+{
+    QJsonObject o;
+    o["id"] = action.id;
+    o["type"] = action.type;
+    o["label"] = action.label;
+    o["targetId"] = action.targetId;
+    o["targetName"] = action.targetName;
+    o["method"] = action.method;
+    o["params"] = QJsonObject::fromVariantMap(action.params);
+    o["code"] = action.code;
+    o["enabled"] = action.enabled;
+    return o;
+}
+
+EventAction eventActionFromJson(const QJsonObject &o)
+{
+    EventAction action;
+    action.id = o.value("id").toString();
+    action.type = o.value("type").toString();
+    action.label = o.value("label").toString();
+    action.targetId = o.value("targetId").toString();
+    action.targetName = o.value("targetName").toString();
+    action.method = o.value("method").toString();
+    action.params = o.value("params").toObject().toVariantMap();
+    action.code = o.value("code").toString();
+    action.enabled = o.value("enabled").toBool(true);
+    return action;
+}
+
+QJsonObject eventBindingsToJson(const QList<WidgetEventBinding> &bindings)
+{
+    QJsonObject events;
+    for (const WidgetEventBinding &binding : bindings) {
+        if (binding.eventName.isEmpty()) continue;
+        QJsonArray actions;
+        for (const EventAction &action : binding.actions)
+            actions.append(eventActionToJson(action));
+        if (!actions.isEmpty())
+            events.insert(binding.eventName, actions);
+    }
+    return events;
+}
+
+QList<WidgetEventBinding> eventBindingsFromJson(const QJsonObject &events)
+{
+    QList<WidgetEventBinding> bindings;
+    for (auto it = events.constBegin(); it != events.constEnd(); ++it) {
+        WidgetEventBinding binding;
+        binding.eventName = it.key();
+        const QJsonArray actions = it.value().toArray();
+        for (const QJsonValue &value : actions) {
+            if (value.isObject())
+                binding.actions.append(eventActionFromJson(value.toObject()));
+        }
+        if (!binding.eventName.isEmpty() && !binding.actions.isEmpty())
+            bindings.append(binding);
+    }
+    return bindings;
+}
+
+} // namespace
+
 QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
 {
     QJsonObject o;
@@ -28,6 +93,7 @@ QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
     o["locked"]     = inst.locked;
     o["visible"]    = inst.visible;
     o["properties"] = QJsonObject::fromVariantMap(inst.properties);
+    o["events"]     = eventBindingsToJson(inst.eventBindings);
     return o;
 }
 
@@ -45,6 +111,7 @@ WidgetInstance ProjectManager::instanceFromJson(const QJsonObject &o)
     inst.locked     = o.value("locked").toBool(false);
     inst.visible    = o.value("visible").toBool(true);
     inst.properties = o.value("properties").toObject().toVariantMap();
+    inst.eventBindings = eventBindingsFromJson(o.value("events").toObject());
     return inst;
 }
 
@@ -207,6 +274,50 @@ static QString variantToLua(const QVariant &v)
     }
 }
 
+static QString variantMapToLua(const QVariantMap &map)
+{
+    QString out = QStringLiteral("{");
+    bool first = true;
+    for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
+        if (!first) out += QStringLiteral(",");
+        out += QStringLiteral(" [") + luaQuote(it.key()) + QStringLiteral("] = ")
+             + variantToLua(it.value());
+        first = false;
+    }
+    out += QStringLiteral(" }");
+    return out;
+}
+
+static QString eventBindingsToLua(const QList<WidgetEventBinding> &bindings, int indent)
+{
+    if (bindings.isEmpty()) return QStringLiteral("{}");
+    const QString pad(indent, QLatin1Char(' '));
+    const QString childPad(indent + 2, QLatin1Char(' '));
+    const QString actionPad(indent + 4, QLatin1Char(' '));
+    QString out = QStringLiteral("{\n");
+    QTextStream s(&out);
+    for (const WidgetEventBinding &binding : bindings) {
+        if (binding.eventName.isEmpty() || binding.actions.isEmpty()) continue;
+        s << childPad << "[" << luaQuote(binding.eventName) << "] = {\n";
+        for (const EventAction &action : binding.actions) {
+            s << actionPad << "{\n";
+            s << actionPad << "  id = " << luaQuote(action.id) << ",\n";
+            s << actionPad << "  type = " << luaQuote(action.type) << ",\n";
+            s << actionPad << "  label = " << luaQuote(action.label) << ",\n";
+            s << actionPad << "  targetId = " << luaQuote(action.targetId) << ",\n";
+            s << actionPad << "  targetName = " << luaQuote(action.targetName) << ",\n";
+            s << actionPad << "  method = " << luaQuote(action.method) << ",\n";
+            s << actionPad << "  params = " << variantMapToLua(action.params) << ",\n";
+            s << actionPad << "  code = " << luaQuote(action.code) << ",\n";
+            s << actionPad << "  enabled = " << (action.enabled ? "true" : "false") << ",\n";
+            s << actionPad << "},\n";
+        }
+        s << childPad << "},\n";
+    }
+    s << pad << "}";
+    return out;
+}
+
 QString ProjectManager::compileToLua(const ProjectData &p)
 {
     QString out;
@@ -265,6 +376,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
                 first = false;
             }
             s << " },\n";
+            s << "        events     = " << eventBindingsToLua(w.eventBindings, 8) << ",\n";
             s << "      },\n";
         }
         s << "    },\n";

@@ -1,5 +1,5 @@
 #pragma once
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 // 从 Lua 文件中解析 __widget_meta 表，转换为 WidgetMeta
 class LuaWidgetParser

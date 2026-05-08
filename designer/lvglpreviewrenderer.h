@@ -3,7 +3,7 @@
 #include <QImage>
 #include <QString>
 
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class LvglPreviewRenderer
 {

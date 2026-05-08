@@ -682,3 +682,79 @@ void CanvasScene::setInstanceProperty(const QString &instanceId,
              oldValue.toString(),
              value.toString()));
 }
+
+QList<WidgetEventBinding> CanvasScene::instanceEventBindings(const QString &instanceId) const
+{
+    if (CanvasItem *ci = findItem(instanceId))
+        return ci->instance().eventBindings;
+    return {};
+}
+
+void CanvasScene::setInstanceEventBindings(const QString &instanceId,
+                                           const QList<WidgetEventBinding> &bindings)
+{
+    CanvasItem *ci = findItem(instanceId);
+    if (!ci) return;
+    ci->setEventBindings(bindings);
+    emit instanceEventsChanged(instanceId);
+    emit instanceChanged(instanceId);
+    emit operationLogged(tr("修改事件：%1")
+        .arg(ci->instance().name.isEmpty() ? ci->instance().widgetId : ci->instance().name));
+}
+
+void CanvasScene::addInstanceEventAction(const QString &instanceId,
+                                         const QString &eventName,
+                                         const EventAction &action)
+{
+    QList<WidgetEventBinding> bindings = instanceEventBindings(instanceId);
+    int index = -1;
+    for (int i = 0; i < bindings.size(); ++i) {
+        if (bindings[i].eventName == eventName) { index = i; break; }
+    }
+    if (index < 0) {
+        WidgetEventBinding binding;
+        binding.eventName = eventName;
+        binding.actions.append(action);
+        bindings.append(binding);
+    } else {
+        bindings[index].actions.append(action);
+    }
+    setInstanceEventBindings(instanceId, bindings);
+}
+
+void CanvasScene::updateInstanceEventAction(const QString &instanceId,
+                                            const QString &eventName,
+                                            const QString &actionId,
+                                            const EventAction &action)
+{
+    QList<WidgetEventBinding> bindings = instanceEventBindings(instanceId);
+    for (WidgetEventBinding &binding : bindings) {
+        if (binding.eventName != eventName) continue;
+        for (EventAction &item : binding.actions) {
+            if (item.id == actionId) {
+                item = action;
+                setInstanceEventBindings(instanceId, bindings);
+                return;
+            }
+        }
+    }
+}
+
+void CanvasScene::removeInstanceEventAction(const QString &instanceId,
+                                            const QString &eventName,
+                                            const QString &actionId)
+{
+    QList<WidgetEventBinding> bindings = instanceEventBindings(instanceId);
+    for (int i = 0; i < bindings.size(); ++i) {
+        if (bindings[i].eventName != eventName) continue;
+        auto &actions = bindings[i].actions;
+        for (int j = actions.size() - 1; j >= 0; --j) {
+            if (actions[j].id == actionId)
+                actions.removeAt(j);
+        }
+        if (actions.isEmpty())
+            bindings.removeAt(i);
+        setInstanceEventBindings(instanceId, bindings);
+        return;
+    }
+}

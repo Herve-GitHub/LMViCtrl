@@ -2,7 +2,7 @@
 #include <QDockWidget>
 #include <QHash>
 #include <QPointer>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class CanvasScene;
 class QFormLayout;

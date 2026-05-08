@@ -1,9 +1,6 @@
 ﻿
 
-// 解决Windows头文件冲突
-#define WIN32_LEAN_AND_MEAN
-#define _WINSOCKAPI_
-#include <windows.h>
+
 
 #include "lvgl_lua_bindings_internal.h"
 #include <cJSON.h>
@@ -14,6 +11,10 @@
 
 // ===== 跨平台线程同步 =====
 #ifdef _WIN32
+// 解决Windows头文件冲突
+#define WIN32_LEAN_AND_MEAN
+#define _WINSOCKAPI_
+#include <windows.h>
 // Windows平台使用CRITICAL_SECTION
 typedef CRITICAL_SECTION lv_mutex_t;
 #define MUTEX_INIT(m) InitializeCriticalSection(&m)

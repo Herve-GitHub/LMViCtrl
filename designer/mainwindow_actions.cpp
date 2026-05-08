@@ -13,6 +13,7 @@
 #include "projectmanager.h"
 #include "projectpropertiesdialog.h"
 #include "propertypaneldock.h"
+#include "eventpaneldock.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
 #include "welcomewidget.h"
@@ -63,6 +64,25 @@ QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
     obj.insert(QStringLiteral("locked"), inst.locked);
     obj.insert(QStringLiteral("visible"), inst.visible);
     obj.insert(QStringLiteral("properties"), QJsonObject::fromVariantMap(inst.properties));
+    QJsonObject events;
+    for (const WidgetEventBinding &binding : inst.eventBindings) {
+        QJsonArray actions;
+        for (const EventAction &action : binding.actions) {
+            QJsonObject item;
+            item.insert(QStringLiteral("id"), action.id);
+            item.insert(QStringLiteral("type"), action.type);
+            item.insert(QStringLiteral("label"), action.label);
+            item.insert(QStringLiteral("targetId"), action.targetId);
+            item.insert(QStringLiteral("targetName"), action.targetName);
+            item.insert(QStringLiteral("method"), action.method);
+            item.insert(QStringLiteral("params"), QJsonObject::fromVariantMap(action.params));
+            item.insert(QStringLiteral("code"), action.code);
+            item.insert(QStringLiteral("enabled"), action.enabled);
+            actions.append(item);
+        }
+        events.insert(binding.eventName, actions);
+    }
+    obj.insert(QStringLiteral("events"), events);
     return obj;
 }
 
@@ -80,6 +100,29 @@ WidgetInstance widgetInstanceFromJson(const QJsonObject &obj)
     inst.locked     = obj.value(QStringLiteral("locked")).toBool(false);
     inst.visible    = obj.value(QStringLiteral("visible")).toBool(true);
     inst.properties = obj.value(QStringLiteral("properties")).toObject().toVariantMap();
+    const QJsonObject events = obj.value(QStringLiteral("events")).toObject();
+    for (auto it = events.constBegin(); it != events.constEnd(); ++it) {
+        WidgetEventBinding binding;
+        binding.eventName = it.key();
+        const QJsonArray actions = it.value().toArray();
+        for (const QJsonValue &value : actions) {
+            if (!value.isObject()) continue;
+            const QJsonObject item = value.toObject();
+            EventAction action;
+            action.id = item.value(QStringLiteral("id")).toString();
+            action.type = item.value(QStringLiteral("type")).toString();
+            action.label = item.value(QStringLiteral("label")).toString();
+            action.targetId = item.value(QStringLiteral("targetId")).toString();
+            action.targetName = item.value(QStringLiteral("targetName")).toString();
+            action.method = item.value(QStringLiteral("method")).toString();
+            action.params = item.value(QStringLiteral("params")).toObject().toVariantMap();
+            action.code = item.value(QStringLiteral("code")).toString();
+            action.enabled = item.value(QStringLiteral("enabled")).toBool(true);
+            binding.actions.append(action);
+        }
+        if (!binding.actions.isEmpty())
+            inst.eventBindings.append(binding);
+    }
     return inst;
 }
 
@@ -299,6 +342,8 @@ void MainWindow::openScreenTab(const QString &screenId)
 
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
+    if (m_eventPanel)
+        m_eventPanel->setCurrentScene(tab->scene());
 }
 
 void MainWindow::closeScreenTab(const QString &screenId)
@@ -404,6 +449,9 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
     // 应用分辨率变化到所有已开 tab
     for (ScreenTab *tab : std::as_const(m_openTabs))
         tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
+
+    if (m_eventPanel)
+        m_eventPanel->setProjectData(&m_project);
 }
 
 void MainWindow::onTabCloseRequested(int index)
@@ -431,6 +479,11 @@ void MainWindow::setProjectOpen(bool open)
         m_widgetToolbox->setVisible(open);
     if(m_propertyPanel)
         m_propertyPanel->setVisible(open);
+    if (m_eventPanel) {
+        m_eventPanel->setProjectData(&m_project);
+        m_eventPanel->setVisible(open);
+        if (!open) m_eventPanel->setCurrentScene(nullptr);
+    }
     resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
     // 若切回欢迎页，刷新最近工程列表
     if (!open && m_welcomeWidget)
@@ -1649,6 +1702,8 @@ bool MainWindow::activateUndoStackPage(QUndoStack *stack)
         m_tabWidget->setCurrentWidget(tab);
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
+    if (m_eventPanel)
+        m_eventPanel->setCurrentScene(tab->scene());
     return true;
 }
 

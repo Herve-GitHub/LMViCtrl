@@ -21,6 +21,9 @@ SOURCES += \
     mainwindow_actions.cpp \
     luawidgetparser.cpp \
     projectmanager.cpp \
+    eventactiondialog.cpp \
+    eventpaneldock.cpp \
+    eventtriggerdialog.cpp \
     widgettoolbox.cpp \
     canvasitem.cpp \
     canvasscene.cpp \
@@ -36,9 +39,12 @@ SOURCES += \
 
 HEADERS += \
     mainwindow.h \
-    WidgetMeta.h \
+    widgemeta.h \
     luawidgetparser.h \
     projectmanager.h \
+    eventactiondialog.h \
+    eventpaneldock.h \
+    eventtriggerdialog.h \
     widgettoolbox.h \
     canvasitem.h \
     canvasscene.h \

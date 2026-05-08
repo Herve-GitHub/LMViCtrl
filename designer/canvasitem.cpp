@@ -228,6 +228,12 @@ void CanvasItem::setInstanceProperty(const QString &key, const QVariant &value)
     update();
 }
 
+void CanvasItem::setEventBindings(const QList<WidgetEventBinding> &bindings)
+{
+    m_inst.eventBindings = bindings;
+    update();
+}
+
 // ---------------------------------------------------------------------------
 // 几何辅助
 // ---------------------------------------------------------------------------

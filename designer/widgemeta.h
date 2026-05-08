@@ -51,6 +51,24 @@ struct BindingDef {
     QString direction;  // "in" / "out" / "inout"
 };
 
+// 可视化事件动作：一个控件事件可以顺序执行多个动作
+struct EventAction {
+    QString id;          // UUID
+    QString type;        // load_screen/custom_code/set_property/call_method/freemaster
+    QString label;       // UI 展示名
+    QString targetId;    // screenId / instanceId / tagId
+    QString targetName;  // screen name / widget name / tag name
+    QString method;      // goto_page/set_property/call 等
+    QVariantMap params;  // 动作参数
+    QString code;        // type == custom_code 时的 Lua 代码
+    bool enabled = true;
+};
+
+struct WidgetEventBinding {
+    QString eventName;
+    QList<EventAction> actions;
+};
+
 // 控件 API 契约（Lua 模块实际实现了哪些方法）
 struct WidgetApi {
     bool hasDraw             = false;
@@ -119,6 +137,7 @@ struct WidgetInstance {
     bool locked = false;// 是否锁定位置和大小
     bool visible = true;// 是否可见
     QVariantMap properties;// 属性值，key 是属性名，value 是属性值
+    QList<WidgetEventBinding> eventBindings;// 可视化事件动作绑定
 };
 
 // Screen 页面
@@ -171,6 +190,8 @@ Q_DECLARE_METATYPE(PropertyOption)
 Q_DECLARE_METATYPE(PropertyMeta)
 Q_DECLARE_METATYPE(EventDef)
 Q_DECLARE_METATYPE(BindingDef)
+Q_DECLARE_METATYPE(EventAction)
+Q_DECLARE_METATYPE(WidgetEventBinding)
 Q_DECLARE_METATYPE(WidgetApi)
 Q_DECLARE_METATYPE(WidgetMeta)
 Q_DECLARE_METATYPE(WidgetInstance)

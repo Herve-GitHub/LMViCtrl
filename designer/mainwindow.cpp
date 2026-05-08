@@ -3,6 +3,7 @@
 #include "widgettoolbox.h"
 #include "screenmanagerdock.h"
 #include "propertypaneldock.h"
+#include "eventpaneldock.h"
 #include "screentab.h"
 #include "canvasscene.h"
 #include "welcomewidget.h"
@@ -67,6 +68,8 @@ MainWindow::MainWindow(QWidget* parent)
 	connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
 		if (m_propertyPanel)
 			m_propertyPanel->setCurrentScene(currentScene());
+		if (m_eventPanel)
+			m_eventPanel->setCurrentScene(currentScene());
 		});
 
 	// 属性面板（停靠在右侧）
@@ -74,6 +77,13 @@ MainWindow::MainWindow(QWidget* parent)
 	addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
 
 	setupLogDock();
+
+	// 事件面板（停靠在底部，与日志同区）
+	m_eventPanel = new EventPanelDock(this);
+	m_eventPanel->setProjectData(&m_project);
+	addDockWidget(Qt::BottomDockWidgetArea, m_eventPanel);
+	tabifyDockWidget(m_logDock, m_eventPanel);
+	m_eventPanel->raise();
 
 	// 欢迎页
 	m_welcomeWidget = new WelcomeWidget;

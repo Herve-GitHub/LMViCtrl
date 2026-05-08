@@ -2,7 +2,7 @@
 #include <QDockWidget>
 #include <QList>
 #include <QPoint>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class QListWidget;
 class QListWidgetItem;

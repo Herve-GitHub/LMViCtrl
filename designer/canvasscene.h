@@ -6,7 +6,7 @@
 #include <QSet>
 #include <QSize>
 #include <functional>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class QUndoStack;
 class CanvasItem;
@@ -67,6 +67,19 @@ public:
     // 属性面板编辑（不入栈，立刻生效）
     void setInstanceName    (const QString &instanceId, const QString &name);
     void setInstanceProperty(const QString &instanceId, const QString &key, const QVariant &value);
+    QList<WidgetEventBinding> instanceEventBindings(const QString &instanceId) const;
+    void setInstanceEventBindings(const QString &instanceId,
+                                  const QList<WidgetEventBinding> &bindings);
+    void addInstanceEventAction(const QString &instanceId,
+                                const QString &eventName,
+                                const EventAction &action);
+    void updateInstanceEventAction(const QString &instanceId,
+                                   const QString &eventName,
+                                   const QString &actionId,
+                                   const EventAction &action);
+    void removeInstanceEventAction(const QString &instanceId,
+                                   const QString &eventName,
+                                   const QString &actionId);
 
     // 通过 instanceId 取实例数据（属性面板使用）
     bool instance(const QString &instanceId, WidgetInstance *out) const;
@@ -76,6 +89,8 @@ public:
 signals:
     // 实例的某属性 / 名字 被外部修改后通知（属性面板用于回填）
     void instanceChanged(const QString &instanceId);
+
+    void instanceEventsChanged(const QString &instanceId);
 
     // 画布上拖动/缩放过程中的实时几何变化（只含 x/y/width/height，
     // 属性面板可仅刷新占位编辑器而不重建）

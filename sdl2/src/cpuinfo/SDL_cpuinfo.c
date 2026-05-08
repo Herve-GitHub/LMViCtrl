@@ -41,6 +41,9 @@
 #include "SDL_cpuinfo.h"
 #include "SDL_assert.h"
 
+#if defined(__LINUX__)
+#include <stdio.h>
+#endif
 #ifdef HAVE_SYSCONF
 #include <unistd.h>
 #endif

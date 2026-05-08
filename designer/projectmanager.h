@@ -1,5 +1,5 @@
 #pragma once
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 #include <QJsonObject>
 #include <QString>

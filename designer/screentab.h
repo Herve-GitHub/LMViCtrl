@@ -1,6 +1,6 @@
 #pragma once
 #include <QWidget>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class CanvasScene;
 class CanvasView;
