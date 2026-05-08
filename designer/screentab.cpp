@@ -2,6 +2,7 @@
 #include "canvasscene.h"
 #include "canvasview.h"
 
+#include <QColor>
 #include <QVBoxLayout>
 
 ScreenTab::ScreenTab(const ScreenData &screen,
@@ -13,6 +14,7 @@ ScreenTab::ScreenTab(const ScreenData &screen,
 {
     m_scene = new CanvasScene(this);
     m_scene->setCanvasSize(canvasSize.width(), canvasSize.height());
+    m_scene->setCanvasBackgroundColor(QColor(screen.bgColor));
     m_scene->setWidgetMetas(metas);
     m_scene->loadInstances(screen.widgets);
 
@@ -27,4 +29,5 @@ ScreenTab::ScreenTab(const ScreenData &screen,
 void ScreenTab::syncToScreen(ScreenData &screen) const
 {
     screen.widgets = m_scene->allInstances();
+    screen.bgColor = m_scene->canvasBackgroundColor().name(QColor::HexRgb);
 }

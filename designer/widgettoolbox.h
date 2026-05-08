@@ -3,12 +3,12 @@
 #include <QList>
 #include "WidgetMeta.h"
 
-class QListWidget;
+class QTreeWidget;
 class QLineEdit;
 class QLabel;
 
 // 组件工具箱停靠窗口
-// 从指定目录加载 Lua widget 脚本，展示为可拖拽列表
+// 从指定目录加载 Lua widget 脚本，按 category 分组为可折叠树
 class WidgetToolbox : public QDockWidget
 {
     Q_OBJECT
@@ -27,9 +27,9 @@ private slots:
 
 private:
     void buildUi();
-    void populateList(const QString &filter = {});
+    void populateTree(const QString &filter = {});
 
-    QListWidget       *m_listWidget = nullptr;
+    QTreeWidget       *m_tree       = nullptr;
     QLineEdit         *m_searchEdit = nullptr;
     QLabel            *m_countLabel = nullptr;
     QList<WidgetMeta>  m_metas;

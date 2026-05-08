@@ -52,7 +52,10 @@ INCLUDEPATH += freetype/include
 HEADERS += \
     cJSON.h \
     lv_conf.h \
+    lv_conf_sdl.h \
+    lv_conf_hmi_drm.h \
     lvgl_lua_bindings.h \
+    lvgl_lua_runtime.h \
     lvgl_lua_bindings_internal.h \
     mongoose.h \
     lua/lapi.h \
@@ -745,7 +748,10 @@ SOURCES += \
     lvgl_chart_lua_bindings.c \
     lvgl_slider_lua_bindings.c \
     lvgl_textarea_lua_bindings.c \
-    lvgl_lua_mongoose.c
+    lvgl_lua_mongoose.c \
+    lvgl_lua_runtime.c \
+    lvgl_simulator.c \
+    lvgl_offscreen_render.c
 
 win32:CONFIG(release, debug|release): LIBS += -L$$DESTDIR/ -lSDL2
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$DESTDIR/ -lSDL2

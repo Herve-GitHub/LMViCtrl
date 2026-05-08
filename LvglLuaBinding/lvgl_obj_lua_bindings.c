@@ -115,6 +115,51 @@ static int l_obj_set_style_bg_opa(lua_State* L) {
     return 0;
 }
 
+// obj:set_style_line_color(color, selector)
+static int l_obj_set_style_line_color(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    uint32_t color_hex = (uint32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_color(obj, lv_color_hex(color_hex), selector);
+    return 0;
+}
+
+// obj:set_style_line_opa(opa, selector)
+static int l_obj_set_style_line_opa(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    lv_opa_t opa = (lv_opa_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_opa(obj, opa, selector);
+    return 0;
+}
+
+// obj:set_style_line_width(width, selector)
+static int l_obj_set_style_line_width(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t width = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_line_width(obj, width, selector);
+    return 0;
+}
+
+// obj:set_style_width(width, selector)
+static int l_obj_set_style_width(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t width = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_width(obj, width, selector);
+    return 0;
+}
+
+// obj:set_style_height(height, selector)
+static int l_obj_set_style_height(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int32_t height = (int32_t)luaL_checkinteger(L, 2);
+    int32_t selector = (int32_t)luaL_optinteger(L, 3, 0);
+    if (obj) lv_obj_set_style_height(obj, height, selector);
+    return 0;
+}
+
 // obj:set_style_text_color(color, selector)
 static int l_obj_set_style_text_color(lua_State* L) {
     lv_obj_t* obj = check_lv_obj(L, 1);
@@ -473,10 +518,14 @@ static int l_obj_set_text(lua_State* L) {
     const char* text = luaL_checkstring(L, 2);
     if (obj) {
         // Check object type and call appropriate function
-        if (lv_obj_check_type(obj, &lv_textarea_class)) {
+        if (lv_obj_check_type(obj, &lv_checkbox_class)) {
+            lv_checkbox_set_text(obj, text);
+        } else if (lv_obj_check_type(obj, &lv_textarea_class)) {
             lv_textarea_set_text(obj, text);
-        } else {
+        } else if (lv_obj_check_type(obj, &lv_label_class)) {
             lv_label_set_text(obj, text);
+        } else {
+            luaL_error(L, "set_text is not supported for this LVGL object type");
         }
     }
     return 0;
@@ -488,6 +537,9 @@ static int l_obj_get_text(lua_State* L) {
     if (obj) {
         if (lv_obj_check_type(obj, &lv_textarea_class)) {
             const char* text = lv_textarea_get_text(obj);
+            lua_pushstring(L, text ? text : "");
+        } else if (lv_obj_check_type(obj, &lv_checkbox_class)) {
+            const char* text = lv_checkbox_get_text(obj);
             lua_pushstring(L, text ? text : "");
         } else if (lv_obj_check_type(obj, &lv_label_class)) {
             const char* text = lv_label_get_text(obj);
@@ -732,6 +784,11 @@ static const luaL_Reg lv_obj_methods[] = {
     {"center", l_obj_center},
     {"set_style_bg_color", l_obj_set_style_bg_color},
     {"set_style_bg_opa", l_obj_set_style_bg_opa},
+    {"set_style_line_color", l_obj_set_style_line_color},
+    {"set_style_line_opa", l_obj_set_style_line_opa},
+    {"set_style_line_width", l_obj_set_style_line_width},
+    {"set_style_width", l_obj_set_style_width},
+    {"set_style_height", l_obj_set_style_height},
     {"set_style_text_color", l_obj_set_style_text_color},
     {"set_style_text_font", l_obj_set_style_text_font},
     {"set_style_border_width", l_obj_set_style_border_width},
@@ -772,6 +829,7 @@ static const luaL_Reg lv_obj_methods[] = {
     {"set_flex_align", l_obj_set_flex_align},
     {"clear_layout", l_obj_clear_layout},
     {"delete", l_obj_delete},
+    {"del", l_obj_delete},
     {"get_child_count", l_obj_get_child_count},
     {"get_child", l_obj_get_child},
     {"get_parent", l_obj_get_parent},

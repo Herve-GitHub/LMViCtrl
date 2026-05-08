@@ -1,48 +1,164 @@
 #include "canvasitem.h"
+#include "lvglpreviewrenderer.h"
+
+#define _USE_MATH_DEFINES
+#include <cmath>
 
 #include <QDir>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneHoverEvent>
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QStyleOptionGraphicsItem>
 
 // ---------------------------------------------------------------------------
-// 加载 widget 预览图：img/widgets/<lua 同名>.png（带缓存）
+// 工程字体（全局）
+//   - 工程属性中配置的字体文件被加载到 QFontDatabase 中，
+//     之后所有 CanvasItem 在绘制文字时使用该字体作为基础字体。
+//   - 各处只在该字体上覆盖 pointSizeF / bold 等局部属性，从而让用户
+//     选择的字体自动应用到所有组态元素。
 // ---------------------------------------------------------------------------
-static QPixmap loadWidgetPixmap(const QString &luaFilePath)
+namespace {
+QFont   g_projectFont;       // 默认即 Qt 系统字体
+int     g_projectFontId = -1; // QFontDatabase::addApplicationFont 返回值
+QString g_projectFontPath;   // 当前已加载的字体文件绝对路径
+int     g_projectFontSize = 16;
+}
+
+void CanvasItem::setProjectFont(const QString &fontFile,
+                                int            defaultSize,
+                                const QString &projectDir)
+{
+    // 先卸载旧字体
+    auto unload = []() {
+        if (g_projectFontId >= 0) {
+            QFontDatabase::removeApplicationFont(g_projectFontId);
+            g_projectFontId = -1;
+        }
+        g_projectFontPath.clear();
+    };
+
+    QFont f; // 默认系统字体
+    g_projectFontSize = defaultSize > 0 ? defaultSize : 16;
+    if (defaultSize > 0)
+        f.setPointSize(defaultSize);
+
+    if (fontFile.isEmpty()) {
+        unload();
+        g_projectFont = f;
+        return;
+    }
+
+    // 解析为绝对路径（工程相对路径优先）
+    QString absPath = fontFile;
+    if (QFileInfo(absPath).isRelative()) {
+        if (!projectDir.isEmpty())
+            absPath = QDir(projectDir).absoluteFilePath(fontFile);
+        else
+            absPath = QFileInfo(fontFile).absoluteFilePath();
+    }
+
+    // 路径相同则无需重新加载
+    if (absPath != g_projectFontPath) {
+        unload();
+        if (QFile::exists(absPath)) {
+            const int id = QFontDatabase::addApplicationFont(absPath);
+            if (id >= 0) {
+                g_projectFontId  = id;
+                g_projectFontPath = absPath;
+            }
+        }
+    }
+
+    if (g_projectFontId >= 0) {
+        const QStringList fams = QFontDatabase::applicationFontFamilies(g_projectFontId);
+        if (!fams.isEmpty())
+            f.setFamily(fams.first());
+    }
+    g_projectFont = f;
+}
+
+const QFont &CanvasItem::projectFont()
+{
+    return g_projectFont;
+}
+
+QString CanvasItem::projectFontFilePath()
+{
+    return g_projectFontPath;
+}
+
+int CanvasItem::projectFontSize()
+{
+    return g_projectFontSize;
+}
+
+// ---------------------------------------------------------------------------
+// 加载 widget 预览图（带缓存）
+//   1. meta.previewImage 【优先】——可以是绝对路径或相对于 lua 所在目录
+//   2. 与 lua 同名的 ../img/widgets/<basename>.png
+//   3. 当前工作目录/img/widgets/<basename>.png
+// ---------------------------------------------------------------------------
+static QPixmap loadWidgetPixmap(const WidgetMeta &meta)
 {
     static QHash<QString, QPixmap> cache;
 
-    const QString key = QFileInfo(luaFilePath).completeBaseName();
-    if (key.isEmpty()) return {};
-
-    const auto it = cache.constFind(key);
+    const QString cacheKey = meta.luaFilePath + QStringLiteral("|") + meta.previewImage;
+    const auto it = cache.constFind(cacheKey);
     if (it != cache.constEnd()) return it.value();
 
-    QPixmap pix;
-    // 优先与 lua 文件同目录的 ../img/widgets/<key>.png；
-    // 退化到 当前工作目录/img/widgets/<key>.png
-    const QFileInfo luaFi(luaFilePath);
-    QString imgPath;
-    if (luaFi.exists()) {
-        imgPath = QDir(luaFi.absolutePath() + QStringLiteral("/../../img/widgets"))
-                      .absoluteFilePath(key + QStringLiteral(".png"));
-        if (!QFileInfo::exists(imgPath))
-            imgPath.clear();
+    const QFileInfo luaFi(meta.luaFilePath);
+    const QString   key = luaFi.completeBaseName();
+
+    QStringList candidates;
+    if (!meta.previewImage.isEmpty()) {
+        if (QFileInfo(meta.previewImage).isAbsolute())
+            candidates << meta.previewImage;
+        // 相对 lua 同目录
+        if (luaFi.exists())
+            candidates << QDir(luaFi.absolutePath()).absoluteFilePath(meta.previewImage);
+        // 相对 lua 上一级（典型布局：designer/lua/widgets/.. + img/widgets/...）
+        if (luaFi.exists())
+            candidates << QDir(luaFi.absolutePath() + QStringLiteral("/../.."))
+                          .absoluteFilePath(meta.previewImage);
+        candidates << QDir::current().absoluteFilePath(meta.previewImage);
     }
-    if (imgPath.isEmpty()) {
-        imgPath = QDir::current().absoluteFilePath(
+    if (!key.isEmpty()) {
+        if (luaFi.exists())
+            candidates << QDir(luaFi.absolutePath() + QStringLiteral("/../../img/widgets"))
+                          .absoluteFilePath(key + QStringLiteral(".png"));
+        candidates << QDir::current().absoluteFilePath(
             QStringLiteral("img/widgets/%1.png").arg(key));
     }
-    pix.load(imgPath);
 
-    cache.insert(key, pix);
+    QPixmap pix;
+    for (const QString &p : std::as_const(candidates)) {
+        if (p.isEmpty()) continue;
+        if (pix.load(p)) break;
+    }
+    cache.insert(cacheKey, pix);
     return pix;
+}
+
+static QString lvglPreviewKey(const WidgetMeta &meta, const WidgetInstance &inst)
+{
+    QJsonObject props;
+    for (auto it = inst.properties.cbegin(); it != inst.properties.cend(); ++it)
+        props.insert(it.key(), QJsonValue::fromVariant(it.value()));
+
+    const QFileInfo luaFi(meta.luaFilePath);
+    return meta.luaFilePath
+        + QLatin1Char('|') + QString::number(luaFi.exists() ? luaFi.lastModified().toMSecsSinceEpoch() : 0)
+        + QLatin1Char('|') + QString::number(inst.width)
+        + QLatin1Char('x') + QString::number(inst.height)
+        + QLatin1Char('|') + QString::fromUtf8(QJsonDocument(props).toJson(QJsonDocument::Compact));
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +175,10 @@ CanvasItem::CanvasItem(const WidgetInstance &inst,
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setAcceptHoverEvents(true);
     setZValue(inst.zOrder);
-    m_pixmap = loadWidgetPixmap(m_meta.luaFilePath);
+    m_pixmap = loadWidgetPixmap(m_meta);
 }
+
+
 
 // ---------------------------------------------------------------------------
 // applyGeometry — 由撤销/重做直接设置，不入栈
@@ -87,6 +205,25 @@ void CanvasItem::setInstanceName(const QString &name)
 
 void CanvasItem::setInstanceProperty(const QString &key, const QVariant &value)
 {
+    // 几何属性同时同步到 WidgetInstance 顶层字段与图形项位置/尺寸
+    if (key == QLatin1String("x") || key == QLatin1String("y")) {
+        const int v = value.toInt();
+        if (key == QLatin1String("x")) m_inst.x = v;
+        else                            m_inst.y = v;
+        // setPos 会触发 itemChange → emit geometryChanged
+        setPos(m_inst.x, m_inst.y);
+        update();
+        return;
+    }
+    if (key == QLatin1String("width") || key == QLatin1String("height")) {
+        const int v = qMax<int>(value.toInt(), int(kMin));
+        prepareGeometryChange();
+        if (key == QLatin1String("width"))  m_inst.width  = v;
+        else                                 m_inst.height = v;
+        update();
+        emit geometryChanged(m_inst.instanceId);
+        return;
+    }
     m_inst.properties.insert(key, value);
     update();
 }
@@ -169,14 +306,40 @@ void CanvasItem::paint(QPainter *p,
 
     // --- 透明矩形框 + widget 预览图 ---
     p->save();
+    // 使用工程级字体作为所有文字绘制的基础字体（用户在工程属性中配置）
+    p->setFont(CanvasItem::projectFont());
     p->setRenderHint(QPainter::SmoothPixmapTransform, true);
     p->setRenderHint(QPainter::Antialiasing,           true);
 
-    const QPixmap &pix = m_pixmap;
-    if (!pix.isNull()) {
-        p->drawPixmap(body, pix, QRectF(pix.rect()));
-    } else {
-        // 找不到图片时画一个浅色虚线框作为占位
+    bool painted = false;
+
+    // Lua 脚本控件优先使用真实 LVGL 离屏渲染；失败时再走 draw_hints/图片降级。
+    if (!m_meta.luaFilePath.isEmpty()) {
+        const QString key = lvglPreviewKey(m_meta, m_inst);
+        if (key != m_lvglPreviewKey) {
+            m_lvglPreviewKey = key;
+            m_lvglPreview = LvglPreviewRenderer::renderWidget(m_meta, m_inst, m_inst.width, m_inst.height);
+        }
+        if (!m_lvglPreview.isNull()) {
+            p->drawImage(body, m_lvglPreview);
+            painted = true;
+        }
+    }
+#if 0
+    //为了分析绘制相关问题分析，暂时关闭 LVGL 离屏渲染，优先使用 drawHints 绘制（如果有的话），再没有才用预览图
+    if (!painted && !m_meta.drawHints.isEmpty()) {
+        painted = m_drawHints.paintWithDrawHints(p, body, m_inst, m_meta);
+    }
+    if (!painted) {
+        const QPixmap &pix = m_pixmap;
+        if (!pix.isNull()) {
+            p->drawPixmap(body, pix, QRectF(pix.rect()));
+            painted = true;
+        }
+    }
+#endif
+    if (!painted) {
+        // 占位虚线框
         p->setBrush(Qt::NoBrush);
         p->setPen(QPen(QColor(150, 150, 150, 180), 1, Qt::DashLine));
         p->drawRect(body.adjusted(0.5, 0.5, -0.5, -0.5));
@@ -260,6 +423,7 @@ void CanvasItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
         m_inst.width  = qRound(w);
         m_inst.height = qRound(h);
         update();
+        emit geometryChanged(m_inst.instanceId);
         event->accept();
         return;
     }
@@ -309,6 +473,7 @@ QVariant CanvasItem::itemChange(GraphicsItemChange change, const QVariant &value
         m_inst.x = qRound(pos().x());
         m_inst.y = qRound(pos().y());
         if (scene()) scene()->update();
+        emit geometryChanged(m_inst.instanceId);
     }
     if (m_pixmap.isNull()) {
 		//todo 如果没有预览图，尝试使用lvgl去绘制图片

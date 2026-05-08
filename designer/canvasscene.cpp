@@ -58,8 +58,10 @@ class MoveItemsCommand : public QUndoCommand
 {
 public:
     MoveItemsCommand(CanvasScene *scene, const QList<MoveData> &moves,
-                     QUndoCommand *parent = nullptr)
-        : QUndoCommand(QStringLiteral("移动 %1 个元素").arg(moves.size()), parent)
+                     const QString &text = QString(), QUndoCommand *parent = nullptr)
+        : QUndoCommand(text.isEmpty()
+              ? QStringLiteral("移动 %1 个元素").arg(moves.size())
+              : text, parent)
         , m_scene(scene), m_moves(moves) {}
 
     void undo() override {
@@ -126,7 +128,7 @@ CanvasScene::CanvasScene(QObject *parent)
     // 背景——深色画布区域
     m_bgItem = addRect(0, 0, m_canvasSize.width(), m_canvasSize.height(),
                        QPen(QColor("#555555"), 1),
-                       QBrush(QColor("#1a1a2e")));
+                       QBrush(m_canvasBgColor));
     m_bgItem->setZValue(-100);
 
     setBackgroundBrush(QColor("#2b2b2b"));
@@ -144,9 +146,32 @@ CanvasScene::CanvasScene(QObject *parent)
 // ---------------------------------------------------------------------------
 void CanvasScene::setCanvasSize(int width, int height)
 {
+    const QSize oldSize = m_canvasSize;
+    const bool changed = (m_canvasSize != QSize(width, height));
     m_canvasSize = QSize(width, height);
     m_bgItem->setRect(0, 0, width, height);
     setSceneRect(-50, -50, width + 100, height + 100);
+    if (changed) {
+        emit canvasChanged();
+        if (!m_suppressOperationLog) {
+            emit operationLogged(tr("修改画布大小：%1x%2 -> %3x%4")
+                .arg(oldSize.width()).arg(oldSize.height()).arg(width).arg(height));
+        }
+    }
+}
+
+void CanvasScene::setCanvasBackgroundColor(const QColor &color)
+{
+    if (!color.isValid() || color == m_canvasBgColor) return;
+    const QString oldColor = m_canvasBgColor.name(QColor::HexRgb).toUpper();
+    m_canvasBgColor = color;
+    if (m_bgItem)
+        m_bgItem->setBrush(QBrush(m_canvasBgColor));
+    emit canvasChanged();
+    if (!m_suppressOperationLog) {
+        emit operationLogged(tr("修改画布背景颜色：%1 -> %2")
+            .arg(oldColor, m_canvasBgColor.name(QColor::HexRgb).toUpper()));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +193,8 @@ CanvasItem *CanvasScene::makeItem(const WidgetInstance &inst)
     auto *ci = new CanvasItem(inst, meta);
     connect(ci, &CanvasItem::resizeCommitted,
             this, &CanvasScene::onResizeCommitted);
+    connect(ci, &CanvasItem::geometryChanged,
+            this, &CanvasScene::instanceGeometryChanged);
     return ci;
 }
 
@@ -189,27 +216,55 @@ void CanvasScene::doAddItem(const WidgetInstance &inst)
 {
     CanvasItem *ci = makeItem(inst);
     addItem(ci);
+    if (!m_suppressOperationLog) {
+        emit operationLogged(tr("添加元素：%1 (%2)，位置 %3,%4，大小 %5x%6")
+            .arg(inst.name.isEmpty() ? inst.widgetId : inst.name,
+                 inst.widgetId)
+            .arg(inst.x).arg(inst.y).arg(inst.width).arg(inst.height));
+    }
 }
 
 void CanvasScene::doRemoveItem(const QString &instanceId)
 {
     if (CanvasItem *ci = findItem(instanceId)) {
+        const WidgetInstance inst = ci->instance();
         removeItem(ci);
         delete ci;
+        if (!m_suppressOperationLog) {
+            emit operationLogged(tr("删除元素：%1 (%2)")
+                .arg(inst.name.isEmpty() ? inst.widgetId : inst.name,
+                     inst.widgetId));
+        }
     }
 }
 
 void CanvasScene::doSetGeometry(const QString &instanceId, const QRectF &rect)
 {
-    if (CanvasItem *ci = findItem(instanceId))
+    if (CanvasItem *ci = findItem(instanceId)) {
+        const WidgetInstance before = ci->instance();
         ci->applyGeometry(rect);
+        const WidgetInstance after = ci->instance();
+        if (!m_suppressOperationLog) {
+            emit operationLogged(tr("调整元素：%1，%2,%3 %4x%5 -> %6,%7 %8x%9")
+                .arg(after.name.isEmpty() ? after.widgetId : after.name)
+                .arg(before.x).arg(before.y).arg(before.width).arg(before.height)
+                .arg(after.x).arg(after.y).arg(after.width).arg(after.height));
+        }
+    }
 }
 
 void CanvasScene::doSetPositions(const QList<QPair<QString, QPointF>> &moves)
 {
     for (const auto &[id, pos] : moves) {
         if (CanvasItem *ci = findItem(id)) {
+            const WidgetInstance before = ci->instance();
             ci->setPos(pos);
+            const WidgetInstance after = ci->instance();
+            if (!m_suppressOperationLog && (before.x != after.x || before.y != after.y)) {
+                emit operationLogged(tr("移动元素：%1，%2,%3 -> %4,%5")
+                    .arg(after.name.isEmpty() ? after.widgetId : after.name)
+                    .arg(before.x).arg(before.y).arg(after.x).arg(after.y));
+            }
         }
     }
 }
@@ -238,6 +293,8 @@ void CanvasScene::copySelected()
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
             m_clipboard.append(ci->instance());
     }
+    if (!m_clipboard.isEmpty())
+        emit operationLogged(tr("复制元素：%1 个").arg(m_clipboard.size()));
 }
 
 void CanvasScene::pasteClipboard()
@@ -262,6 +319,62 @@ void CanvasScene::pasteClipboard()
         if (CanvasItem *ci = findItem(inst.instanceId))
             ci->setSelected(true);
     }
+}
+
+void CanvasScene::alignSelected(AlignMode mode)
+{
+    QList<CanvasItem *> selectedCanvasItems;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            selectedCanvasItems.append(ci);
+    }
+    if (selectedCanvasItems.size() < 2) return;
+
+    QRectF bounds;
+    for (CanvasItem *ci : selectedCanvasItems) {
+        const WidgetInstance inst = ci->instance();
+        const QRectF itemRect(ci->pos(), QSizeF(inst.width, inst.height));
+        bounds = bounds.isNull() ? itemRect : bounds.united(itemRect);
+    }
+
+    QList<MoveData> moves;
+    for (CanvasItem *ci : selectedCanvasItems) {
+        const WidgetInstance inst = ci->instance();
+        const QPointF oldPos = ci->pos();
+        QPointF newPos = oldPos;
+
+        switch (mode) {
+        case AlignMode::Left:
+            newPos.setX(bounds.left());
+            break;
+        case AlignMode::Right:
+            newPos.setX(bounds.right() - inst.width);
+            break;
+        case AlignMode::Top:
+            newPos.setY(bounds.top());
+            break;
+        case AlignMode::Bottom:
+            newPos.setY(bounds.bottom() - inst.height);
+            break;
+        case AlignMode::Center:
+            newPos.setX(bounds.center().x() - inst.width / 2.0);
+            break;
+        }
+
+        if (newPos != oldPos)
+            moves.append({inst.instanceId, oldPos, newPos});
+    }
+    if (moves.isEmpty()) return;
+
+    QString text;
+    switch (mode) {
+    case AlignMode::Left:   text = tr("左对齐 %1 个元素"); break;
+    case AlignMode::Right:  text = tr("右对齐 %1 个元素"); break;
+    case AlignMode::Top:    text = tr("顶部对齐 %1 个元素"); break;
+    case AlignMode::Bottom: text = tr("底部对齐 %1 个元素"); break;
+    case AlignMode::Center: text = tr("居中对齐 %1 个元素"); break;
+    }
+    m_undoStack->push(new MoveItemsCommand(this, moves, text.arg(selectedCanvasItems.size())));
 }
 
 QList<WidgetInstance> CanvasScene::allInstances() const
@@ -292,9 +405,11 @@ void CanvasScene::clearAllItems()
 
 void CanvasScene::loadInstances(const QList<WidgetInstance> &instances)
 {
+    m_suppressOperationLog = true;
     clearAllItems();
     for (const auto &inst : instances)
         doAddItem(inst);
+    m_suppressOperationLog = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -325,16 +440,29 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     const QString widgetId    = obj[QStringLiteral("widgetId")].toString();
     const QString luaFilePath = obj[QStringLiteral("luaFilePath")].toString();
 
-    // 默认宽高从 meta 中取（若有）
+    // 默认宽高：优先使用 meta.defaultSize；其次 width/height 属性默认值
     int defW = 120, defH = 60;
 
     WidgetInstance inst;
     if (m_metaMap.contains(widgetId)) {
         const auto &meta = m_metaMap.value(widgetId);
+        if (meta.defaultSize.isValid()) {
+            defW = meta.defaultSize.width();
+            defH = meta.defaultSize.height();
+        }
         for (const auto &p : meta.properties) {
             if (p.name == QLatin1String("width"))  defW = p.defaultValue.toInt();
             if (p.name == QLatin1String("height")) defH = p.defaultValue.toInt();
             inst.properties[p.name] = p.defaultValue;
+        }
+        // 兜底：min/max 限制
+        if (meta.minSize.isValid()) {
+            defW = qMax(defW, meta.minSize.width());
+            defH = qMax(defH, meta.minSize.height());
+        }
+        if (meta.maxSize.isValid()) {
+            defW = qMin(defW, meta.maxSize.width());
+            defH = qMin(defH, meta.maxSize.height());
         }
     }
     inst.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -419,11 +547,11 @@ void CanvasScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     m_pressPositions.clear();
     m_resizingIds.clear();
 
+    QGraphicsScene::mousePressEvent(event);
     for (QGraphicsItem *gi : selectedItems()) {
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
             m_pressPositions.insert(ci->instance().instanceId, ci->pos());
     }
-    QGraphicsScene::mousePressEvent(event);
 }
 
 void CanvasScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
@@ -475,8 +603,10 @@ void CanvasScene::setInstanceName(const QString &instanceId, const QString &name
     CanvasItem *ci = findItem(instanceId);
     if (!ci) return;
     if (ci->instance().name == name) return;
+    const QString oldName = ci->instance().name;
     ci->setInstanceName(name);
     emit instanceChanged(instanceId);
+    emit operationLogged(tr("修改元素名称：%1 -> %2").arg(oldName, name));
 }
 
 void CanvasScene::setInstanceProperty(const QString &instanceId,
@@ -485,6 +615,18 @@ void CanvasScene::setInstanceProperty(const QString &instanceId,
 {
     CanvasItem *ci = findItem(instanceId);
     if (!ci) return;
+    const WidgetInstance before = ci->instance();
+    QVariant oldValue;
+    if (key == QLatin1String("x")) oldValue = before.x;
+    else if (key == QLatin1String("y")) oldValue = before.y;
+    else if (key == QLatin1String("width")) oldValue = before.width;
+    else if (key == QLatin1String("height")) oldValue = before.height;
+    else oldValue = before.properties.value(key);
     ci->setInstanceProperty(key, value);
     emit instanceChanged(instanceId);
+    emit operationLogged(tr("修改属性：%1.%2，%3 -> %4")
+        .arg(before.name.isEmpty() ? before.widgetId : before.name,
+             key,
+             oldValue.toString(),
+             value.toString()));
 }

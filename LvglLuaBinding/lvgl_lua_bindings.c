@@ -11,12 +11,12 @@ static int luaopen_lvgl(lua_State* L);
 // Global TTF font storage (for applying to objects)
 static lv_font_t* g_current_ttf_font = NULL;
 
-void set_current_ttf_font(lv_font_t* font)
+LVGLLUABINDING_API void set_current_ttf_font(lv_font_t* font)
 {
     g_current_ttf_font = font;
 }
 
-lv_font_t* get_current_ttf_font(void)
+LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void)
 {
     return g_current_ttf_font;
 }
@@ -168,22 +168,89 @@ static int l_lv_scr_act(lua_State* L) {
     return 1;
 }
 
+// lv.screen_load(scr) / lv.scr_load(scr)
+// 把指定对象切换为活动屏。runtime.lua 创建多屏后用此函数显示首屏。
+static int l_lv_screen_load(lua_State* L) {
+    lv_obj_t* scr = check_lv_obj(L, 1);
+    if (scr) {
+        lv_screen_load(scr);
+    }
+    return 0;
+}
+
 #if LV_USE_TINY_TTF
+// 维护 font -> 文件缓冲映射，destroy 时一并释放。
+// 直接 fopen 读取文件，避免 LVGL 内置 FS 驱动对 Windows 盘符 ("C:/...") 解析失败
+// （lv_fs_open 把首字符当作 driver letter，遇 Windows 盘符报 unknown driver letter）。
+typedef struct ttf_buf_entry_s {
+    lv_font_t* font;
+    void*      buf;
+    struct ttf_buf_entry_s* next;
+} ttf_buf_entry_t;
+static ttf_buf_entry_t* g_ttf_buf_list = NULL;
+
+static void ttf_buf_track(lv_font_t* font, void* buf) {
+    ttf_buf_entry_t* e = (ttf_buf_entry_t*)malloc(sizeof(*e));
+    if (!e) return;
+    e->font = font; e->buf = buf;
+    e->next = g_ttf_buf_list;
+    g_ttf_buf_list = e;
+}
+static void ttf_buf_release(lv_font_t* font) {
+    ttf_buf_entry_t** pp = &g_ttf_buf_list;
+    while (*pp) {
+        if ((*pp)->font == font) {
+            ttf_buf_entry_t* dead = *pp;
+            *pp = dead->next;
+            free(dead->buf);
+            free(dead);
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
 // lv.tiny_ttf_create_file(path, font_size)
 static int l_lv_tiny_ttf_create_file(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     int32_t font_size = (int32_t)luaL_checkinteger(L, 2);
-    
-    lv_font_t* font = lv_tiny_ttf_create_file_ex(path, font_size, LV_FONT_KERNING_NONE, LV_TINY_TTF_CACHE_GLYPH_CNT);
-    if (font) {
-        lv_font_t** ud = (lv_font_t**)lua_newuserdata(L, sizeof(lv_font_t*));
-        *ud = font;
-        luaL_setmetatable(L, "lv_font");
-        g_current_ttf_font = font;
-    } else {
-        printf("Failed to load TTF font: %s\n", path);
-        lua_pushnil(L);
+
+    FILE* fp = fopen(path, "rb");
+    if (!fp) {
+        printf("Failed to open TTF font file: %s\n", path);
+        lua_pushnil(L); return 1;
     }
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (fsize <= 0) {
+        fclose(fp);
+        printf("Empty TTF font file: %s\n", path);
+        lua_pushnil(L); return 1;
+    }
+    void* buf = malloc((size_t)fsize);
+    if (!buf) { fclose(fp); lua_pushnil(L); return 1; }
+    if (fread(buf, 1, (size_t)fsize, fp) != (size_t)fsize) {
+        fclose(fp); free(buf);
+        printf("Failed to read TTF font file: %s\n", path);
+        lua_pushnil(L); return 1;
+    }
+    fclose(fp);
+
+    lv_font_t* font = lv_tiny_ttf_create_data_ex(
+        buf, (size_t)fsize, font_size,
+        LV_FONT_KERNING_NONE, LV_TINY_TTF_CACHE_GLYPH_CNT);
+    if (!font) {
+        free(buf);
+        printf("lv_tiny_ttf_create_data_ex failed: %s\n", path);
+        lua_pushnil(L); return 1;
+    }
+    ttf_buf_track(font, buf);
+
+    lv_font_t** ud = (lv_font_t**)lua_newuserdata(L, sizeof(lv_font_t*));
+    *ud = font;
+    luaL_setmetatable(L, "lv_font");
+    g_current_ttf_font = font;
     return 1;
 }
 
@@ -192,6 +259,7 @@ static int l_lv_tiny_ttf_destroy(lua_State* L) {
     lv_font_t* font = check_lv_font(L, 1);
     if (font) {
         lv_tiny_ttf_destroy(font);
+        ttf_buf_release(font);
         if (g_current_ttf_font == font) {
             g_current_ttf_font = NULL;
         }
@@ -280,6 +348,16 @@ static int l_lv_checkbox_create(lua_State* L) {
     return 1;
 }
 
+// lv.checkbox_set_text(obj, text)
+static int l_lv_checkbox_set_text(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+    if (obj && lv_obj_check_type(obj, &lv_checkbox_class)) {
+        lv_checkbox_set_text(obj, text);
+    }
+    return 0;
+}
+
 // lv.dropdown_create(parent)
 static int l_lv_dropdown_create(lua_State* L) {
     push_lv_obj(L, lv_dropdown_create(check_lv_obj(L, 1)));
@@ -321,6 +399,497 @@ static int l_lv_arc_create(lua_State* L) {
     push_lv_obj(L, lv_arc_create(check_lv_obj(L, 1)));
     return 1;
 }
+
+// ========== LED ==========
+// lv.led_create(parent)
+static int l_lv_led_create(lua_State* L) {
+    push_lv_obj(L, lv_led_create(check_lv_obj(L, 1)));
+    return 1;
+}
+
+// led:set_color(hex)
+static int l_led_set_color(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    uint32_t color_hex = (uint32_t)luaL_checkinteger(L, 2);
+    if (obj && lv_obj_check_type(obj, &lv_led_class)) {
+        lv_led_set_color(obj, lv_color_hex(color_hex));
+    }
+    return 0;
+}
+
+// ========== CHECKBOX methods ==========
+static int l_checkbox_set_text(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o && lv_obj_check_type(o, &lv_checkbox_class)) {
+        lv_checkbox_set_text(o, luaL_checkstring(L, 2));
+    }
+    return 0;
+}
+
+static int l_checkbox_get_text(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    const char* text = (o && lv_obj_check_type(o, &lv_checkbox_class)) ? lv_checkbox_get_text(o) : "";
+    lua_pushstring(L, text ? text : "");
+    return 1;
+}
+
+// led:set_brightness(b)  b: 0..255
+static int l_led_set_brightness(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    int b = (int)luaL_checkinteger(L, 2);
+    if (b < 0)   b = 0;
+    if (b > 255) b = 255;
+    if (obj && lv_obj_check_type(obj, &lv_led_class)) {
+        lv_led_set_brightness(obj, (uint8_t)b);
+    }
+    return 0;
+}
+
+// led:led_on()
+static int l_led_on(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    if (obj && lv_obj_check_type(obj, &lv_led_class)) {
+        lv_led_on(obj);
+    }
+    return 0;
+}
+
+// led:led_off()
+static int l_led_off(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    if (obj && lv_obj_check_type(obj, &lv_led_class)) {
+        lv_led_off(obj);
+    }
+    return 0;
+}
+
+// led:led_toggle()
+static int l_led_toggle(lua_State* L) {
+    lv_obj_t* obj = check_lv_obj(L, 1);
+    if (obj && lv_obj_check_type(obj, &lv_led_class)) {
+        lv_led_toggle(obj);
+    }
+    return 0;
+}
+
+// LED methods table（在 luaopen_lvgl 中合并到 lv_obj 元表）
+static const luaL_Reg lv_led_methods[] = {
+    {"set_color",      l_led_set_color},
+    {"set_brightness", l_led_set_brightness},
+    {"led_on",         l_led_on},
+    {"led_off",        l_led_off},
+    {"led_toggle",     l_led_toggle},
+    {NULL, NULL}
+};
+
+// ========== Roller / Table / Tileview create ==========
+static int l_lv_roller_create(lua_State* L) {
+    push_lv_obj(L, lv_roller_create(check_lv_obj(L, 1)));
+    return 1;
+}
+static int l_lv_table_create(lua_State* L) {
+    push_lv_obj(L, lv_table_create(check_lv_obj(L, 1)));
+    return 1;
+}
+static int l_lv_tileview_create(lua_State* L) {
+    push_lv_obj(L, lv_tileview_create(check_lv_obj(L, 1)));
+    return 1;
+}
+// lv.tileview_add_tile(tv, col, row, dir)
+static int l_lv_tileview_add_tile(lua_State* L) {
+    lv_obj_t* tv = check_lv_obj(L, 1);
+    int col = (int)luaL_checkinteger(L, 2);
+    int row = (int)luaL_checkinteger(L, 3);
+    int dir = (int)luaL_optinteger(L, 4, LV_DIR_ALL);
+    push_lv_obj(L, tv ? lv_tileview_add_tile(tv, (uint8_t)col, (uint8_t)row, (lv_dir_t)dir) : NULL);
+    return 1;
+}
+
+// ========== ARC methods ==========
+static int l_arc_set_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_arc_set_value(o, (int32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_arc_set_range(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_arc_set_range(o, (int32_t)luaL_checkinteger(L, 2), (int32_t)luaL_checkinteger(L, 3));
+    return 0;
+}
+static int l_arc_set_mode(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_arc_set_mode(o, (lv_arc_mode_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_arc_set_bg_angles(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_arc_set_bg_angles(o,
+            (lv_value_precise_t)luaL_checkinteger(L, 2),
+            (lv_value_precise_t)luaL_checkinteger(L, 3));
+    return 0;
+}
+static int l_arc_set_rotation(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_arc_set_rotation(o, (int32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_arc_get_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    lua_pushinteger(L, o ? lv_arc_get_value(o) : 0);
+    return 1;
+}
+
+// ========== BAR methods ==========
+static int l_bar_set_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_bar_set_value(o,
+            (int32_t)luaL_checkinteger(L, 2),
+            (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    return 0;
+}
+static int l_bar_set_range(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_bar_set_range(o, (int32_t)luaL_checkinteger(L, 2), (int32_t)luaL_checkinteger(L, 3));
+    return 0;
+}
+static int l_bar_set_mode(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_bar_set_mode(o, (lv_bar_mode_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_bar_set_start_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_bar_set_start_value(o,
+            (int32_t)luaL_checkinteger(L, 2),
+            (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    return 0;
+}
+static int l_bar_set_orientation(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_bar_set_orientation(o, (lv_bar_orientation_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+
+// ========== DROPDOWN methods ==========
+static int l_dropdown_set_options(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_dropdown_set_options(o, luaL_checkstring(L, 2));
+    return 0;
+}
+static int l_dropdown_set_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_dropdown_set_selected(o, (uint32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_dropdown_set_dir(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_dropdown_set_dir(o, (lv_dir_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_dropdown_get_list(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    push_lv_obj(L, o ? lv_dropdown_get_list(o) : NULL);
+    return 1;
+}
+static int l_dropdown_get_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    lua_pushinteger(L, o ? lv_dropdown_get_selected(o) : 0);
+    return 1;
+}
+
+// ========== LABEL methods ==========
+static int l_label_set_long_mode(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_label_set_long_mode(o, (lv_label_long_mode_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_label_set_recolor(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_label_set_recolor(o, lua_toboolean(L, 2));
+    return 0;
+}
+
+// ========== LIST methods ==========
+static int l_list_clean(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_obj_clean(o);
+    return 0;
+}
+// list:add_text(txt) -> obj
+static int l_list_add_text(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    push_lv_obj(L, o ? lv_list_add_text(o, luaL_checkstring(L, 2)) : NULL);
+    return 1;
+}
+// list:add_btn(icon, text) -> obj  (icon 接受 nil 或字符串)
+static int l_list_add_btn(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    const char* icon = lua_isnoneornil(L, 2) ? NULL : luaL_checkstring(L, 2);
+    const char* txt  = lua_isnoneornil(L, 3) ? NULL : luaL_checkstring(L, 3);
+    push_lv_obj(L, o ? lv_list_add_button(o, icon, txt) : NULL);
+    return 1;
+}
+
+// ========== MENU methods ==========
+static int l_menu_set_page(lua_State* L) {
+    lv_obj_t* menu = check_lv_obj(L, 1);
+    lv_obj_t* page = lua_isnoneornil(L, 2) ? NULL : check_lv_obj(L, 2);
+    if (menu) lv_menu_set_page(menu, page);
+    return 0;
+}
+static int l_menu_set_load_page_event(lua_State* L) {
+    lv_obj_t* menu = check_lv_obj(L, 1);
+    lv_obj_t* obj  = check_lv_obj(L, 2);
+    lv_obj_t* page = check_lv_obj(L, 3);
+    if (menu && obj && page) lv_menu_set_load_page_event(menu, obj, page);
+    return 0;
+}
+// 同时把 menu_page_create / menu_cont_create 暴露为模块函数
+static int l_lv_menu_page_create(lua_State* L) {
+    lv_obj_t* menu = check_lv_obj(L, 1);
+    const char* title = lua_isnoneornil(L, 2) ? NULL : luaL_checkstring(L, 2);
+    push_lv_obj(L, menu ? lv_menu_page_create(menu, title) : NULL);
+    return 1;
+}
+static int l_lv_menu_cont_create(lua_State* L) {
+    push_lv_obj(L, lv_menu_cont_create(check_lv_obj(L, 1)));
+    return 1;
+}
+
+// ========== ROLLER methods ==========
+static int l_roller_set_options(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_roller_set_options(o,
+            luaL_checkstring(L, 2),
+            (lv_roller_mode_t)luaL_optinteger(L, 3, LV_ROLLER_MODE_NORMAL));
+    return 0;
+}
+static int l_roller_set_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_roller_set_selected(o,
+            (uint32_t)luaL_checkinteger(L, 2),
+            (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    return 0;
+}
+static int l_roller_set_visible_row_count(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_roller_set_visible_row_count(o, (uint32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_roller_get_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    lua_pushinteger(L, o ? lv_roller_get_selected(o) : 0);
+    return 1;
+}
+
+// ========== SLIDER 补：set_left_value ==========
+static int l_slider_set_left_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_slider_set_left_value(o,
+            (int32_t)luaL_checkinteger(L, 2),
+            (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    return 0;
+}
+
+// ========== TABLE methods (v9 名映射 v8 别名) ==========
+static int l_table_set_col_cnt(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_table_set_column_count(o, (uint32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_table_set_row_cnt(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_table_set_row_count(o, (uint32_t)luaL_checkinteger(L, 2));
+    return 0;
+}
+static int l_table_set_col_width(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_table_set_column_width(o,
+            (uint32_t)luaL_checkinteger(L, 2),
+            (int32_t)luaL_checkinteger(L, 3));
+    return 0;
+}
+static int l_table_set_cell_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_table_set_cell_value(o,
+            (uint32_t)luaL_checkinteger(L, 2),
+            (uint32_t)luaL_checkinteger(L, 3),
+            luaL_checkstring(L, 4));
+    return 0;
+}
+
+// ========== TABVIEW methods (v9 名映射 v8 别名) ==========
+static int l_tabview_add_tab(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    push_lv_obj(L, o ? lv_tabview_add_tab(o, luaL_checkstring(L, 2)) : NULL);
+    return 1;
+}
+static int l_tabview_set_act(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_tabview_set_active(o,
+            (uint32_t)luaL_checkinteger(L, 2),
+            (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    return 0;
+}
+static int l_tabview_get_tab_act(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    lua_pushinteger(L, o ? lv_tabview_get_tab_active(o) : 0);
+    return 1;
+}
+
+// ========== TILEVIEW method ==========
+static int l_tileview_set_tile_id(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (o) lv_tileview_set_tile_by_index(o,
+            (uint32_t)luaL_checkinteger(L, 2),
+            (uint32_t)luaL_checkinteger(L, 3),
+            (lv_anim_enable_t)luaL_optinteger(L, 4, LV_ANIM_OFF));
+    return 0;
+}
+
+// 把上述 widget-specific 方法合并进 lv_obj 元表
+// 共享同一个 lv_obj userdata 元表。无冲突的方法直接合入；
+// 冲突的方法（set_value/set_range/set_mode/set_options/set_selected/get_value/get_selected）
+// 通过 lv_widget_dispatch_methods 用对象类型分派。
+static const luaL_Reg lv_widget_extra_methods[] = {
+    // arc 独有
+    {"set_bg_angles",          l_arc_set_bg_angles},
+    {"set_rotation",           l_arc_set_rotation},
+    // bar 独有
+    {"set_start_value",        l_bar_set_start_value},
+    {"set_orientation",        l_bar_set_orientation},
+    // dropdown 独有
+    {"set_dir",                l_dropdown_set_dir},
+    {"get_list",               l_dropdown_get_list},
+    // label
+    {"set_long_mode",          l_label_set_long_mode},
+    {"set_recolor",            l_label_set_recolor},
+    // checkbox
+    {"set_checkbox_text",      l_checkbox_set_text},
+    {"get_checkbox_text",      l_checkbox_get_text},
+    // list
+    {"clean",                  l_list_clean},
+    {"add_text",               l_list_add_text},
+    {"add_btn",                l_list_add_btn},
+    // menu
+    {"set_page",               l_menu_set_page},
+    {"set_load_page_event",    l_menu_set_load_page_event},
+    // roller 独有
+    {"set_visible_row_count",  l_roller_set_visible_row_count},
+    // slider 补
+    {"set_left_value",         l_slider_set_left_value},
+    // table (v9 名字映射 v8 别名)
+    {"set_col_cnt",            l_table_set_col_cnt},
+    {"set_row_cnt",            l_table_set_row_cnt},
+    {"set_col_width",          l_table_set_col_width},
+    {"set_cell_value",         l_table_set_cell_value},
+    // tabview (v9 名字映射 v8 别名)
+    {"add_tab",                l_tabview_add_tab},
+    {"set_act",                l_tabview_set_act},
+    {"get_tab_act",            l_tabview_get_tab_act},
+    // tileview
+    {"set_tile_id",            l_tileview_set_tile_id},
+    {NULL, NULL}
+};
+
+// arc/bar/roller 的 set_value/set_range/set_mode 等同名冲突，
+// 单独再注册：把 arc 与 bar 的差异化方法用前缀化别名导出，widget Lua 仍然
+// 用 :set_range 等无前缀名，所以按"先 arc 再 bar 再 roller"的顺序合并，
+// 让最常被调用的覆盖前者；若同名按需进入元表。
+// arc/bar/slider 共享 lv_obj 元表，set_value/set_range/set_mode 同名冲突。
+// 用统一分派函数按 lv_obj_check_type 选择正确实现。
+static int l_dispatch_set_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (!o) return 0;
+    if (lv_obj_check_type(o, &lv_arc_class)) {
+        lv_arc_set_value(o, (int32_t)luaL_checkinteger(L, 2));
+    } else if (lv_obj_check_type(o, &lv_bar_class)) {
+        lv_bar_set_value(o,
+                (int32_t)luaL_checkinteger(L, 2),
+                (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    } else if (lv_obj_check_type(o, &lv_slider_class)) {
+        lv_slider_set_value(o,
+                (int32_t)luaL_checkinteger(L, 2),
+                (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    }
+    return 0;
+}
+static int l_dispatch_set_range(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (!o) return 0;
+    int32_t a = (int32_t)luaL_checkinteger(L, 2);
+    int32_t b = (int32_t)luaL_checkinteger(L, 3);
+    if (lv_obj_check_type(o, &lv_arc_class))         lv_arc_set_range(o, a, b);
+    else if (lv_obj_check_type(o, &lv_bar_class))    lv_bar_set_range(o, a, b);
+    else if (lv_obj_check_type(o, &lv_slider_class)) lv_slider_set_range(o, a, b);
+    return 0;
+}
+static int l_dispatch_set_mode(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (!o) return 0;
+    int m = (int)luaL_checkinteger(L, 2);
+    if (lv_obj_check_type(o, &lv_arc_class))         lv_arc_set_mode(o, (lv_arc_mode_t)m);
+    else if (lv_obj_check_type(o, &lv_bar_class))    lv_bar_set_mode(o, (lv_bar_mode_t)m);
+    else if (lv_obj_check_type(o, &lv_slider_class)) lv_slider_set_mode(o, (lv_slider_mode_t)m);
+    return 0;
+}
+static int l_dispatch_get_value(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    int32_t v = 0;
+    if (o) {
+        if (lv_obj_check_type(o, &lv_arc_class))         v = lv_arc_get_value(o);
+        else if (lv_obj_check_type(o, &lv_bar_class))    v = lv_bar_get_value(o);
+        else if (lv_obj_check_type(o, &lv_slider_class)) v = lv_slider_get_value(o);
+    }
+    lua_pushinteger(L, v);
+    return 1;
+}
+// dropdown / roller 同名 set_options / set_selected：用 dispatch
+static int l_dispatch_set_options(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (!o) return 0;
+    if (lv_obj_check_type(o, &lv_dropdown_class)) {
+        lv_dropdown_set_options(o, luaL_checkstring(L, 2));
+    } else if (lv_obj_check_type(o, &lv_roller_class)) {
+        lv_roller_set_options(o,
+                luaL_checkstring(L, 2),
+                (lv_roller_mode_t)luaL_optinteger(L, 3, LV_ROLLER_MODE_NORMAL));
+    }
+    return 0;
+}
+static int l_dispatch_set_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    if (!o) return 0;
+    if (lv_obj_check_type(o, &lv_dropdown_class)) {
+        lv_dropdown_set_selected(o, (uint32_t)luaL_checkinteger(L, 2));
+    } else if (lv_obj_check_type(o, &lv_roller_class)) {
+        lv_roller_set_selected(o,
+                (uint32_t)luaL_checkinteger(L, 2),
+                (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF));
+    }
+    return 0;
+}
+static int l_dispatch_get_selected(lua_State* L) {
+    lv_obj_t* o = check_lv_obj(L, 1);
+    uint32_t v = 0;
+    if (o) {
+        if (lv_obj_check_type(o, &lv_dropdown_class)) v = lv_dropdown_get_selected(o);
+        else if (lv_obj_check_type(o, &lv_roller_class)) v = lv_roller_get_selected(o);
+    }
+    lua_pushinteger(L, v);
+    return 1;
+}
+
+static const luaL_Reg lv_widget_dispatch_methods[] = {
+    {"set_value",    l_dispatch_set_value},
+    {"set_range",    l_dispatch_set_range},
+    {"set_mode",     l_dispatch_set_mode},
+    {"get_value",    l_dispatch_get_value},
+    {"set_options",  l_dispatch_set_options},
+    {"set_selected", l_dispatch_set_selected},
+    {"get_selected", l_dispatch_get_selected},
+    {NULL, NULL}
+};
 
 // lv.display_get_hor_res()
 static int l_lv_display_get_hor_res(lua_State* L) {
@@ -412,6 +981,9 @@ extern int l_lv_textarea_get_text(lua_State* L);
 // ========== Module Functions Table ==========
 static const luaL_Reg lvgl_funcs[] = {
     {"scr_act", l_lv_scr_act},
+    {"screen_active", l_lv_scr_act},
+    {"screen_load", l_lv_screen_load},
+    {"scr_load", l_lv_screen_load},
     {"obj_create", l_lv_obj_create},
     {"label_create", l_lv_label_create},
     {"button_create", l_lv_button_create},
@@ -423,6 +995,7 @@ static const luaL_Reg lvgl_funcs[] = {
     {"textarea_create", l_lv_textarea_create},
     {"textarea_get_text", l_lv_textarea_get_text},
     {"checkbox_create", l_lv_checkbox_create},
+    {"checkbox_set_text", l_lv_checkbox_set_text},
     {"dropdown_create", l_lv_dropdown_create},
     {"slider_create", l_lv_slider_create},
     {"chart_create", l_lv_chart_create},
@@ -430,6 +1003,13 @@ static const luaL_Reg lvgl_funcs[] = {
     {"switch_create", l_lv_switch_create},
     {"bar_create", l_lv_bar_create},
     {"arc_create", l_lv_arc_create},
+    {"led_create", l_lv_led_create},
+    {"roller_create", l_lv_roller_create},
+    {"table_create", l_lv_table_create},
+    {"tileview_create", l_lv_tileview_create},
+    {"tileview_add_tile", l_lv_tileview_add_tile},
+    {"menu_page_create", l_lv_menu_page_create},
+    {"menu_cont_create", l_lv_menu_cont_create},
     {"display_get_hor_res", l_lv_display_get_hor_res},
     {"display_get_ver_res", l_lv_display_get_ver_res},
     {"get_mouse_x", l_lv_get_mouse_x},
@@ -479,6 +1059,12 @@ static int luaopen_lvgl(lua_State* L) {
     merge_methods_to_table(L, lvgl_get_chart_methods());
     // Add slider methods
     merge_methods_to_table(L, lvgl_get_slider_methods());
+    // Add LED methods
+    merge_methods_to_table(L, lv_led_methods);
+    // Add widget extra methods（dropdown/label/list/menu/slider/table/tabview/tileview）
+    merge_methods_to_table(L, lv_widget_extra_methods);
+    // Add type-dispatched methods (set_value/set_range/set_mode/set_options/...)
+    merge_methods_to_table(L, lv_widget_dispatch_methods);
     
    
     
@@ -617,6 +1203,7 @@ static int luaopen_lvgl(lua_State* L) {
     lua_pushinteger(L, LV_PART_MAIN); lua_setfield(L, -2, "PART_MAIN");
     lua_pushinteger(L, LV_PART_INDICATOR); lua_setfield(L, -2, "PART_INDICATOR");
     lua_pushinteger(L, LV_PART_KNOB); lua_setfield(L, -2, "PART_KNOB");
+    lua_pushinteger(L, LV_PART_ITEMS); lua_setfield(L, -2, "PART_ITEMS");
     
     // Border side constants
     lua_pushinteger(L, LV_BORDER_SIDE_NONE); lua_setfield(L, -2, "BORDER_SIDE_NONE");
@@ -653,6 +1240,46 @@ static int luaopen_lvgl(lua_State* L) {
     // Image scale constant (256 = 100%, no scale)
     lua_pushinteger(L, LV_SCALE_NONE); lua_setfield(L, -2, "SCALE_NONE");
     
+    // Direction constants
+    lua_pushinteger(L, LV_DIR_NONE);   lua_setfield(L, -2, "DIR_NONE");
+    lua_pushinteger(L, LV_DIR_LEFT);   lua_setfield(L, -2, "DIR_LEFT");
+    lua_pushinteger(L, LV_DIR_RIGHT);  lua_setfield(L, -2, "DIR_RIGHT");
+    lua_pushinteger(L, LV_DIR_TOP);    lua_setfield(L, -2, "DIR_TOP");
+    lua_pushinteger(L, LV_DIR_BOTTOM); lua_setfield(L, -2, "DIR_BOTTOM");
+    lua_pushinteger(L, LV_DIR_HOR);    lua_setfield(L, -2, "DIR_HOR");
+    lua_pushinteger(L, LV_DIR_VER);    lua_setfield(L, -2, "DIR_VER");
+    lua_pushinteger(L, LV_DIR_ALL);    lua_setfield(L, -2, "DIR_ALL");
+
+    // Label long mode constants
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_WRAP);            lua_setfield(L, -2, "LABEL_LONG_WRAP");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_DOTS);            lua_setfield(L, -2, "LABEL_LONG_DOT");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_DOTS);            lua_setfield(L, -2, "LABEL_LONG_DOTS");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_SCROLL);          lua_setfield(L, -2, "LABEL_LONG_SCROLL");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR); lua_setfield(L, -2, "LABEL_LONG_SCROLL_CIRC");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR); lua_setfield(L, -2, "LABEL_LONG_SCROLL_CIRCULAR");
+    lua_pushinteger(L, LV_LABEL_LONG_MODE_CLIP);            lua_setfield(L, -2, "LABEL_LONG_CLIP");
+
+    // LED brightness constants
+    lua_pushinteger(L, LV_LED_BRIGHT_MIN); lua_setfield(L, -2, "LED_BRIGHT_MIN");
+    lua_pushinteger(L, LV_LED_BRIGHT_MAX); lua_setfield(L, -2, "LED_BRIGHT_MAX");
+
+    // Roller mode constants
+    lua_pushinteger(L, LV_ROLLER_MODE_NORMAL);   lua_setfield(L, -2, "ROLLER_MODE_NORMAL");
+    lua_pushinteger(L, LV_ROLLER_MODE_INFINITE); lua_setfield(L, -2, "ROLLER_MODE_INFINITE");
+
+    // Bar orientation / mode constants
+    lua_pushinteger(L, LV_BAR_ORIENTATION_AUTO);       lua_setfield(L, -2, "BAR_ORIENTATION_AUTO");
+    lua_pushinteger(L, LV_BAR_ORIENTATION_HORIZONTAL); lua_setfield(L, -2, "BAR_ORIENTATION_HORIZONTAL");
+    lua_pushinteger(L, LV_BAR_ORIENTATION_VERTICAL);   lua_setfield(L, -2, "BAR_ORIENTATION_VERTICAL");
+    lua_pushinteger(L, LV_BAR_MODE_NORMAL);            lua_setfield(L, -2, "BAR_MODE_NORMAL");
+    lua_pushinteger(L, LV_BAR_MODE_SYMMETRICAL);       lua_setfield(L, -2, "BAR_MODE_SYMMETRICAL");
+    lua_pushinteger(L, LV_BAR_MODE_RANGE);             lua_setfield(L, -2, "BAR_MODE_RANGE");
+
+    // Arc mode constants
+    lua_pushinteger(L, LV_ARC_MODE_NORMAL);      lua_setfield(L, -2, "ARC_MODE_NORMAL");
+    lua_pushinteger(L, LV_ARC_MODE_REVERSE);     lua_setfield(L, -2, "ARC_MODE_REVERSE");
+    lua_pushinteger(L, LV_ARC_MODE_SYMMETRICAL); lua_setfield(L, -2, "ARC_MODE_SYMMETRICAL");
+
     return 1;
 }
 

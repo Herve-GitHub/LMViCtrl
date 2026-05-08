@@ -19,8 +19,13 @@ class MainWindow;
 }
 class QMenu;
 class QAction;
+class QDockWidget;
+class QPlainTextEdit;
+class QProcess;
 class QTabWidget;
 class QStackedWidget;
+class QToolBar;
+class QUndoStack;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -37,16 +42,13 @@ private:
     void setupMenus();
     void setupFileMenu();
     void setupEditMenu();
-    void setupViewMenu();
-    void setupProjectMenu();
-    void setupDrawMenu();
-    void setupComponentMenu();
-    void setupCommunicationMenu();
     void setupRunMenu();
-    void setupToolsMenu();
-    void setupWindowMenu();
     void setupLanguageMenu();
-    void setupHelpMenu();
+    
+    void setupToolBars();
+    void setupFileToolBar();
+    void setupEditToolBar();
+    void setupRunToolBar();
 
     // 工具函数：创建带快捷键的 QAction 并添加到菜单
     QAction *addAction(QMenu *menu,
@@ -54,6 +56,9 @@ private:
                        const QKeySequence &shortcut = QKeySequence(),
                        bool checkable = false,
                        bool checked = false);
+    void setupLogDock();
+    void appendLog(const QString &message);
+    void connectSceneLogging(CanvasScene *scene, const QString &screenId);
 
 private slots:
     // ===== 文件 =====
@@ -191,6 +196,7 @@ private slots:
     void onStartRun();
     void onStopRun();
     void onPauseRun();
+	void onCompileProject();
     void onStartSimulate();
     void onSimulateVarSetting();
     void onScriptDebug();
@@ -240,6 +246,15 @@ private slots:
     void onScreensChanged(const QList<ScreenData> &screens);
     void onTabCloseRequested(int index);
     void onOpenRecentProject(const QString &path);
+    // 来自 ScreenManagerDock 的新增/删除请求（走 Undo 命令）
+    void onScreenAddRequested(const QString &name);
+    void onScreenDeleteRequested(const QString &screenId);
+
+public:
+    // ===== 供 Undo 命令调用的内部接口（不要在其他地方直接调用） =====
+    void cmdAddScreen(const ScreenData &screen, int order);
+    void cmdRemoveScreen(const QString &screenId);
+    ScreenData snapshotScreen(const QString &screenId) const;
 
 private:
     Ui::MainWindow    *ui;
@@ -249,7 +264,40 @@ private:
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
+    QDockWidget       *m_logDock          = nullptr;
+    QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;
+    QToolBar          *m_fileToolBar      = nullptr;
+    QToolBar          *m_editToolBar      = nullptr;
+    QToolBar          *m_runToolBar       = nullptr;
+    QProcess          *m_simulatorProcess = nullptr;
+
+    QAction           *m_newProjectAction        = nullptr;
+    QAction           *m_openProjectAction       = nullptr;
+    QAction           *m_closeProjectAction      = nullptr;
+    QAction           *m_saveAction              = nullptr;
+    QAction           *m_saveAsAction            = nullptr;
+    QAction           *m_projectPropertiesAction = nullptr;
+    QAction           *m_exitAction              = nullptr;
+
+    QAction           *m_undoAction        = nullptr;
+    QAction           *m_redoAction        = nullptr;
+    QAction           *m_cutAction         = nullptr;
+    QAction           *m_copyAction        = nullptr;
+    QAction           *m_pasteAction       = nullptr;
+    QAction           *m_deleteAction      = nullptr;
+    QAction           *m_selectAllAction   = nullptr;
+    QAction           *m_alignLeftAction   = nullptr;
+    QAction           *m_alignRightAction  = nullptr;
+    QAction           *m_alignTopAction    = nullptr;
+    QAction           *m_alignBottomAction = nullptr;
+    QAction           *m_alignCenterAction = nullptr;
+    QAction           *m_groupAction       = nullptr;
+    QAction           *m_ungroupAction     = nullptr;
+
+    QAction           *m_startRunAction       = nullptr;
+    QAction           *m_stopRunAction        = nullptr;
+    QAction           *m_compileProjectAction = nullptr;
 
     // screenId → ScreenTab*（已打开的图页）
     QHash<QString, ScreenTab *> m_openTabs;
@@ -288,5 +336,20 @@ private:
     QString generateUniqueWidgetName(const QString &baseName) const;
     void    installSceneNameGenerator(CanvasScene *scene);
     void    ensureInstanceNamesAssigned();
+
+    // ===== Undo / Redo 跨多 stack 的链式调度 =====
+    QUndoStack              *m_projectUndoStack = nullptr;
+    QList<QUndoStack *>      m_undoChain;        // 按时间顺序记录每次 push 的 stack
+    QList<QUndoStack *>      m_redoChain;        // 与 m_undoChain 对偶
+    QHash<QUndoStack *, int> m_stackLastIndex;
+    QHash<QUndoStack *, QString> m_stackScreenIds;
+    bool                     m_inRedoOp = false; // 调用 stack->redo() 时设为 true
+    void registerUndoStack(QUndoStack *stack, const QString &screenId = QString());
+    bool activateUndoStackPage(QUndoStack *stack);
+    void onAnyStackIndexChanged(QUndoStack *stack, int newIdx);
+    void resetUndoChains(bool keepProjectStackRegistered = true);
+
+public:
+    QUndoStack *projectUndoStack() const { return m_projectUndoStack; }
 };
 #endif // MAINWINDOW_H

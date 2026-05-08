@@ -2,6 +2,7 @@
 #include <QGraphicsScene>
 #include <QHash>
 #include <QList>
+#include <QColor>
 #include <QSet>
 #include <QSize>
 #include <functional>
@@ -22,6 +23,10 @@ public:
     void  setCanvasSize(int width, int height);
     QSize canvasSize() const { return m_canvasSize; }
 
+    // 画布属性（与 ScreenData 绑定）
+    void   setCanvasBackgroundColor(const QColor &color);
+    QColor canvasBackgroundColor() const { return m_canvasBgColor; }
+
     QUndoStack *undoStack() const { return m_undoStack; }
 
     // 注册 WidgetMeta（用于名称/颜色查找）
@@ -35,9 +40,12 @@ public:
     void setNameGenerator(NameGenerator g) { m_nameGen = std::move(g); }
 
     // 公共编辑操作（均入 undo 栈）
+    enum class AlignMode { Left, Right, Top, Bottom, Center };
+
     void deleteSelected();
     void copySelected();
     void pasteClipboard();
+    void alignSelected(AlignMode mode);
 
     // 所有实例（用于序列化）
     QList<WidgetInstance> allInstances() const;
@@ -67,6 +75,16 @@ signals:
     // 实例的某属性 / 名字 被外部修改后通知（属性面板用于回填）
     void instanceChanged(const QString &instanceId);
 
+    // 画布上拖动/缩放过程中的实时几何变化（只含 x/y/width/height，
+    // 属性面板可仅刷新占位编辑器而不重建）
+    void instanceGeometryChanged(const QString &instanceId);
+
+    // 画布自身属性变化（背景色 / 尺寸）
+    void canvasChanged();
+
+    // 用户操作日志
+    void operationLogged(const QString &message);
+
 protected:
     void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
     void dragMoveEvent (QGraphicsSceneDragDropEvent *event) override;
@@ -86,6 +104,8 @@ private:
     QUndoStack        *m_undoStack = nullptr;
     QGraphicsRectItem *m_bgItem   = nullptr;
     QSize              m_canvasSize{1024, 768};
+    QColor             m_canvasBgColor{"#000000"};
+    bool               m_suppressOperationLog = false;
 
     QHash<QString, WidgetMeta> m_metaMap;         // widgetId → WidgetMeta
 

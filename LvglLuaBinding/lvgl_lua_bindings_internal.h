@@ -41,8 +41,8 @@ void push_lv_timer(lua_State* L, lv_timer_t* timer);
 lv_timer_t* check_lv_timer(lua_State* L, int idx);
 
 // Global TTF font access
-lv_font_t* get_current_ttf_font(void);
-void set_current_ttf_font(lv_font_t* font);
+LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void);
+LVGLLUABINDING_API void set_current_ttf_font(lv_font_t* font);
 
 // ========== Registration functions for sub-modules ==========
 

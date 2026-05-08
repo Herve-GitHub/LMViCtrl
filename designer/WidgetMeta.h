@@ -1,7 +1,9 @@
-﻿#pragma once
+#pragma once
 #include <QString>
 #include <QVariant>
+#include <QVariantMap>
 #include <QList>
+#include <QSize>
 #include <QStringList>
 #include <QMetaType>
 
@@ -18,25 +20,90 @@ struct PropertyMeta {
     QVariant defaultValue;
     QString label;
     QString description;
+    QString group;      // 属性分组（用于属性面板按组折叠）
+    QString unit;       // 显示单位（如 "px"）
     QString event;      // type=="code" 时有效
+    QString language;   // type=="code" 时使用的语言（lua/js/...）
+    QString snippet;    // 默认代码片段
     QList<PropertyOption> options; // type=="enum" 时有效
     double min = 0;
     double max = 99999;
     bool multiline = false;
-    int lines = 1;
+    int  lines = 1;
+    bool bindable = false;     // 是否可与外部变量绑定
+    bool advanced = false;     // 是否归入"高级"折叠区
+    bool readOnly = false;
+    bool hidden   = false;
+    bool required = false;
+};
+
+// 事件定义
+struct EventDef {
+    QString name;
+    QString label;
+    QString description;
+};
+
+// 数据绑定声明
+struct BindingDef {
+    QString name;       // 对应 property 或 event 名
+    QString target;     // 目标语义槽（text/enabled/visible/trigger ...）
+    QString direction;  // "in" / "out" / "inout"
+};
+
+// 控件 API 契约（Lua 模块实际实现了哪些方法）
+struct WidgetApi {
+    bool hasDraw             = false;
+    bool hasOn               = false;
+    bool hasGetProperty      = false;
+    bool hasSetProperty      = false;
+    bool hasGetProperties    = false;
+    bool hasApplyProperties  = false;
+    bool hasToState          = false;
+    bool hasDestroy          = false;
 };
 
 // Widget 元数据
 struct WidgetMeta {
+    // 标识
     QString id;
     QString name;
     QString description;
+    QString category;
+    QString icon;            // 工具箱图标（相对路径或绝对路径）
+    QString previewImage;    // 拖拽/占位预览图
+    QString author;
+    QStringList tags;
     QString schemaVersion;
     QString version;
     QString luaFilePath;
-    QList<PropertyMeta> properties;
-    QStringList events;
+
+    // 渲染策略
+    QString type;            // 真正的 LVGL 对象类型，如 "lv_button" / "custom"
+    QString renderMode;      // "builtin" / "custom" / "image"
+
+    // 尺寸约束
+    QSize defaultSize { 120, 60 };
+    QSize minSize     { 1, 1 };
+    QSize maxSize     { 4096, 4096 };
+    bool  resizable   = true;
+    bool  rotatable   = false;
+
+    // 属性 / 事件
+    QList<PropertyMeta>  properties;
+    QStringList          events;          // 兼容字段：仅事件名
+    QList<EventDef>      eventDefs;       // 完整事件定义
+    QList<PropertyMeta>  eventProperties; // 事件处理代码（编辑器中编辑）
+
+    // 数据绑定
+    QList<BindingDef>    bindings;
     bool hasDataBinding = false;
+
+    // 自定义绘制提示
+    QVariantMap drawHints;
+
+    // API 契约
+    WidgetApi api;
 };
 
 // Widget 实例
@@ -69,6 +136,14 @@ struct ProjectResources {
     QString linuxPath = "/root/image/";// Linux 图片资源路径
 };
 
+// 项目字体配置
+// file: 相对于工程目录的字体文件路径（如 "fonts/MyFont.ttf"）；为空表示使用默认字体
+// size: 默认字号
+struct ProjectFont {
+    QString file;
+    int size = 16;
+};
+
 // 项目目标配置
 struct ProjectTarget {
     int width = 1024;// 分辨率
@@ -88,14 +163,19 @@ struct ProjectData {
     QString updatedAt;//工程更新时间
     ProjectTarget target;//目标配置
     ProjectResources resources;//资源配置   
+    ProjectFont font;//字体配置
     QList<ScreenData> screens;//页面列表
 };
 
 Q_DECLARE_METATYPE(PropertyOption)
 Q_DECLARE_METATYPE(PropertyMeta)
+Q_DECLARE_METATYPE(EventDef)
+Q_DECLARE_METATYPE(BindingDef)
+Q_DECLARE_METATYPE(WidgetApi)
 Q_DECLARE_METATYPE(WidgetMeta)
 Q_DECLARE_METATYPE(WidgetInstance)
 Q_DECLARE_METATYPE(ScreenData)
 Q_DECLARE_METATYPE(ProjectResources)
 Q_DECLARE_METATYPE(ProjectTarget)
+Q_DECLARE_METATYPE(ProjectFont)
 Q_DECLARE_METATYPE(ProjectData)

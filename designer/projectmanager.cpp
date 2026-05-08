@@ -1,6 +1,9 @@
 #include "projectmanager.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -93,6 +96,11 @@ QJsonObject ProjectManager::toJson(const ProjectData &p)
     res["linuxPath"] = p.resources.linuxPath;
     root["resources"] = res;
 
+    QJsonObject font;
+    font["file"] = p.font.file;
+    font["size"] = p.font.size;
+    root["font"] = font;
+
     QJsonArray screens;
     for (const auto &s : p.screens) screens.append(screenToJson(s));
     root["screens"] = screens;
@@ -119,6 +127,10 @@ ProjectData ProjectManager::fromJson(const QJsonObject &o)
     const QJsonObject r = o.value("resources").toObject();
     p.resources.imagePath = r.value("imagePath").toString("./image/");
     p.resources.linuxPath = r.value("linuxPath").toString("/root/image/");
+
+    const QJsonObject fo = o.value("font").toObject();
+    p.font.file = fo.value("file").toString();
+    p.font.size = fo.value("size").toInt(16);
 
     const QJsonArray arr = o.value("screens").toArray();
     for (const auto &v : arr) p.screens.append(screenFromJson(v.toObject()));
@@ -219,6 +231,10 @@ QString ProjectManager::compileToLua(const ProjectData &p)
     s << "project.resources = { "
       << "imagePath = " << luaQuote(p.resources.imagePath) << ", "
       << "linuxPath = " << luaQuote(p.resources.linuxPath)
+      << " }\n";
+    s << "project.font = { "
+      << "file = " << luaQuote(p.font.file) << ", "
+      << "size = " << p.font.size
       << " }\n\n";
 
     s << "project.screens = {\n";
@@ -233,6 +249,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
             s << "      {\n";
             s << "        instanceId = " << luaQuote(w.instanceId) << ",\n";
             s << "        widgetId   = " << luaQuote(w.widgetId)   << ",\n";
+            s << "        name       = " << luaQuote(w.name)       << ",\n";
             s << "        zOrder     = " << w.zOrder               << ",\n";
             s << "        x          = " << w.x                    << ",\n";
             s << "        y          = " << w.y                    << ",\n";
@@ -254,6 +271,21 @@ QString ProjectManager::compileToLua(const ProjectData &p)
         s << "  },\n";
     }
     s << "}\n\n";
+    // 页面跳转动作模块：按钮等控件的事件代码可直接调用 PageNavigation.*
+    s << "local ok_nav, page_navigation = pcall(require, \"common.page_navigation\")\n";
+    s << "if ok_nav and page_navigation then\n";
+    s << "    PageNavigation = page_navigation\n";
+    s << "    _G.PageNavigation = page_navigation\n";
+    s << "    project.page_navigation = page_navigation\n";
+    s << "else\n";
+    s << "    print(\"[project] warning: failed to load common.page_navigation: \" .. tostring(page_navigation))\n";
+    s << "end\n\n";
+
+    // 引导仿真：调用部署在工程目录中的 runtime.lua，根据 project 表实例化 LVGL 界面
+    s << "local ok, runtime = pcall(require, \"runtime\")\n";
+    s << "if ok and runtime and type(runtime.run) == \"function\" then\n";
+    s << "    runtime.run(project)\n";
+    s << "end\n\n";
     s << "return project\n";
     return out;
 }
@@ -274,6 +306,123 @@ bool ProjectManager::compileFileToLua(const QString &jsonPath,
     if (!f.commit()) {
         if (errorMessage) *errorMessage = f.errorString();
         return false;
+    }
+    return true;
+}
+
+// ===========================================================================
+// 工程目录布局 / 运行时部署
+// ===========================================================================
+QString ProjectManager::projectJsonFileName(const QString &projectName)
+{
+    return projectName + QStringLiteral(".qlvgl.json");
+}
+
+QString ProjectManager::projectLuaFileName(const QString &projectName)
+{
+    return projectName + QStringLiteral(".lua");
+}
+
+namespace {
+
+// 递归拷贝目录内容（含子目录）到 dstDir。
+// overwrite=true 时覆盖同名文件；false 时跳过已存在文件。
+bool copyDirRecursive(const QString &srcDir, const QString &dstDir,
+                      bool overwrite, QString *errorMessage)
+{
+    QDir src(srcDir);
+    if (!src.exists()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("源目录不存在：%1").arg(srcDir);
+        return false;
+    }
+    QDir().mkpath(dstDir);
+
+    const QFileInfoList entries = src.entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fi : entries) {
+        const QString dstPath = dstDir + QLatin1Char('/') + fi.fileName();
+        if (fi.isDir()) {
+            if (!copyDirRecursive(fi.absoluteFilePath(), dstPath,
+                                  overwrite, errorMessage))
+                return false;
+        } else {
+            if (QFile::exists(dstPath)) {
+                if (!overwrite) continue;
+                QFile::remove(dstPath);
+            }
+            if (!QFile::copy(fi.absoluteFilePath(), dstPath)) {
+                if (errorMessage)
+                    *errorMessage = QObject::tr("拷贝失败：%1 -> %2")
+                                        .arg(fi.absoluteFilePath(), dstPath);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// 在多个候选位置中找到 designer 自带的 lua 资源根目录
+QString locateRuntimeLuaRoot()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        appDir + QStringLiteral("/lua"),
+        appDir + QStringLiteral("/../lua"),
+        appDir + QStringLiteral("/../../lua"),
+        appDir + QStringLiteral("/../../designer/lua"),
+        appDir + QStringLiteral("/../../../designer/lua"),
+    };
+    for (const QString &c : candidates) {
+        const QFileInfo fi(c);
+        if (fi.exists() && fi.isDir())
+            return fi.absoluteFilePath();
+    }
+    return QString();
+}
+
+}  // namespace
+
+bool ProjectManager::deployRuntime(const QString &projectDir,
+                                   bool overwriteWidgets,
+                                   QString *errorMessage)
+{
+    if (projectDir.isEmpty() || !QDir(projectDir).exists()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("工程目录无效：%1").arg(projectDir);
+        return false;
+    }
+
+    const QString srcRoot = locateRuntimeLuaRoot();
+    if (srcRoot.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr(
+                "未找到 designer 的 lua 运行时目录（应位于可执行文件旁的 lua/）。");
+        return false;
+    }
+
+    // 1. 顶层 .lua 文件（如 runtime.lua）始终覆盖，保持与 designer 同步
+    QDir srcDir(srcRoot);
+    const QFileInfoList topFiles = srcDir.entryInfoList(
+        QStringList{QStringLiteral("*.lua")}, QDir::Files);
+    for (const QFileInfo &fi : topFiles) {
+        const QString dst = projectDir + QLatin1Char('/') + fi.fileName();
+        if (QFile::exists(dst)) QFile::remove(dst);
+        if (!QFile::copy(fi.absoluteFilePath(), dst)) {
+            if (errorMessage)
+                *errorMessage = QObject::tr("拷贝运行时失败：%1").arg(fi.fileName());
+            return false;
+        }
+    }
+
+    // 2. common/widgets 子目录：默认不覆盖既有文件，避免覆盖用户的本地修改
+    const QStringList subdirs = { QStringLiteral("common"), QStringLiteral("widgets") };
+    for (const QString &sub : subdirs) {
+        const QString src = srcRoot     + QLatin1Char('/') + sub;
+        const QString dst = projectDir  + QLatin1Char('/') + sub;
+        if (!QDir(src).exists()) continue;
+        if (!copyDirRecursive(src, dst, overwriteWidgets, errorMessage))
+            return false;
     }
     return true;
 }
