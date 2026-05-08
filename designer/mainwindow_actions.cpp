@@ -19,6 +19,7 @@
 #include "widgettoolbox.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -27,8 +28,12 @@
 #include <QFileInfo>
 #include <QGraphicsItem>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QProcess>
 #include <QStackedWidget>
 #include <QTabWidget>
@@ -41,6 +46,96 @@
 namespace {
 constexpr const char *kProjectFilter =
     "QtLvglDesigner Project (*.qlvgl.json *.json *.qlproj)";
+constexpr const char *kWidgetInstancesMimeType =
+    "application/x-qtlvgl-designer-widget-instances";
+
+QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("instanceId"), inst.instanceId);
+    obj.insert(QStringLiteral("widgetId"), inst.widgetId);
+    obj.insert(QStringLiteral("name"), inst.name);
+    obj.insert(QStringLiteral("zOrder"), inst.zOrder);
+    obj.insert(QStringLiteral("x"), inst.x);
+    obj.insert(QStringLiteral("y"), inst.y);
+    obj.insert(QStringLiteral("width"), inst.width);
+    obj.insert(QStringLiteral("height"), inst.height);
+    obj.insert(QStringLiteral("locked"), inst.locked);
+    obj.insert(QStringLiteral("visible"), inst.visible);
+    obj.insert(QStringLiteral("properties"), QJsonObject::fromVariantMap(inst.properties));
+    return obj;
+}
+
+WidgetInstance widgetInstanceFromJson(const QJsonObject &obj)
+{
+    WidgetInstance inst;
+    inst.instanceId = obj.value(QStringLiteral("instanceId")).toString();
+    inst.widgetId   = obj.value(QStringLiteral("widgetId")).toString();
+    inst.name       = obj.value(QStringLiteral("name")).toString();
+    inst.zOrder     = obj.value(QStringLiteral("zOrder")).toInt(0);
+    inst.x          = obj.value(QStringLiteral("x")).toInt(0);
+    inst.y          = obj.value(QStringLiteral("y")).toInt(0);
+    inst.width      = obj.value(QStringLiteral("width")).toInt(100);
+    inst.height     = obj.value(QStringLiteral("height")).toInt(100);
+    inst.locked     = obj.value(QStringLiteral("locked")).toBool(false);
+    inst.visible    = obj.value(QStringLiteral("visible")).toBool(true);
+    inst.properties = obj.value(QStringLiteral("properties")).toObject().toVariantMap();
+    return inst;
+}
+
+QByteArray encodeWidgetClipboard(const QList<WidgetInstance> &instances)
+{
+    QJsonArray widgets;
+    for (const WidgetInstance &inst : instances)
+        widgets.append(widgetInstanceToJson(inst));
+
+    QJsonObject root;
+    root.insert(QStringLiteral("schema"), QStringLiteral("qtlvgl-designer-widget-instances"));
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("widgets"), widgets);
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
+QList<WidgetInstance> decodeWidgetClipboard(const QByteArray &data)
+{
+    QList<WidgetInstance> instances;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (!doc.isObject()) return instances;
+
+    const QJsonObject root = doc.object();
+    if (root.value(QStringLiteral("schema")).toString()
+        != QLatin1String("qtlvgl-designer-widget-instances")) {
+        return instances;
+    }
+
+    const QJsonArray widgets = root.value(QStringLiteral("widgets")).toArray();
+    for (const QJsonValue &value : widgets) {
+        if (!value.isObject()) continue;
+        WidgetInstance inst = widgetInstanceFromJson(value.toObject());
+        if (!inst.widgetId.isEmpty())
+            instances.append(inst);
+    }
+    return instances;
+}
+
+void setSystemWidgetClipboard(const QList<WidgetInstance> &instances)
+{
+    if (instances.isEmpty()) return;
+
+    auto *mime = new QMimeData;
+    mime->setData(QLatin1String(kWidgetInstancesMimeType),
+                  encodeWidgetClipboard(instances));
+    QApplication::clipboard()->setMimeData(mime);
+}
+
+QList<WidgetInstance> systemWidgetClipboard()
+{
+    const QMimeData *mime = QApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasFormat(QLatin1String(kWidgetInstancesMimeType)))
+        return {};
+    return decodeWidgetClipboard(mime->data(QLatin1String(kWidgetInstancesMimeType)));
+}
 
 // ------------------------------------------------------------
 // 图页 Undo 命令
@@ -106,6 +201,8 @@ void MainWindow::resetProject()
         m_openTabs.clear();
     }
     resetUndoChains();
+    m_widgetClipboard.clear();
+    m_widgetPasteCount = 0;
 
     m_project = ProjectData{};
     m_project.id        = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -143,6 +240,8 @@ void MainWindow::applyProjectToTabs()
     m_tabWidget->clear();
     m_openTabs.clear();
     resetUndoChains();
+    m_widgetClipboard.clear();
+    m_widgetPasteCount = 0;
 
     // 为旧工程/缺失 name 的实例补一个唯一名
     ensureInstanceNamesAssigned();
@@ -654,12 +753,45 @@ void MainWindow::onRedo()
 
 void MainWindow::onCut()
 {
-    if (auto *s = currentScene()) { s->copySelected(); s->deleteSelected(); }
+    if (auto *s = currentScene()) {
+        m_widgetClipboard = s->selectedInstances();
+        m_widgetPasteCount = 0;
+        setSystemWidgetClipboard(m_widgetClipboard);
+        s->deleteSelected();
+    }
 }
 
-void MainWindow::onCopy() { if (auto *s = currentScene()) s->copySelected(); }
+void MainWindow::onCopy()
+{
+    if (auto *s = currentScene()) {
+        m_widgetClipboard = s->selectedInstances();
+        m_widgetPasteCount = 0;
+        if (!m_widgetClipboard.isEmpty()) {
+            setSystemWidgetClipboard(m_widgetClipboard);
+            appendLog(tr("复制元素：%1 个").arg(m_widgetClipboard.size()));
+        }
+    }
+}
 
-void MainWindow::onPaste() { if (auto *s = currentScene()) s->pasteClipboard(); }
+void MainWindow::onPaste()
+{
+    if (auto *s = currentScene()) {
+        const QList<WidgetInstance> systemClipboard = systemWidgetClipboard();
+        if (!systemClipboard.isEmpty()) {
+            m_widgetClipboard = systemClipboard;
+            ++m_widgetPasteCount;
+            s->pasteInstances(m_widgetClipboard, m_widgetPasteCount);
+            return;
+        }
+
+        if (m_widgetClipboard.isEmpty()) {
+            s->pasteClipboard();
+            return;
+        }
+        ++m_widgetPasteCount;
+        s->pasteInstances(m_widgetClipboard, m_widgetPasteCount);
+    }
+}
 
 void MainWindow::onDelete() { if (auto *s = currentScene()) s->deleteSelected(); }
 

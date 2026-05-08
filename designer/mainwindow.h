@@ -307,6 +307,8 @@ private:
     QString          m_projectFilePath;
     bool             m_projectOpen = false;
     QStringList      m_recentProjects;
+    QList<WidgetInstance> m_widgetClipboard;
+    int              m_widgetPasteCount = 0;
 
     static constexpr int kMaxRecentProjects = 10;
 

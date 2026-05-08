@@ -287,12 +287,8 @@ void CanvasScene::deleteSelected()
 
 void CanvasScene::copySelected()
 {
-    m_clipboard.clear();
+    m_clipboard = selectedInstances();
     m_pasteCount = 0;
-    for (QGraphicsItem *gi : selectedItems()) {
-        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
-            m_clipboard.append(ci->instance());
-    }
     if (!m_clipboard.isEmpty())
         emit operationLogged(tr("复制元素：%1 个").arg(m_clipboard.size()));
 }
@@ -302,13 +298,69 @@ void CanvasScene::pasteClipboard()
     if (m_clipboard.isEmpty()) return;
 
     ++m_pasteCount;
-    const int off = m_pasteCount * 20;
+    pasteInstances(m_clipboard, m_pasteCount);
+}
+
+QList<WidgetInstance> CanvasScene::selectedInstances() const
+{
+    QList<WidgetInstance> insts;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            insts.append(ci->instance());
+    }
+    return insts;
+}
+
+void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pasteCount)
+{
+    if (instances.isEmpty()) return;
+
+    const int off = pasteCount * 20;
+
+    QSet<QString> usedNames;
+    for (QGraphicsItem *gi : items()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            if (!ci->instance().name.isEmpty())
+                usedNames.insert(ci->instance().name);
+    }
+
+    auto uniqueLocalName = [&usedNames](QString base) {
+        base = base.trimmed();
+        if (base.isEmpty()) base = QStringLiteral("widget");
+
+        QString cleaned;
+        for (QChar c : base) {
+            if (c.isLetterOrNumber() || c == QLatin1Char('_')) cleaned.append(c);
+            else cleaned.append(QLatin1Char('_'));
+        }
+        if (cleaned.isEmpty()) cleaned = QStringLiteral("widget");
+
+        int n = 1;
+        QString cand;
+        do { cand = QStringLiteral("%1_%2").arg(cleaned).arg(n++); }
+        while (usedNames.contains(cand));
+        usedNames.insert(cand);
+        return cand;
+    };
 
     QList<WidgetInstance> newInsts;
-    for (WidgetInstance inst : m_clipboard) {
+    for (WidgetInstance inst : instances) {
         inst.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         inst.x += off;
         inst.y += off;
+        QString baseName = inst.name;
+        if (baseName.isEmpty() && m_metaMap.contains(inst.widgetId))
+            baseName = m_metaMap.value(inst.widgetId).name;
+        if (baseName.isEmpty()) baseName = inst.widgetId;
+
+        if (m_nameGen) {
+            inst.name = m_nameGen(baseName);
+            while (usedNames.contains(inst.name))
+                inst.name = uniqueLocalName(inst.name);
+            usedNames.insert(inst.name);
+        } else {
+            inst.name = uniqueLocalName(baseName);
+        }
         newInsts.append(inst);
     }
     m_undoStack->push(new PasteItemsCommand(this, newInsts));

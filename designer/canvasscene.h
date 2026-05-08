@@ -45,6 +45,8 @@ public:
     void deleteSelected();
     void copySelected();
     void pasteClipboard();
+    QList<WidgetInstance> selectedInstances() const;
+    void pasteInstances(const QList<WidgetInstance> &instances, int pasteCount);
     void alignSelected(AlignMode mode);
 
     // 所有实例（用于序列化）
