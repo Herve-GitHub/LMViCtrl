@@ -362,6 +362,70 @@ bool copyDirRecursive(const QString &srcDir, const QString &dstDir,
     return true;
 }
 
+void collectWidgetLuaFiles(const QString &dirPath,
+                           const QString &prefix,
+                           QStringList *names)
+{
+    QDir dir(dirPath);
+
+    const QFileInfoList files = dir.entryInfoList(
+        QStringList{QStringLiteral("*.lua")},
+        QDir::Files,
+        QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &fi : files) {
+        if (fi.fileName().compare(QStringLiteral("manifest.lua"), Qt::CaseInsensitive) == 0)
+            continue;
+        const QString baseName = fi.completeBaseName();
+        names->append(prefix.isEmpty()
+                          ? baseName
+                          : prefix + QLatin1Char('/') + baseName);
+    }
+
+    const QFileInfoList dirs = dir.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot,
+        QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &subdir : dirs) {
+        const QString childPrefix = prefix.isEmpty()
+                                      ? subdir.fileName()
+                                      : prefix + QLatin1Char('/') + subdir.fileName();
+        collectWidgetLuaFiles(subdir.absoluteFilePath(), childPrefix, names);
+    }
+}
+
+bool writeWidgetManifest(const QString &projectDir, QString *errorMessage)
+{
+    const QString widgetsDir = projectDir + QStringLiteral("/widgets");
+    if (!QDir(widgetsDir).exists()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("widgets 目录不存在：%1").arg(widgetsDir);
+        return false;
+    }
+
+    QStringList names;
+    collectWidgetLuaFiles(widgetsDir, QString(), &names);
+
+    QSaveFile file(projectDir + QStringLiteral("/manifest.lua"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("创建 manifest.lua 失败：%1").arg(file.errorString());
+        return false;
+    }
+
+    QTextStream s(&file);
+    s.setEncoding(QStringConverter::Utf8);
+    s << "return {\n";
+    for (const QString &name : names)
+        s << "    " << luaQuote(name) << ",\n";
+    s << "}\n";
+
+    if (!file.commit()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("写入 manifest.lua 失败：%1").arg(file.errorString());
+        return false;
+    }
+    return true;
+}
+
 // 在多个候选位置中找到 designer 自带的 lua 资源根目录
 QString locateRuntimeLuaRoot()
 {
@@ -424,5 +488,10 @@ bool ProjectManager::deployRuntime(const QString &projectDir,
         if (!copyDirRecursive(src, dst, overwriteWidgets, errorMessage))
             return false;
     }
+
+    // 3. 顶层 manifest.lua：由工程目录 widgets/ 下的实际 lua 文件生成
+    if (!writeWidgetManifest(projectDir, errorMessage))
+        return false;
+
     return true;
 }
