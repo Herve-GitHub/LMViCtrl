@@ -71,11 +71,27 @@ end
 -- ─── 2. 列出 widgets/ 下的 *.lua（递归子目录，返回模块的相对路径短名） ──
 -- 例如 widgets/button.lua            -> "button"
 --      widgets/custom/valve.lua      -> "custom/valve"
+local function load_widget_manifest()
+    local ok, manifest = pcall(require, "manifest")
+    if not ok or type(manifest) ~= "table" then
+        log_warn("manifest.lua not available: %s", tostring(manifest))
+        return {}
+    end
+
+    local names = {}
+    for _, name in ipairs(manifest) do
+        if type(name) == "string" and name ~= "" then
+            names[#names + 1] = name
+        end
+    end
+    return names
+end
+
 local function list_widget_basenames()
     local dir = detect_widgets_dir()
     if not dir then
         log_warn("could not locate widgets/ directory via package.path")
-        return {}
+        return load_widget_manifest()
     end
 
     local sep = package.config:sub(1, 1)
@@ -87,11 +103,14 @@ local function list_widget_basenames()
         cmd = string.format('find "%s" -type f -name "*.lua" 2>/dev/null', dir)
     end
 
-    local p = io.popen(cmd)
     local names = {}
-    if not p then
-        log_warn("io.popen failed for: %s", cmd)
-        return names
+    local ok, p = false, nil
+    if type(io) == "table" and type(io.popen) == "function" then
+        ok, p = pcall(io.popen, cmd)
+    end
+    if not ok or not p then
+        log_warn("io.popen unavailable, fallback to manifest.lua")
+        return load_widget_manifest()
     end
 
     -- 计算相对于 widgets/ 的路径（去扩展名），统一用 "/" 分隔
@@ -115,7 +134,7 @@ local function list_widget_basenames()
             rel = rel:gsub("^[/\\]+", "")
             -- 去掉 .lua 后缀
             rel = rel:gsub("%.[Ll][Uu][Aa]$", "")
-            if rel ~= "" then names[#names + 1] = rel end
+            if rel ~= "" and rel ~= "manifest" then names[#names + 1] = rel end
         end
     end
     p:close()

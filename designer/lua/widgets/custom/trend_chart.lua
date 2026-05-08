@@ -100,7 +100,7 @@ TrendChart.__widget_meta = {
         { name = "on_updated_handler", type = "code", language = "lua",
             event = "updated", label = "更新处理代码",
             default = "", multiline = true, lines = 6,
-            snippet = "print('trend value =', value)" },
+            snippet = "" },
         { name = "on_clicked_handler", type = "code", language = "lua",
             event = "clicked", label = "点击处理代码",
             default = "", multiline = true, lines = 6 },
