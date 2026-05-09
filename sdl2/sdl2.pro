@@ -99,6 +99,7 @@ win32 {
         src/render/direct3d12/SDL_render_d3d12.c \
         src/render/direct3d12/SDL_shaders_d3d12.c \
         src/sensor/windows/SDL_windowssensor.c \
+		src/thread/generic/SDL_syscond.c \
         src/thread/windows/SDL_syscond_cv.c \
         src/thread/windows/SDL_sysmutex.c \
         src/thread/windows/SDL_syssem.c \
