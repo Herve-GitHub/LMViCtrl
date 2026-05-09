@@ -67,7 +67,7 @@ typedef struct {
  **********************/
 static inline int sdl_render_mode(void);
 static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * color_p);
-static void window_create(lv_display_t * disp);
+static bool window_create(lv_display_t * disp);
 static void window_update(lv_display_t * disp);
 #if LV_USE_DRAW_SDL == 0
     static void texture_resize(lv_display_t * disp);
@@ -95,7 +95,10 @@ static lv_timer_t * event_handler_timer;
 lv_display_t * lv_sdl_window_create(int32_t hor_res, int32_t ver_res)
 {
     if(!inited) {
-        SDL_Init(SDL_INIT_VIDEO);
+        if(SDL_Init(SDL_INIT_VIDEO) != 0) {
+            LV_LOG_ERROR("SDL_Init failed: %s", SDL_GetError());
+            return NULL;
+        }
         SDL_StartTextInput();
         event_handler_timer = lv_timer_create(sdl_event_handler, 5, NULL);
         lv_tick_set_cb(SDL_GetTicks);
@@ -115,7 +118,10 @@ lv_display_t * lv_sdl_window_create(int32_t hor_res, int32_t ver_res)
     }
     lv_display_add_event_cb(disp, release_disp_cb, LV_EVENT_DELETE, disp);
     lv_display_set_driver_data(disp, dsc);
-    window_create(disp);
+    if(!window_create(disp)) {
+        lv_display_delete(disp);
+        return NULL;
+    }
 
     lv_display_set_flush_cb(disp, flush_cb);
 
@@ -383,7 +389,7 @@ static void sdl_event_handler(lv_timer_t * t)
     }
 }
 
-static void window_create(lv_display_t * disp)
+static bool window_create(lv_display_t * disp)
 {
     lv_sdl_window_t * dsc = lv_display_get_driver_data(disp);
     dsc->zoom = 1.0;
@@ -398,9 +404,19 @@ static void window_create(lv_display_t * disp)
     dsc->window = SDL_CreateWindow("LVGL Simulator",
                                    SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                                    hor_res, ver_res, flag);       /*last param. SDL_WINDOW_BORDERLESS to hide borders*/
+    if(dsc->window == NULL) {
+        LV_LOG_ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
+        return false;
+    }
 
     dsc->renderer = SDL_CreateRenderer(dsc->window, -1,
                                        LV_SDL_ACCELERATED ? SDL_RENDERER_ACCELERATED : SDL_RENDERER_SOFTWARE);
+    if(dsc->renderer == NULL) {
+        LV_LOG_ERROR("SDL_CreateRenderer failed: %s", SDL_GetError());
+        SDL_DestroyWindow(dsc->window);
+        dsc->window = NULL;
+        return false;
+    }
 #if LV_USE_DRAW_SDL == 0
     texture_resize(disp);
 
@@ -414,6 +430,7 @@ static void window_create(lv_display_t * disp)
 #if LV_USE_DRAW_SDL == 0
     texture_resize(disp);
 #endif /*LV_USE_DRAW_SDL == 0*/
+    return true;
 }
 
 static void window_update(lv_display_t * disp)

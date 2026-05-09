@@ -38,9 +38,8 @@
 #endif
 
 #include <X11/Xproto.h>
-#include <X11/extensions/Xext.h>
-
 #ifndef NO_SHARED_MEMORY
+#include <X11/extensions/Xext.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <X11/extensions/XShm.h>

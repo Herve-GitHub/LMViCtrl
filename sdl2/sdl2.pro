@@ -129,18 +129,14 @@ unix:!macx {
 
     LIBS += -ldl \
             -lpthread \
-            -lm \
-            -lX11 \
-            -lXext \
-            -lXrandr \
-            -lXi \
-            -lXfixes
+            -lm
 
     SOURCES += \
         src/audio/alsa/SDL_alsa_audio.c \
         src/audio/disk/SDL_diskaudio.c \
         src/audio/dummy/SDL_dummyaudio.c \
         src/core/linux/SDL_threadprio.c \
+        src/core/unix/SDL_poll.c \
         src/filesystem/unix/SDL_sysfilesystem.c \
         src/haptic/linux/SDL_syshaptic.c \
         src/joystick/linux/SDL_sysjoystick.c \
@@ -203,9 +199,12 @@ SOURCES += \
     src/events/SDL_dropevents.c \
     src/events/SDL_events.c \
     src/events/SDL_gesture.c \
+    src/events/imKStoUCS.c \
     src/events/SDL_keyboard.c \
+    src/events/SDL_keysym_to_scancode.c \
     src/events/SDL_mouse.c \
     src/events/SDL_quit.c \
+    src/events/SDL_scancode_tables.c \
     src/events/SDL_touch.c \
     src/events/SDL_windowevents.c \
     src/file/SDL_rwops.c \

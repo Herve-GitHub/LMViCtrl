@@ -86,7 +86,7 @@ static SyncQueryData sync_ctx = { 0 };
 
 
 // ===== 函数声明 =====
-static void ws_event_handler(struct mg_connection* c, int ev, void* ev_data, void* fn_data);
+static void ws_event_handler(struct mg_connection* c, int ev, void* ev_data);
 static void network_timer_cb(lv_timer_t* timer);
 /*static void sync_query_handler(struct mg_connection* c, int ev, void* ev_data, void* fn_data);
 static void sync_query_timeout_cb(lv_timer_t* timer);
@@ -119,7 +119,7 @@ static void sync_query_timeout_cb(lv_timer_t* timer) {
 }
 
 // ===== 同步查询事件处理器 =====
-static void sync_query_handler(struct mg_connection* c, int ev, void* ev_data, void* fn_data) {
+static void sync_query_handler(struct mg_connection* c, int ev, void* ev_data) {
    
 
     if (ev == MG_EV_HTTP_MSG) {
@@ -354,7 +354,7 @@ static int lua_query_history_sync(lua_State* L) {
 }
 
 // ===== WebSocket事件处理器 =====
-static void ws_event_handler(struct mg_connection* c, int ev, void* ev_data, void* fn_data) {
+static void ws_event_handler(struct mg_connection* c, int ev, void* ev_data) {
     MUTEX_LOCK(ws_mutex);
 
     if (ev == MG_EV_OPEN) {
