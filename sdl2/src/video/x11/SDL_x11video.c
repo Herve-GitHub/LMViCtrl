@@ -156,6 +156,7 @@ static SDL_VideoDevice *X11_CreateDevice(void)
     Display *x11_display = NULL;
 
     if (!SDL_X11_LoadSymbols()) {
+        SDL_SetError("Unable to load X11 symbols");
         return NULL;
     }
 
@@ -167,6 +168,7 @@ static SDL_VideoDevice *X11_CreateDevice(void)
     x11_display = X11_XOpenDisplay(display);
 
     if (!x11_display) {
+        SDL_SetError("Couldn't open X11 display");
         SDL_X11_UnloadSymbols();
         return NULL;
     }
@@ -194,6 +196,7 @@ static SDL_VideoDevice *X11_CreateDevice(void)
     data->display = x11_display;
     data->request_display = X11_XOpenDisplay(display);
     if (!data->request_display) {
+        SDL_SetError("Couldn't open X11 request display");
         X11_XCloseDisplay(data->display);
         SDL_free(device->driverdata);
         SDL_free(device);

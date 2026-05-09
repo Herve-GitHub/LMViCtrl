@@ -1,6 +1,6 @@
 #pragma once
 #include <QPainter>
-#include "widgetmeta.h"
+#include "widgemeta.h"
 class drawHints
 {
 public:

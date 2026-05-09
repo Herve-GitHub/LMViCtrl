@@ -1151,6 +1151,7 @@ static int luaopen_lvgl(lua_State* L) {
     // Event constants
     lua_pushinteger(L, LV_EVENT_PRESSED); lua_setfield(L, -2, "EVENT_PRESSED");
     lua_pushinteger(L, LV_EVENT_PRESSING); lua_setfield(L, -2, "EVENT_PRESSING");
+    lua_pushinteger(L, LV_EVENT_PRESS_LOST); lua_setfield(L, -2, "EVENT_PRESS_LOST");
     lua_pushinteger(L, LV_EVENT_RELEASED); lua_setfield(L, -2, "EVENT_RELEASED");
     lua_pushinteger(L, LV_EVENT_CLICKED); lua_setfield(L, -2, "EVENT_CLICKED");
     lua_pushinteger(L, LV_EVENT_SHORT_CLICKED); lua_setfield(L, -2, "EVENT_SHORT_CLICKED");
@@ -1159,8 +1160,13 @@ static int luaopen_lvgl(lua_State* L) {
     lua_pushinteger(L, LV_EVENT_SINGLE_CLICKED); lua_setfield(L, -2, "EVENT_SINGLE_CLICKED");
     lua_pushinteger(L, LV_EVENT_DOUBLE_CLICKED); lua_setfield(L, -2, "EVENT_DOUBLE_CLICKED");
     lua_pushinteger(L, LV_EVENT_VALUE_CHANGED); lua_setfield(L, -2, "EVENT_VALUE_CHANGED");
+    lua_pushinteger(L, LV_EVENT_SCROLL); lua_setfield(L, -2, "EVENT_SCROLL");
+    lua_pushinteger(L, LV_EVENT_SCROLL_BEGIN); lua_setfield(L, -2, "EVENT_SCROLL_BEGIN");
+    lua_pushinteger(L, LV_EVENT_SCROLL_END); lua_setfield(L, -2, "EVENT_SCROLL_END");
     lua_pushinteger(L, LV_EVENT_FOCUSED); lua_setfield(L, -2, "EVENT_FOCUSED");
     lua_pushinteger(L, LV_EVENT_DEFOCUSED); lua_setfield(L, -2, "EVENT_DEFOCUSED");
+    lua_pushinteger(L, LV_EVENT_LEAVE); lua_setfield(L, -2, "EVENT_LEAVE");
+    lua_pushinteger(L, LV_EVENT_HIT_TEST); lua_setfield(L, -2, "EVENT_HIT_TEST");
     lua_pushinteger(L, LV_EVENT_READY); lua_setfield(L, -2, "EVENT_READY");
     lua_pushinteger(L, LV_EVENT_CANCEL); lua_setfield(L, -2, "EVENT_CANCEL");
     lua_pushinteger(L, LV_EVENT_KEY); lua_setfield(L, -2, "EVENT_KEY");

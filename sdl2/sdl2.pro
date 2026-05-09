@@ -99,6 +99,7 @@ win32 {
         src/render/direct3d12/SDL_render_d3d12.c \
         src/render/direct3d12/SDL_shaders_d3d12.c \
         src/sensor/windows/SDL_windowssensor.c \
+		src/thread/generic/SDL_syscond.c \
         src/thread/windows/SDL_syscond_cv.c \
         src/thread/windows/SDL_sysmutex.c \
         src/thread/windows/SDL_syssem.c \
@@ -129,19 +130,14 @@ unix:!macx {
 
     LIBS += -ldl \
             -lpthread \
-            -lm \
-            -lX11 \
-            -lXext \
-            -lXrandr \
-            -lXi \
-            -lXfixes \
-            -lXcursor \
-            -lasound
+            -lm
 
     SOURCES += \
         src/audio/alsa/SDL_alsa_audio.c \
         src/audio/disk/SDL_diskaudio.c \
         src/audio/dummy/SDL_dummyaudio.c \
+        src/core/linux/SDL_threadprio.c \
+        src/core/unix/SDL_poll.c \
         src/filesystem/unix/SDL_sysfilesystem.c \
         src/haptic/linux/SDL_syshaptic.c \
         src/joystick/linux/SDL_sysjoystick.c \
@@ -204,9 +200,12 @@ SOURCES += \
     src/events/SDL_dropevents.c \
     src/events/SDL_events.c \
     src/events/SDL_gesture.c \
+    src/events/imKStoUCS.c \
     src/events/SDL_keyboard.c \
+    src/events/SDL_keysym_to_scancode.c \
     src/events/SDL_mouse.c \
     src/events/SDL_quit.c \
+    src/events/SDL_scancode_tables.c \
     src/events/SDL_touch.c \
     src/events/SDL_windowevents.c \
     src/file/SDL_rwops.c \
@@ -275,7 +274,6 @@ SOURCES += \
     src/render/software/SDL_render_sw.c \
     src/render/software/SDL_rotate.c \
     src/render/software/SDL_triangle.c \
-    src/sensor/dummy/SDL_dummysensor.c \
     src/sensor/SDL_sensor.c \
     src/stdlib/SDL_crc16.c \
     src/stdlib/SDL_crc32.c \
@@ -287,7 +285,6 @@ SOURCES += \
     src/stdlib/SDL_stdlib.c \
     src/stdlib/SDL_string.c \
     src/stdlib/SDL_strtokr.c \
-    src/thread/generic/SDL_syscond.c \
     src/thread/SDL_thread.c \
     src/timer/SDL_timer.c \
     src/video/dummy/SDL_nullevents.c \
@@ -318,6 +315,12 @@ SOURCES += \
     src/video/yuv2rgb/yuv_rgb_sse.c \
     src/video/yuv2rgb/yuv_rgb_std.c
 
+!win32:!unix {
+    SOURCES += \
+        src/sensor/dummy/SDL_dummysensor.c \
+        src/thread/generic/SDL_syscond.c
+}
+
 # -----------------------------------------------------------------------
 # Public header files
 # -----------------------------------------------------------------------
@@ -332,6 +335,7 @@ HEADERS += \
     include/SDL_blendmode.h \
     include/SDL_clipboard.h \
     include/SDL_config.h \
+    include/SDL_config_linux.h \
     include/SDL_config_windows.h \
     include/SDL_copying.h \
     include/SDL_cpuinfo.h \

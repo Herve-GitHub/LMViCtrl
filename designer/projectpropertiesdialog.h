@@ -1,6 +1,6 @@
 #pragma once
 #include <QDialog>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class QLineEdit;
 class QSpinBox;

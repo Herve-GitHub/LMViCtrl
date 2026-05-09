@@ -297,6 +297,87 @@ local function bind_event_handlers(widget, mod, inst)
     end
 end
 
+local function execute_event_action(action, self, e)
+    if type(action) ~= "table" or action.enabled == false then return end
+    local action_type = action.type
+
+    if action_type == "load_screen" then
+        local pm = _G.PageManager
+        if not pm then
+            log_warn("event action: PageManager unavailable")
+            return
+        end
+        if action.targetId and action.targetId ~= "" and type(pm.goto_page_by_id) == "function" then
+            pm.goto_page_by_id(action.targetId)
+        elseif action.targetName and action.targetName ~= "" and type(pm.goto_page_by_name) == "function" then
+            pm.goto_page_by_name(action.targetName)
+        elseif type(pm.goto_page) == "function" and type(action.params) == "table" then
+            pm.goto_page(action.params.page_index or action.params.index or 1)
+        end
+        return
+    end
+
+    if action_type == "custom_code" then
+        local fn = compile_event_handler(action.code, "event_action", action.id or "custom_code")
+        if fn then
+            local ok, err = pcall(fn, self, e)
+            if not ok then log_warn("event action custom_code failed: %s", tostring(err)) end
+        end
+        return
+    end
+
+    if action_type == "set_property" then
+        local target = action.targetName and M.widgets[action.targetName]
+        local params = action.params or {}
+        if target and type(target.set_property) == "function" then
+            target:set_property(params.property, params.value)
+        else
+            log_warn("event action: target widget not found or cannot set property: %s", tostring(action.targetName))
+        end
+        return
+    end
+
+    if action_type == "call_method" then
+        local target = action.targetName and M.widgets[action.targetName]
+        local method = action.method or (action.params and action.params.method)
+        if target and method and type(target[method]) == "function" then
+            target[method](target)
+        else
+            log_warn("event action: cannot call %s on %s", tostring(method), tostring(action.targetName))
+        end
+        return
+    end
+
+    if action_type == "freemaster" then
+        if _G.Freemaster and type(_G.Freemaster.execute) == "function" then
+            _G.Freemaster.execute(action)
+        else
+            log_warn("event action: Freemaster API unavailable for target %s", tostring(action.targetName))
+        end
+        return
+    end
+
+    log_warn("event action: unsupported action type %s", tostring(action_type))
+end
+
+local function bind_event_actions(widget, inst)
+    if type(widget) ~= "table" or type(widget.on) ~= "function" then return end
+    if type(inst.events) ~= "table" then return end
+
+    for event_name, actions in pairs(inst.events) do
+        if type(actions) == "table" and #actions > 0 then
+            local ok, err = pcall(widget.on, widget, event_name, function(self, e)
+                for _, action in ipairs(actions) do
+                    execute_event_action(action, self, e)
+                end
+            end)
+            if not ok then
+                log_warn("event: bind action %s failed: %s", tostring(event_name), tostring(err))
+            end
+        end
+    end
+end
+
 -- ─── 5. 构建单个控件 ─────────────────────────────────────────────────
 local function build_widget(parent, inst)
     local mod = lookup_widget(inst.widgetId)
@@ -327,6 +408,7 @@ local function build_widget(parent, inst)
     end
 
     bind_event_handlers(ret, mod, inst)
+    bind_event_actions(ret, inst)
     return ret
 end
 
@@ -393,6 +475,24 @@ local function create_page_manager(pages)
         end
         manager.current_index = page_index
         return true
+    end
+
+    function manager.goto_page_by_id(screen_id)
+        if type(screen_id) ~= "string" or screen_id == "" then return false end
+        for i, page in ipairs(manager.pages) do
+            if page.id == screen_id then return manager.goto_page(i) end
+        end
+        log_warn("page: id %s not found", tostring(screen_id))
+        return false
+    end
+
+    function manager.goto_page_by_name(name)
+        if type(name) ~= "string" or name == "" then return false end
+        for i, page in ipairs(manager.pages) do
+            if page.name == name then return manager.goto_page(i) end
+        end
+        log_warn("page: name %s not found", tostring(name))
+        return false
     end
 
     manager.select_page = manager.goto_page

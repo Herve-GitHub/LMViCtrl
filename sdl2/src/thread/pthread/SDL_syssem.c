@@ -25,7 +25,7 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <time.h>
-
+#include <string.h>
 #include "SDL_thread.h"
 #include "SDL_timer.h"
 

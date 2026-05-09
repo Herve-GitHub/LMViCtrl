@@ -273,11 +273,32 @@ function Button.new(parent, state)
     end
 
     local ev_code
-    if     event_name == "clicked"        then ev_code = lv.EVENT_CLICKED
-    elseif event_name == "single_clicked" then ev_code = lv.EVENT_SINGLE_CLICKED
-    elseif event_name == "double_clicked" then ev_code = lv.EVENT_DOUBLE_CLICKED
+    if     event_name == "clicked"             then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "short_clicked"       then ev_code = lv.EVENT_SHORT_CLICKED
+    elseif event_name == "single_clicked"      then ev_code = lv.EVENT_SINGLE_CLICKED
+    elseif event_name == "double_clicked"      then ev_code = lv.EVENT_DOUBLE_CLICKED
+    elseif event_name == "pressed"             then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "pressing"            then ev_code = lv.EVENT_PRESSING
+    elseif event_name == "press_lost"          then ev_code = lv.EVENT_PRESS_LOST
+    elseif event_name == "released"            then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "value_changed"       then ev_code = lv.EVENT_VALUE_CHANGED
+    elseif event_name == "long_pressed"        then ev_code = lv.EVENT_LONG_PRESSED
+    elseif event_name == "long_pressed_repeat" then ev_code = lv.EVENT_LONG_PRESSED_REPEAT
+    elseif event_name == "scroll"              then ev_code = lv.EVENT_SCROLL
+    elseif event_name == "scroll_begin"        then ev_code = lv.EVENT_SCROLL_BEGIN
+    elseif event_name == "scroll_end"          then ev_code = lv.EVENT_SCROLL_END
+    elseif event_name == "focused"             then ev_code = lv.EVENT_FOCUSED
+    elseif event_name == "defocused"           then ev_code = lv.EVENT_DEFOCUSED
+    elseif event_name == "leave"               then ev_code = lv.EVENT_LEAVE
+    elseif event_name == "hit_test"            then ev_code = lv.EVENT_HIT_TEST
+    elseif event_name == "key"                 then ev_code = lv.EVENT_KEY
     else
       print("[button] unsupported event:", event_name)
+      return
+    end
+
+    if ev_code == nil then
+      print("[button] lvgl event constant unavailable:", event_name)
       return
     end
 

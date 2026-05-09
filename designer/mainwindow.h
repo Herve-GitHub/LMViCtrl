@@ -3,7 +3,7 @@
 
 #include <QMainWindow>
 #include <QHash>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 
 class WidgetToolbox;
 class CanvasScene;
@@ -12,6 +12,7 @@ class ScreenTab;
 class ScreenManagerDock;
 class WelcomeWidget;
 class PropertyPanelDock;
+class EventPanelDock;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -264,6 +265,7 @@ private:
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
+    EventPanelDock    *m_eventPanel       = nullptr;
     QDockWidget       *m_logDock          = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;

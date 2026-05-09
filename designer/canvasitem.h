@@ -3,7 +3,7 @@
 #include <QColor>
 #include <QFont>
 #include <QImage>
-#include "WidgetMeta.h"
+#include "widgemeta.h"
 #include "drawHints.h"
 // 8 个缩放控制点方向
 enum class HandlePos { None, TL, T, TR, L, R, BL, B, BR };
@@ -39,6 +39,7 @@ public:
     // 属性面板：直接修改实例数据（不入栈）
     void setInstanceName(const QString &name);
     void setInstanceProperty(const QString &key, const QVariant &value);
+    void setEventBindings(const QList<WidgetEventBinding> &bindings);
 
     QRectF       boundingRect() const override;
     QPainterPath shape()        const override;

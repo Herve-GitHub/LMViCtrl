@@ -5,6 +5,7 @@ TARGET = LvglLuaBinding
 QT -= core gui
 
 CONFIG += c++17
+CONFIG += object_parallel_to_source no_batch
 # 引入目录配置
 include($$PWD/../build_dirs.pri)
 
@@ -491,7 +492,6 @@ SOURCES += \
     lvgl/src/libs/qrcode/qrcodegen.c \
     lvgl/src/libs/rlottie/lv_rlottie.c \
     lvgl/src/libs/rle/lv_rle.c \
-    lvgl/src/libs/svg/lv_svg.c \
     lvgl/src/libs/svg/lv_svg_decoder.c \
     lvgl/src/libs/svg/lv_svg_parser.c \
     lvgl/src/libs/svg/lv_svg_render.c \

@@ -234,7 +234,14 @@ void X11_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
     display = data->videodata->display;
 
     if (data->ximage) {
+    #ifdef NO_SHARED_MEMORY
+        char *ximage_data = data->ximage->data;
+        data->ximage->data = NULL;
+    #endif
         XDestroyImage(data->ximage);
+    #ifdef NO_SHARED_MEMORY
+        SDL_free(ximage_data);
+    #endif
 
 #ifndef NO_SHARED_MEMORY
         if (data->use_mitshm) {
