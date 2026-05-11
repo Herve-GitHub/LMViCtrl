@@ -46,11 +46,11 @@ public:
     static QString projectLuaFileName(const QString &projectName);
 
     /**
-    * @brief 把 designer 的运行时 lua 资源（runtime.lua / common / widgets）
+    * @brief 把 LMViCtrl 的运行时 lua 资源（runtime.lua / common / widgets）
     *        部署到工程目录，并生成 manifest.lua 供运行时 require。
      *
      * 运行时来源（按顺序探测）：
-     *   1. <applicationDirPath>/lua          （发布场景，由 designer.pro 的 POST_LINK 拷入）
+     *   1. <applicationDirPath>/lua          （发布场景，由 LMViCtrl.pro 的 POST_LINK 拷入）
      *   2. <applicationDirPath>/../lua / ../../lua  （开发期回退）
      *
      * 已存在的 widgets/common 目录默认不覆盖（避免覆盖用户的本地修改），

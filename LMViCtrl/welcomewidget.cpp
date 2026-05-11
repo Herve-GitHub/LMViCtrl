@@ -41,7 +41,7 @@ void WelcomeWidget::buildUi()
     // ══════════════════════════════════════════════════════════════════════
     // 顶部标题区
     // ══════════════════════════════════════════════════════════════════════
-    auto *titleLabel = new QLabel(QStringLiteral("QtLvglDesigner"), this);
+    auto *titleLabel = new QLabel(QString("罗米视控"), this);
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont = titleLabel->font();
     titleFont.setPointSize(28);
@@ -148,7 +148,7 @@ void WelcomeWidget::buildUi()
     // 页脚版本
     // ══════════════════════════════════════════════════════════════════════
     auto *footerLabel = new QLabel(
-        QStringLiteral("QtLvglDesigner  v0.1  |  © 2026"), this);
+        QStringLiteral("LMViCtrl  v0.1  |  © 2026"), this);
     footerLabel->setAlignment(Qt::AlignCenter);
     footerLabel->setStyleSheet(QStringLiteral("color: #616161; font-size: 9pt;"));
 

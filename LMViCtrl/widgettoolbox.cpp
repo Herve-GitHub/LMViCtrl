@@ -26,7 +26,7 @@
 static constexpr char kWidgetMimeType[] = "application/x-lvgl-widget";
 static const int const_itemHint = 40;
 
-// 预设类别顺序（与 designer/lua/widgets/说明.txt 一致）
+// 预设类别顺序（与 LMViCtrl/lua/widgets/说明.txt 一致）
 static const QStringList &preferredCategoryOrder()
 {
     static const QStringList order = {
