@@ -8,9 +8,12 @@
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QMimeData>
+#include <QQueue>
 #include <QUndoCommand>
 #include <QUndoStack>
 #include <QUuid>
+
+#include <utility>
 
 static constexpr char kWidgetMimeType[] = "application/x-lvgl-widget";
 
@@ -117,6 +120,27 @@ private:
     QList<WidgetInstance>  m_insts;
 };
 
+// --- 快照替换（组合/取消组合） ---------------------------------------------
+class ReplaceInstancesCommand : public QUndoCommand
+{
+public:
+    ReplaceInstancesCommand(CanvasScene *scene,
+                            const QList<WidgetInstance> &before,
+                            const QList<WidgetInstance> &after,
+                            const QString &text,
+                            QUndoCommand *parent = nullptr)
+        : QUndoCommand(text, parent)
+        , m_scene(scene), m_before(before), m_after(after) {}
+
+    void undo() override { m_scene->doLoadInstances(m_before); }
+    void redo() override { m_scene->doLoadInstances(m_after); }
+
+private:
+    CanvasScene *m_scene;
+    QList<WidgetInstance> m_before;
+    QList<WidgetInstance> m_after;
+};
+
 // ===========================================================================
 // CanvasScene
 // ===========================================================================
@@ -138,6 +162,34 @@ CanvasScene::CanvasScene(QObject *parent)
             if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
                 ci->update();
         }
+        if (m_adjustingGroupSelection) return;
+
+        QSet<QString> selectedGroupIds;
+        for (QGraphicsItem *gi : selectedItems()) {
+            if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+                if (ci->instance().isGroup)
+                    selectedGroupIds.insert(ci->instance().instanceId);
+            }
+        }
+        if (selectedGroupIds.isEmpty()) return;
+
+        bool changed = false;
+        do {
+            changed = false;
+            for (QGraphicsItem *gi : items()) {
+                auto *ci = qgraphicsitem_cast<CanvasItem*>(gi);
+                if (!ci) continue;
+                const WidgetInstance inst = ci->instance();
+                if (!inst.parentId.isEmpty() && selectedGroupIds.contains(inst.parentId) && !ci->isSelected()) {
+                    m_adjustingGroupSelection = true;
+                    ci->setSelected(true);
+                    m_adjustingGroupSelection = false;
+                    changed = true;
+                    if (inst.isGroup)
+                        selectedGroupIds.insert(inst.instanceId);
+                }
+            }
+        } while (changed);
     });
 }
 
@@ -269,6 +321,23 @@ void CanvasScene::doSetPositions(const QList<QPair<QString, QPointF>> &moves)
     }
 }
 
+void CanvasScene::doLoadInstances(const QList<WidgetInstance> &instances)
+{
+    m_suppressOperationLog = true;
+    const auto its = items();
+    for (QGraphicsItem *gi : its) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+            removeItem(ci);
+            delete ci;
+        }
+    }
+    m_pressPositions.clear();
+    m_resizingIds.clear();
+    for (const WidgetInstance &inst : instances)
+        doAddItem(inst);
+    m_suppressOperationLog = false;
+}
+
 // ---------------------------------------------------------------------------
 // 公共编辑操作
 // ---------------------------------------------------------------------------
@@ -303,12 +372,105 @@ void CanvasScene::pasteClipboard()
 
 QList<WidgetInstance> CanvasScene::selectedInstances() const
 {
-    QList<WidgetInstance> insts;
+    QList<WidgetInstance> roots;
     for (QGraphicsItem *gi : selectedItems()) {
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
-            insts.append(ci->instance());
+            roots.append(ci->instance());
     }
-    return insts;
+    return instancesWithDescendants(roots);
+}
+
+QList<WidgetInstance> CanvasScene::instancesWithDescendants(const QList<WidgetInstance> &roots) const
+{
+    QList<WidgetInstance> all = allInstances();
+    QHash<QString, WidgetInstance> byId;
+    QHash<QString, QList<QString>> children;
+    for (const WidgetInstance &inst : all) {
+        byId.insert(inst.instanceId, inst);
+        if (!inst.parentId.isEmpty())
+            children[inst.parentId].append(inst.instanceId);
+    }
+
+    QList<WidgetInstance> result;
+    QSet<QString> seen;
+    QQueue<QString> queue;
+    for (const WidgetInstance &inst : roots)
+        queue.enqueue(inst.instanceId);
+
+    while (!queue.isEmpty()) {
+        const QString id = queue.dequeue();
+        if (seen.contains(id) || !byId.contains(id)) continue;
+        seen.insert(id);
+        result.append(byId.value(id));
+        for (const QString &childId : children.value(id))
+            queue.enqueue(childId);
+    }
+    return result;
+}
+
+QString CanvasScene::uniqueGroupName() const
+{
+    QSet<QString> used;
+    for (const WidgetInstance &inst : allInstances())
+        if (!inst.name.isEmpty()) used.insert(inst.name);
+
+    int n = 1;
+    QString name;
+    do { name = QStringLiteral("Group_%1").arg(n++); }
+    while (used.contains(name));
+    return name;
+}
+
+void CanvasScene::expandSelectionToMoveGroups()
+{
+    QHash<QString, WidgetInstance> byId;
+    for (const WidgetInstance &inst : allInstances())
+        byId.insert(inst.instanceId, inst);
+
+    QSet<QString> groupIds;
+    for (QGraphicsItem *gi : selectedItems()) {
+        auto *ci = qgraphicsitem_cast<CanvasItem*>(gi);
+        if (!ci) continue;
+        const WidgetInstance inst = ci->instance();
+        if (inst.isGroup) {
+            groupIds.insert(inst.instanceId);
+        } else if (!inst.parentId.isEmpty()) {
+            const WidgetInstance parent = byId.value(inst.parentId);
+            if (parent.isGroup)
+                groupIds.insert(parent.instanceId);
+        }
+    }
+    if (groupIds.isEmpty()) return;
+
+    QList<WidgetInstance> groupRoots;
+    for (const QString &id : std::as_const(groupIds)) {
+        if (byId.contains(id))
+            groupRoots.append(byId.value(id));
+    }
+
+    QSet<QString> idsToSelect;
+    for (const WidgetInstance &inst : instancesWithDescendants(groupRoots))
+        idsToSelect.insert(inst.instanceId);
+    if (idsToSelect.isEmpty()) return;
+
+    bool changed = false;
+    m_adjustingGroupSelection = true;
+    for (QGraphicsItem *gi : items()) {
+        auto *ci = qgraphicsitem_cast<CanvasItem*>(gi);
+        if (!ci) continue;
+        if (idsToSelect.contains(ci->instance().instanceId) && !ci->isSelected()) {
+            ci->setSelected(true);
+            changed = true;
+        }
+    }
+    m_adjustingGroupSelection = false;
+
+    if (changed) {
+        for (QGraphicsItem *gi : items()) {
+            if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+                ci->update();
+        }
+    }
 }
 
 void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pasteCount)
@@ -343,9 +505,16 @@ void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pas
         return cand;
     };
 
+    QHash<QString, QString> idMap;
+    for (const WidgetInstance &inst : instances)
+        idMap.insert(inst.instanceId, QUuid::createUuid().toString(QUuid::WithoutBraces));
+
     QList<WidgetInstance> newInsts;
     for (WidgetInstance inst : instances) {
-        inst.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const QString oldId = inst.instanceId;
+        inst.instanceId = idMap.value(oldId);
+        if (!inst.parentId.isEmpty())
+            inst.parentId = idMap.value(inst.parentId, QString());
         inst.x += off;
         inst.y += off;
         QString baseName = inst.name;
@@ -371,6 +540,106 @@ void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pas
         if (CanvasItem *ci = findItem(inst.instanceId))
             ci->setSelected(true);
     }
+}
+
+void CanvasScene::groupSelected()
+{
+    QList<WidgetInstance> selected;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+            const WidgetInstance inst = ci->instance();
+            if (!inst.isGroup)
+                selected.append(inst);
+        }
+    }
+    if (selected.size() < 2) return;
+
+    const QString parentId = selected.first().parentId;
+    for (const WidgetInstance &inst : selected) {
+        if (inst.parentId != parentId) {
+            emit operationLogged(tr("组合失败：请选择同一组合层级下的元素"));
+            return;
+        }
+    }
+
+    QRectF bounds;
+    int zOrder = selected.first().zOrder;
+    QSet<QString> selectedIds;
+    for (const WidgetInstance &inst : selected) {
+        const QRectF itemRect(inst.x, inst.y, inst.width, inst.height);
+        bounds = bounds.isNull() ? itemRect : bounds.united(itemRect);
+        zOrder = qMax(zOrder, inst.zOrder + 1);
+        selectedIds.insert(inst.instanceId);
+    }
+
+    WidgetInstance group;
+    group.instanceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    group.widgetId = QStringLiteral("__group__");
+    group.name = uniqueGroupName();
+    group.parentId = parentId;
+    group.isGroup = true;
+    group.zOrder = zOrder;
+    group.x = qRound(bounds.x());
+    group.y = qRound(bounds.y());
+    group.width = qRound(bounds.width());
+    group.height = qRound(bounds.height());
+
+    const QList<WidgetInstance> before = allInstances();
+    QList<WidgetInstance> after = before;
+    for (WidgetInstance &inst : after) {
+        if (selectedIds.contains(inst.instanceId))
+            inst.parentId = group.instanceId;
+    }
+    after.append(group);
+
+    m_undoStack->push(new ReplaceInstancesCommand(this, before, after,
+        tr("组合 %1 个元素").arg(selected.size())));
+
+    clearSelection();
+    if (CanvasItem *ci = findItem(group.instanceId))
+        ci->setSelected(true);
+    emit operationLogged(tr("组合元素：%1 个 -> %2").arg(selected.size()).arg(group.name));
+}
+
+void CanvasScene::ungroupSelected()
+{
+    QSet<QString> groupIds;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+            if (ci->instance().isGroup)
+                groupIds.insert(ci->instance().instanceId);
+        }
+    }
+    if (groupIds.isEmpty()) return;
+
+    const QList<WidgetInstance> before = allInstances();
+    QHash<QString, QString> groupParentIds;
+    for (const WidgetInstance &inst : before) {
+        if (groupIds.contains(inst.instanceId))
+            groupParentIds.insert(inst.instanceId, inst.parentId);
+    }
+
+    QList<WidgetInstance> after;
+    QList<QString> releasedIds;
+    for (WidgetInstance inst : before) {
+        if (groupIds.contains(inst.instanceId))
+            continue;
+        if (groupIds.contains(inst.parentId)) {
+            inst.parentId = groupParentIds.value(inst.parentId);
+            releasedIds.append(inst.instanceId);
+        }
+        after.append(inst);
+    }
+
+    m_undoStack->push(new ReplaceInstancesCommand(this, before, after,
+        tr("取消组合 %1 个组合").arg(groupIds.size())));
+
+    clearSelection();
+    for (const QString &id : std::as_const(releasedIds)) {
+        if (CanvasItem *ci = findItem(id))
+            ci->setSelected(true);
+    }
+    emit operationLogged(tr("取消组合：%1 个组合").arg(groupIds.size()));
 }
 
 void CanvasScene::alignSelected(AlignMode mode)
@@ -569,6 +838,7 @@ void CanvasScene::keyPressEvent(QKeyEvent *event)
         default: break;
         }
         if (dx || dy) {
+            expandSelectionToMoveGroups();
             QList<MoveData> moves;
             for (QGraphicsItem *gi : selectedItems()) {
                 if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
@@ -600,6 +870,7 @@ void CanvasScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     m_resizingIds.clear();
 
     QGraphicsScene::mousePressEvent(event);
+    expandSelectionToMoveGroups();
     for (QGraphicsItem *gi : selectedItems()) {
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
             m_pressPositions.insert(ci->instance().instanceId, ci->pos());

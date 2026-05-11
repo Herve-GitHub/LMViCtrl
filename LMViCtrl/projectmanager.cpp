@@ -85,6 +85,8 @@ QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
     o["instanceId"] = inst.instanceId;
     o["widgetId"]   = inst.widgetId;
     o["name"]       = inst.name;
+    o["parentId"]   = inst.parentId;
+    o["isGroup"]    = inst.isGroup;
     o["zOrder"]     = inst.zOrder;
     o["x"]          = inst.x;
     o["y"]          = inst.y;
@@ -103,6 +105,8 @@ WidgetInstance ProjectManager::instanceFromJson(const QJsonObject &o)
     inst.instanceId = o.value("instanceId").toString();
     inst.widgetId   = o.value("widgetId").toString();
     inst.name       = o.value("name").toString();
+    inst.parentId   = o.value("parentId").toString();
+    inst.isGroup    = o.value("isGroup").toBool(false);
     inst.zOrder     = o.value("zOrder").toInt(0);
     inst.x          = o.value("x").toInt(0);
     inst.y          = o.value("y").toInt(0);
@@ -357,6 +361,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
         s << "    bgColor = " << luaQuote(scr.bgColor) << ",\n";
         s << "    widgets = {\n";
         for (const WidgetInstance &w : scr.widgets) {
+            if (w.isGroup) continue;
             s << "      {\n";
             s << "        instanceId = " << luaQuote(w.instanceId) << ",\n";
             s << "        widgetId   = " << luaQuote(w.widgetId)   << ",\n";

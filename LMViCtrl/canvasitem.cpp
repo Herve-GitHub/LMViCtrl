@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPainterPathStroker>
 #include <QPixmap>
 #include <QStyleOptionGraphicsItem>
 
@@ -246,7 +247,16 @@ QRectF CanvasItem::boundingRect() const
 QPainterPath CanvasItem::shape() const
 {
     QPainterPath p;
-    p.addRect(QRectF(0, 0, m_inst.width, m_inst.height));
+    const QRectF body(0, 0, m_inst.width, m_inst.height);
+    if (m_inst.isGroup) {
+        QPainterPath rectPath;
+        rectPath.addRect(body);
+        QPainterPathStroker stroker;
+        stroker.setWidth(8.0);
+        p = stroker.createStroke(rectPath);
+    } else {
+        p.addRect(body);
+    }
     return p;
 }
 
@@ -285,6 +295,7 @@ HandlePos CanvasItem::hitHandle(const QPointF &lp) const
 
 bool CanvasItem::isSingleSelected() const
 {
+    if (m_inst.isGroup) return false;
     if (!isSelected() || !scene()) return false;
     const auto sel = scene()->selectedItems();
     return sel.count() == 1 && sel.first() == this;
@@ -309,6 +320,19 @@ void CanvasItem::paint(QPainter *p,
                        QWidget * /*w*/)
 {
     const QRectF body(0, 0, m_inst.width, m_inst.height);
+
+    if (m_inst.isGroup) {
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, false);
+        p->setBrush(QColor(77, 184, 255, isSelected() ? 24 : 10));
+        p->setPen(QPen(QColor(isSelected() ? "#4db8ff" : "#7aa7c7"), isSelected() ? 1.8 : 1.2, Qt::DashLine));
+        p->drawRect(body.adjusted(0.5, 0.5, -0.5, -0.5));
+        const QString label = m_inst.name.isEmpty() ? QStringLiteral("Group") : m_inst.name;
+        p->setPen(QColor("#9bd8ff"));
+        p->drawText(body.adjusted(4, 2, -4, -2), Qt::AlignLeft | Qt::AlignTop, label);
+        p->restore();
+        return;
+    }
 
     // --- 透明矩形框 + widget 预览图 ---
     p->save();

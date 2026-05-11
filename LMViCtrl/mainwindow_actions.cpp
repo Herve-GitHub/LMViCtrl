@@ -56,6 +56,8 @@ QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
     obj.insert(QStringLiteral("instanceId"), inst.instanceId);
     obj.insert(QStringLiteral("widgetId"), inst.widgetId);
     obj.insert(QStringLiteral("name"), inst.name);
+    obj.insert(QStringLiteral("parentId"), inst.parentId);
+    obj.insert(QStringLiteral("isGroup"), inst.isGroup);
     obj.insert(QStringLiteral("zOrder"), inst.zOrder);
     obj.insert(QStringLiteral("x"), inst.x);
     obj.insert(QStringLiteral("y"), inst.y);
@@ -92,6 +94,8 @@ WidgetInstance widgetInstanceFromJson(const QJsonObject &obj)
     inst.instanceId = obj.value(QStringLiteral("instanceId")).toString();
     inst.widgetId   = obj.value(QStringLiteral("widgetId")).toString();
     inst.name       = obj.value(QStringLiteral("name")).toString();
+    inst.parentId   = obj.value(QStringLiteral("parentId")).toString();
+    inst.isGroup    = obj.value(QStringLiteral("isGroup")).toBool(false);
     inst.zOrder     = obj.value(QStringLiteral("zOrder")).toInt(0);
     inst.x          = obj.value(QStringLiteral("x")).toInt(0);
     inst.y          = obj.value(QStringLiteral("y")).toInt(0);
@@ -889,9 +893,17 @@ void MainWindow::onAlignCenter()
         s->alignSelected(CanvasScene::AlignMode::Center);
 }
 
-void MainWindow::onGroup() {}
+void MainWindow::onGroup()
+{
+    if (auto *s = currentScene())
+        s->groupSelected();
+}
 
-void MainWindow::onUngroup() {}
+void MainWindow::onUngroup()
+{
+    if (auto *s = currentScene())
+        s->ungroupSelected();
+}
 
 // ============================================================
 // 视图

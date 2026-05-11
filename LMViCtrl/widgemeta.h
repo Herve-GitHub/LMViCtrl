@@ -129,6 +129,8 @@ struct WidgetInstance {
     QString instanceId;   // UUID
     QString widgetId;
     QString name;         // 工程内唯一的实例名（用户可改）
+    QString parentId;     // 设计器组合父级；为空表示直属图页
+    bool isGroup = false; // 仅组态软件使用的逻辑组合，不导出为 LVGL 控件
     int zOrder = 0;// 层级顺序，数值越大越靠上
     int x = 0;// 位置   
     int y = 0;// 位置

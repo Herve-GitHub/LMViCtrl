@@ -103,6 +103,7 @@ void EventPanelDock::rebuildPanel()
     if (!ci) { clearPanel(); return; }
 
     const WidgetInstance inst = ci->instance();
+    if (inst.isGroup) { clearPanel(); return; }
     const WidgetMeta meta = m_scene->widgetMeta(inst.widgetId);
 
     while (m_grid->count() > 0) {

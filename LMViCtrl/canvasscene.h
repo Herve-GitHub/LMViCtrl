@@ -48,6 +48,8 @@ public:
     QList<WidgetInstance> selectedInstances() const;
     void pasteInstances(const QList<WidgetInstance> &instances, int pasteCount);
     void alignSelected(AlignMode mode);
+    void groupSelected();
+    void ungroupSelected();
 
     // 所有实例（用于序列化）
     QList<WidgetInstance> allInstances() const;
@@ -63,6 +65,7 @@ public:
     void doRemoveItem(const QString &instanceId);
     void doSetGeometry(const QString &instanceId, const QRectF &rect);
     void doSetPositions(const QList<QPair<QString, QPointF>> &moves);
+    void doLoadInstances(const QList<WidgetInstance> &instances);
 
     // 属性面板编辑（不入栈，立刻生效）
     void setInstanceName    (const QString &instanceId, const QString &name);
@@ -117,12 +120,16 @@ private slots:
 
 private:
     CanvasItem *makeItem(const WidgetInstance &inst);
+    void expandSelectionToMoveGroups();
+    QList<WidgetInstance> instancesWithDescendants(const QList<WidgetInstance> &roots) const;
+    QString uniqueGroupName() const;
 
     QUndoStack        *m_undoStack = nullptr;
     QGraphicsRectItem *m_bgItem   = nullptr;
     QSize              m_canvasSize{1024, 768};
     QColor             m_canvasBgColor{"#000000"};
     bool               m_suppressOperationLog = false;
+    bool               m_adjustingGroupSelection = false;
 
     QHash<QString, WidgetMeta> m_metaMap;         // widgetId → WidgetMeta
 

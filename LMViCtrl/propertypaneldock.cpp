@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QSet>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -110,12 +111,48 @@ void PropertyPanelDock::onSceneSelectionChanged()
     // 仅在单选时显示
     const auto sel = m_scene->selectedItems();
     if (sel.isEmpty()) { buildCanvasPanel(); return; }
-    if (sel.count() != 1) { clearPanel(); return; }
 
-    auto *ci = qgraphicsitem_cast<CanvasItem*>(sel.first());
-    if (!ci) { clearPanel(); return; }
+    CanvasItem *target = nullptr;
+    if (sel.count() == 1) {
+        target = qgraphicsitem_cast<CanvasItem*>(sel.first());
+    } else {
+        QList<CanvasItem *> groupItems;
+        QList<CanvasItem *> canvasItems;
+        for (QGraphicsItem *gi : sel) {
+            if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+                canvasItems.append(ci);
+                if (ci->instance().isGroup)
+                    groupItems.append(ci);
+            }
+        }
+        if (groupItems.count() == 1) {
+            const QString groupId = groupItems.first()->instance().instanceId;
+            QHash<QString, QString> parentById;
+            for (const WidgetInstance &inst : m_scene->allInstances())
+                parentById.insert(inst.instanceId, inst.parentId);
 
-    const WidgetInstance inst = ci->instance();
+            bool allInGroup = true;
+            for (CanvasItem *ci : std::as_const(canvasItems)) {
+                const QString id = ci->instance().instanceId;
+                if (id == groupId) continue;
+                QString parentId = ci->instance().parentId;
+                bool found = false;
+                QSet<QString> seen;
+                while (!parentId.isEmpty() && !seen.contains(parentId)) {
+                    if (parentId == groupId) { found = true; break; }
+                    seen.insert(parentId);
+                    parentId = parentById.value(parentId);
+                }
+                if (!found) { allInGroup = false; break; }
+            }
+            if (allInGroup)
+                target = groupItems.first();
+        }
+    }
+
+    if (!target) { clearPanel(); return; }
+
+    const WidgetInstance inst = target->instance();
     const WidgetMeta     meta = m_scene->widgetMeta(inst.widgetId);
     m_currentInstanceId = inst.instanceId;
     buildPanel(inst, meta);
@@ -237,6 +274,40 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
         le->setStyleSheet("QLineEdit { background:#2a2a2a; color:#aaa; }");
         m_metaForm->addRow(new QLabel(label), le);
     };
+    if (inst.isGroup) {
+        addReadOnly(tr("id"), inst.instanceId);
+        addReadOnly(tr("type"), tr("组合"));
+        addReadOnly(tr("说明"), tr("仅用于组态编辑，不导出为 LVGL 控件"));
+
+        auto *nameEdit = new QLineEdit(inst.name);
+        nameEdit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        connect(nameEdit, &QLineEdit::editingFinished, this, [this, nameEdit]() {
+            if (!m_scene || m_currentInstanceId.isEmpty()) return;
+            m_pushingValue = true;
+            m_scene->setInstanceName(m_currentInstanceId, nameEdit->text());
+            m_pushingValue = false;
+        });
+        m_propsForm->addRow(new QLabel(tr("name")), nameEdit);
+
+        auto addGeom = [this](const QString &key, int value) {
+            auto *sb = new QSpinBox;
+            sb->setRange(-99999, 99999);
+            sb->setValue(value);
+            m_geometryEditors.insert(key, sb);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key](int v) {
+                if (!m_scene || m_currentInstanceId.isEmpty()) return;
+                m_pushingValue = true;
+                m_scene->setInstanceProperty(m_currentInstanceId, key, v);
+                m_pushingValue = false;
+            });
+            m_propsForm->addRow(new QLabel(key), sb);
+        };
+        addGeom(QStringLiteral("x"), inst.x);
+        addGeom(QStringLiteral("y"), inst.y);
+        addGeom(QStringLiteral("width"), inst.width);
+        addGeom(QStringLiteral("height"), inst.height);
+        return;
+    }
     addReadOnly(tr("id"),             meta.id);
     addReadOnly(tr("type"),           meta.type);
     addReadOnly(tr("render_mode"),    meta.renderMode);
