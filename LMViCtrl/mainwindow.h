@@ -21,6 +21,7 @@ class MainWindow;
 }
 class QMenu;
 class QAction;
+class QByteArray;
 class QDockWidget;
 class QPlainTextEdit;
 class QProcess;
@@ -61,6 +62,8 @@ private:
     void setupLogDock();
     void appendLog(const QString &message);
     void connectSceneLogging(CanvasScene *scene, const QString &screenId);
+    void appendSimulatorOutput(const QString &channelName, const QByteArray &data, QString *buffer);
+    void flushSimulatorOutput(const QString &channelName, QString *buffer);
 
 private slots:
     // ===== 文件 =====
@@ -279,6 +282,8 @@ private:
     QToolBar          *m_editToolBar      = nullptr;
     QToolBar          *m_runToolBar       = nullptr;
     QProcess          *m_simulatorProcess = nullptr;
+    QString            m_simulatorStdoutBuffer;
+    QString            m_simulatorStderrBuffer;
 
     QAction           *m_newProjectAction        = nullptr;
     QAction           *m_openProjectAction       = nullptr;

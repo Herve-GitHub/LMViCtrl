@@ -727,22 +727,55 @@ void CanvasScene::ungroupSelected()
 
 void CanvasScene::alignSelected(AlignMode mode)
 {
+    QHash<QString, WidgetInstance> byId;
+    for (const WidgetInstance &inst : allInstances())
+        byId.insert(inst.instanceId, inst);
+
+    QSet<QString> selectedIds;
     QList<CanvasItem *> selectedCanvasItems;
     for (QGraphicsItem *gi : selectedItems()) {
-        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
+            selectedIds.insert(ci->instance().instanceId);
             selectedCanvasItems.append(ci);
+        }
     }
-    if (selectedCanvasItems.size() < 2) return;
+
+    auto hasSelectedAncestor = [&byId, &selectedIds](const WidgetInstance &inst) {
+        QString parentId = inst.parentId;
+        while (!parentId.isEmpty()) {
+            if (selectedIds.contains(parentId))
+                return true;
+            if (!byId.contains(parentId))
+                break;
+            parentId = byId.value(parentId).parentId;
+        }
+        return false;
+    };
+
+    QList<CanvasItem *> alignItems;
+    for (CanvasItem *ci : std::as_const(selectedCanvasItems)) {
+        if (!hasSelectedAncestor(ci->instance()))
+            alignItems.append(ci);
+    }
+    if (alignItems.size() < 2) return;
 
     QRectF bounds;
-    for (CanvasItem *ci : selectedCanvasItems) {
+    for (CanvasItem *ci : alignItems) {
         const WidgetInstance inst = ci->instance();
         const QRectF itemRect(ci->pos(), QSizeF(inst.width, inst.height));
         bounds = bounds.isNull() ? itemRect : bounds.united(itemRect);
     }
 
     QList<MoveData> moves;
-    for (CanvasItem *ci : selectedCanvasItems) {
+    QSet<QString> movedIds;
+    auto appendMove = [&moves, &movedIds](const QString &id, const QPointF &oldPos, const QPointF &newPos) {
+        if (movedIds.contains(id) || newPos == oldPos)
+            return;
+        moves.append({id, oldPos, newPos});
+        movedIds.insert(id);
+    };
+
+    for (CanvasItem *ci : alignItems) {
         const WidgetInstance inst = ci->instance();
         const QPointF oldPos = ci->pos();
         QPointF newPos = oldPos;
@@ -765,8 +798,20 @@ void CanvasScene::alignSelected(AlignMode mode)
             break;
         }
 
-        if (newPos != oldPos)
-            moves.append({inst.instanceId, oldPos, newPos});
+        appendMove(inst.instanceId, oldPos, newPos);
+
+        const QPointF delta = newPos - oldPos;
+        if (delta.isNull())
+            continue;
+
+        for (const WidgetInstance &descendant : instancesWithDescendants({inst})) {
+            if (descendant.instanceId == inst.instanceId)
+                continue;
+            if (CanvasItem *descendantItem = findItem(descendant.instanceId)) {
+                const QPointF descendantOldPos = descendantItem->pos();
+                appendMove(descendant.instanceId, descendantOldPos, descendantOldPos + delta);
+            }
+        }
     }
     if (moves.isEmpty()) return;
 
@@ -778,7 +823,7 @@ void CanvasScene::alignSelected(AlignMode mode)
     case AlignMode::Bottom: text = tr("底部对齐 %1 个元素"); break;
     case AlignMode::Center: text = tr("居中对齐 %1 个元素"); break;
     }
-    m_undoStack->push(new MoveItemsCommand(this, moves, text.arg(selectedCanvasItems.size())));
+    m_undoStack->push(new MoveItemsCommand(this, moves, text.arg(alignItems.size())));
 }
 
 void CanvasScene::changeSelectedZOrder(ZOrderMode mode)

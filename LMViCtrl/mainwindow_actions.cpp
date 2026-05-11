@@ -1241,6 +1241,10 @@ void MainWindow::onStopRun()
         }
     }
 
+    appendSimulatorOutput(tr("输出"), m_simulatorProcess->readAllStandardOutput(), &m_simulatorStdoutBuffer);
+    appendSimulatorOutput(tr("错误"), m_simulatorProcess->readAllStandardError(), &m_simulatorStderrBuffer);
+    flushSimulatorOutput(tr("输出"), &m_simulatorStdoutBuffer);
+    flushSimulatorOutput(tr("错误"), &m_simulatorStderrBuffer);
     appendLog(tr("仿真器已停止"));
 }
 
@@ -1292,6 +1296,34 @@ void MainWindow::onCompileProject()
         return;
     }
 }
+
+void MainWindow::appendSimulatorOutput(const QString &channelName, const QByteArray &data, QString *buffer)
+{
+    if (data.isEmpty() || !buffer) return;
+
+    QString text = QString::fromUtf8(data);
+    if (text.contains(QChar::ReplacementCharacter))
+        text = QString::fromLocal8Bit(data);
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+
+    buffer->append(text);
+    int lineEnd = buffer->indexOf(QLatin1Char('\n'));
+    while (lineEnd >= 0) {
+        const QString line = buffer->left(lineEnd);
+        buffer->remove(0, lineEnd + 1);
+        appendLog(tr("仿真器%1：%2").arg(channelName, line));
+        lineEnd = buffer->indexOf(QLatin1Char('\n'));
+    }
+}
+
+void MainWindow::flushSimulatorOutput(const QString &channelName, QString *buffer)
+{
+    if (!buffer || buffer->isEmpty()) return;
+    appendLog(tr("仿真器%1：%2").arg(channelName, *buffer));
+    buffer->clear();
+}
+
 void MainWindow::onStartSimulate()
 {
     if (!m_projectOpen) {
@@ -1362,8 +1394,26 @@ void MainWindow::onStartSimulate()
 
     if (!m_simulatorProcess) {
         m_simulatorProcess = new QProcess(this);
+        connect(m_simulatorProcess, &QProcess::readyReadStandardOutput, this, [this]() {
+            appendSimulatorOutput(tr("输出"),
+                                  m_simulatorProcess->readAllStandardOutput(),
+                                  &m_simulatorStdoutBuffer);
+        });
+        connect(m_simulatorProcess, &QProcess::readyReadStandardError, this, [this]() {
+            appendSimulatorOutput(tr("错误"),
+                                  m_simulatorProcess->readAllStandardError(),
+                                  &m_simulatorStderrBuffer);
+        });
         connect(m_simulatorProcess, &QProcess::finished, this,
                 [this](int exitCode, QProcess::ExitStatus exitStatus) {
+                    appendSimulatorOutput(tr("输出"),
+                                          m_simulatorProcess->readAllStandardOutput(),
+                                          &m_simulatorStdoutBuffer);
+                    appendSimulatorOutput(tr("错误"),
+                                          m_simulatorProcess->readAllStandardError(),
+                                          &m_simulatorStderrBuffer);
+                    flushSimulatorOutput(tr("输出"), &m_simulatorStdoutBuffer);
+                    flushSimulatorOutput(tr("错误"), &m_simulatorStderrBuffer);
                     appendLog(tr("仿真器已退出，退出码：%1，状态：%2")
                                   .arg(exitCode)
                                   .arg(exitStatus == QProcess::NormalExit
@@ -1378,9 +1428,19 @@ void MainWindow::onStartSimulate()
         return;
     }
 
+    m_simulatorStdoutBuffer.clear();
+    m_simulatorStderrBuffer.clear();
+    if (m_logDock) {
+        m_logDock->show();
+        m_logDock->raise();
+    }
     m_simulatorProcess->setWorkingDirectory(projectDir);
     m_simulatorProcess->start(simuExe, args);
     if (!m_simulatorProcess->waitForStarted(3000)) {
+        appendSimulatorOutput(tr("输出"), m_simulatorProcess->readAllStandardOutput(), &m_simulatorStdoutBuffer);
+        appendSimulatorOutput(tr("错误"), m_simulatorProcess->readAllStandardError(), &m_simulatorStderrBuffer);
+        flushSimulatorOutput(tr("输出"), &m_simulatorStdoutBuffer);
+        flushSimulatorOutput(tr("错误"), &m_simulatorStderrBuffer);
         QMessageBox::warning(this, tr("启动仿真"),
                              tr("无法启动仿真器：%1\n%2")
                                  .arg(simuExe, m_simulatorProcess->errorString()));

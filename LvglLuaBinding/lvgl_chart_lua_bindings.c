@@ -94,12 +94,12 @@ static int l_chart_set_next_value(lua_State* L) {
     lv_chart_series_t* series = check_lv_chart_series(L, 2);
     int32_t value = (int32_t)luaL_checkinteger(L, 3);
     
-    printf("[DEBUG] l_chart_set_next_value: obj=%p, series=%p, value=%d\n", (void*)obj, (void*)series, value);
+    //printf("[DEBUG] l_chart_set_next_value: obj=%p, series=%p, value=%d\n", (void*)obj, (void*)series, value);
     fflush(stdout);
     if (obj && series) {
         lv_chart_set_next_value(obj, series, value);
     } else {
-        printf("[DEBUG] l_chart_set_next_value: SKIPPED (obj or series is NULL)\n");
+        //printf("[DEBUG] l_chart_set_next_value: SKIPPED (obj or series is NULL)\n");
         fflush(stdout);
     }
     return 0;
