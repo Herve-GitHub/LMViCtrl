@@ -33,6 +33,7 @@ private:
     QStringList existingEventNames(const WidgetInstance &inst) const;
     QList<EventAction> actionsForEvent(const WidgetInstance &inst, const QString &eventName) const;
     QList<WidgetInstance> currentSceneInstances() const;
+    QList<WidgetMeta> currentSceneMetas() const;
     void chooseTriggerAndAddAction();
     void addAction(const QString &eventName);
     void editAction(const QString &eventName, const EventAction &action);

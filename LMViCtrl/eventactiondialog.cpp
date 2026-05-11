@@ -21,6 +21,7 @@ namespace {
 
 constexpr int kRoleId = Qt::UserRole + 1;
 constexpr int kRoleName = Qt::UserRole + 2;
+constexpr int kRolePropertyName = Qt::UserRole + 3;
 
 QString actionLabel(const QString &type)
 {
@@ -37,12 +38,16 @@ QString actionLabel(const QString &type)
 EventActionDialog::EventActionDialog(const QString &eventName,
                                      const QList<ScreenData> &screens,
                                      const QList<WidgetInstance> &widgets,
+                                     const QList<WidgetMeta> &widgetMetas,
                                      QWidget *parent)
     : QDialog(parent)
     , m_eventName(eventName)
     , m_screens(screens)
     , m_widgets(widgets)
 {
+    for (const WidgetMeta &meta : std::as_const(widgetMetas))
+        m_widgetMetas.insert(meta.id, meta);
+
     setWindowTitle(tr("配置事件动作 - %1").arg(eventName));
     resize(560, 420);
 
@@ -84,11 +89,13 @@ EventActionDialog::EventActionDialog(const QString &eventName,
 
     auto *propPage = new QWidget(m_detailStack);
     auto *propForm = new QFormLayout(propPage);
-    m_propertyEdit = new QLineEdit(propPage);
-    m_propertyEdit->setPlaceholderText(tr("属性名，例如 label"));
+    m_propertyCombo = new QComboBox(propPage);
+    m_propertyCombo->setEditable(true);
+    m_propertyCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_propertyCombo->setPlaceholderText(tr("属性名，例如 label"));
     m_valueEdit = new QLineEdit(propPage);
     m_valueEdit->setPlaceholderText(tr("属性值"));
-    propForm->addRow(tr("属性"), m_propertyEdit);
+    propForm->addRow(tr("属性"), m_propertyCombo);
     propForm->addRow(tr("值"), m_valueEdit);
     m_detailStack->addWidget(propPage);
 
@@ -124,11 +131,27 @@ EventActionDialog::EventActionDialog(const QString &eventName,
         rebuildTargetTable();
     });
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this]() { rebuildTargetTable(); });
+    connect(m_targetTable, &QTableWidget::currentCellChanged, this,
+            [this](int, int, int, int) { rebuildPropertyCombo(); });
+    connect(m_propertyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        const QString propertyName = currentPropertyName();
+        if (propertyName.isEmpty()) return;
+
+        const WidgetInstance widget = currentTargetWidget();
+        const WidgetMeta meta = m_widgetMetas.value(widget.widgetId);
+        for (const PropertyMeta &property : meta.properties) {
+            if (property.name == propertyName) {
+                m_valueEdit->setText(valueTextForProperty(widget, property));
+                return;
+            }
+        }
+    });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     updateEditorState();
     rebuildTargetTable();
+    rebuildPropertyCombo();
 }
 
 void EventActionDialog::setAction(const EventAction &action)
@@ -137,7 +160,9 @@ void EventActionDialog::setAction(const EventAction &action)
     const int idx = m_typeCombo->findData(action.type);
     if (idx >= 0) m_typeCombo->setCurrentIndex(idx);
     m_codeEdit->setPlainText(action.code);
-    m_propertyEdit->setText(action.params.value(QStringLiteral("property")).toString());
+    const QString propertyName = action.params.value(QStringLiteral("property")).toString();
+    const QString propertyValue = action.params.value(QStringLiteral("value")).toString();
+    m_propertyCombo->setEditText(propertyName);
     m_valueEdit->setText(action.params.value(QStringLiteral("value")).toString());
     m_methodEdit->setText(action.method.isEmpty()
                               ? action.params.value(QStringLiteral("method")).toString()
@@ -157,6 +182,10 @@ void EventActionDialog::setAction(const EventAction &action)
             break;
         }
     }
+
+    rebuildPropertyCombo(propertyName, false);
+    m_propertyCombo->setEditText(propertyName);
+    m_valueEdit->setText(propertyValue);
 }
 
 EventAction EventActionDialog::action() const
@@ -186,7 +215,7 @@ EventAction EventActionDialog::action() const
         action.code = m_codeEdit->toPlainText();
     } else if (action.type == QLatin1String("set_property")) {
         action.method = QStringLiteral("set_property");
-        action.params.insert(QStringLiteral("property"), m_propertyEdit->text());
+        action.params.insert(QStringLiteral("property"), currentPropertyName());
         action.params.insert(QStringLiteral("value"), m_valueEdit->text());
     } else if (action.type == QLatin1String("call_method")) {
         action.method = m_methodEdit->text();
@@ -233,6 +262,53 @@ void EventActionDialog::rebuildTargetTable()
 
     if (m_targetTable->rowCount() > 0)
         m_targetTable->selectRow(0);
+    rebuildPropertyCombo();
+}
+
+void EventActionDialog::rebuildPropertyCombo(const QString &preferredProperty, bool updateValue)
+{
+    if (!m_propertyCombo) return;
+
+    const QString previous = preferredProperty.isEmpty()
+        ? m_propertyCombo->currentText()
+        : preferredProperty;
+    QSignalBlocker blocker(m_propertyCombo);
+    m_propertyCombo->clear();
+
+    const WidgetInstance widget = currentTargetWidget();
+    const WidgetMeta meta = m_widgetMetas.value(widget.widgetId);
+    int selectedIndex = -1;
+    for (const PropertyMeta &property : meta.properties) {
+        if (property.hidden) continue;
+        const QString shown = property.label.isEmpty() || property.label == property.name
+            ? property.name
+            : QStringLiteral("%1 (%2)").arg(property.label, property.name);
+        const int index = m_propertyCombo->count();
+        m_propertyCombo->addItem(shown, property.name);
+        m_propertyCombo->setItemData(index, property.name, kRolePropertyName);
+        if (!property.description.isEmpty())
+            m_propertyCombo->setItemData(index, property.description, Qt::ToolTipRole);
+        if (property.name == previous)
+            selectedIndex = index;
+    }
+
+    if (selectedIndex >= 0) {
+        m_propertyCombo->setCurrentIndex(selectedIndex);
+    } else if (!previous.isEmpty()) {
+        m_propertyCombo->setEditText(previous);
+    } else if (m_propertyCombo->count() > 0) {
+        m_propertyCombo->setCurrentIndex(0);
+    }
+
+    if (!updateValue) return;
+
+    const QString propertyName = currentPropertyName();
+    for (const PropertyMeta &property : meta.properties) {
+        if (property.name == propertyName) {
+            m_valueEdit->setText(valueTextForProperty(widget, property));
+            return;
+        }
+    }
 }
 
 void EventActionDialog::updateEditorState()
@@ -264,4 +340,44 @@ QString EventActionDialog::currentActionType() const
 QString EventActionDialog::currentActionLabel() const
 {
     return actionLabel(currentActionType());
+}
+
+QString EventActionDialog::currentPropertyName() const
+{
+    const int idx = m_propertyCombo ? m_propertyCombo->currentIndex() : -1;
+    if (idx >= 0 && m_propertyCombo->currentText() == m_propertyCombo->itemText(idx)) {
+        const QString propertyName = m_propertyCombo->itemData(idx, kRolePropertyName).toString();
+        if (!propertyName.isEmpty())
+            return propertyName;
+    }
+    return m_propertyCombo ? m_propertyCombo->currentText() : QString();
+}
+
+WidgetInstance EventActionDialog::currentTargetWidget() const
+{
+    const int row = m_targetTable ? m_targetTable->currentRow() : -1;
+    if (row < 0 || !m_targetTable->item(row, 0)) return {};
+
+    const QString instanceId = m_targetTable->item(row, 0)->data(kRoleId).toString();
+    for (const WidgetInstance &widget : m_widgets) {
+        if (widget.instanceId == instanceId)
+            return widget;
+    }
+    return {};
+}
+
+QString EventActionDialog::valueTextForProperty(const WidgetInstance &widget, const PropertyMeta &property) const
+{
+    QVariant value;
+    if (property.name == QLatin1String("x")) value = widget.x;
+    else if (property.name == QLatin1String("y")) value = widget.y;
+    else if (property.name == QLatin1String("width")) value = widget.width;
+    else if (property.name == QLatin1String("height")) value = widget.height;
+    else value = widget.properties.value(property.name, property.defaultValue);
+
+    if (!value.isValid() || value.isNull())
+        return QString();
+    if (value.typeId() == QMetaType::Bool)
+        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+    return value.toString();
 }

@@ -14,6 +14,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <QSet>
+
 #include <utility>
 
 EventPanelDock::EventPanelDock(QWidget *parent)
@@ -247,6 +249,21 @@ QList<WidgetInstance> EventPanelDock::currentSceneInstances() const
     return m_scene ? m_scene->allInstances() : QList<WidgetInstance>{};
 }
 
+QList<WidgetMeta> EventPanelDock::currentSceneMetas() const
+{
+    QList<WidgetMeta> metas;
+    if (!m_scene) return metas;
+
+    QSet<QString> seen;
+    const QList<WidgetInstance> instances = currentSceneInstances();
+    for (const WidgetInstance &instance : instances) {
+        if (seen.contains(instance.widgetId)) continue;
+        seen.insert(instance.widgetId);
+        metas.append(m_scene->widgetMeta(instance.widgetId));
+    }
+    return metas;
+}
+
 void EventPanelDock::chooseTriggerAndAddAction()
 {
     if (!m_scene || m_currentInstanceId.isEmpty()) return;
@@ -268,6 +285,7 @@ void EventPanelDock::addAction(const QString &eventName)
     EventActionDialog dlg(eventName,
                           m_project ? m_project->screens : QList<ScreenData>{},
                           currentSceneInstances(),
+                          currentSceneMetas(),
                           this);
     if (dlg.exec() != QDialog::Accepted) return;
     m_scene->addInstanceEventAction(m_currentInstanceId, eventName, dlg.action());
@@ -279,6 +297,7 @@ void EventPanelDock::editAction(const QString &eventName, const EventAction &act
     EventActionDialog dlg(eventName,
                           m_project ? m_project->screens : QList<ScreenData>{},
                           currentSceneInstances(),
+                          currentSceneMetas(),
                           this);
     dlg.setAction(action);
     if (dlg.exec() != QDialog::Accepted) return;
