@@ -9,7 +9,7 @@ SUBDIRS += \
     LvglLuaBindingHmi \
     hmi
 
-LvglLuaBindingHmi.file = ../LvglLuaBinding/LvglLuaBindingHmi.pro
+LvglLuaBindingHmi.file = ../../LvglLuaBinding/LvglLuaBindingHmi.pro
 
 hmi.file = hmi.pro
 hmi.depends = LvglLuaBindingHmi
