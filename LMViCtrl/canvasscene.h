@@ -56,6 +56,7 @@ public:
 
     // 所有实例（用于序列化）
     QList<WidgetInstance> allInstances() const;
+    QList<WidgetInstance> instancesSortedByZ() const;
 
     // 清空所有 widget 实例（保留背景），同时清空撤销栈与剪贴板
     void clearAllItems();
@@ -96,6 +97,8 @@ public:
 signals:
     // 实例的某属性 / 名字 被外部修改后通知（属性面板用于回填）
     void instanceChanged(const QString &instanceId);
+
+    void sceneItemsChanged();
 
     void instanceEventsChanged(const QString &instanceId);
 

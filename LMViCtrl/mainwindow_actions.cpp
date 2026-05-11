@@ -13,6 +13,7 @@
 #include "projectmanager.h"
 #include "projectpropertiesdialog.h"
 #include "propertypaneldock.h"
+#include "projecttreedock.h"
 #include "eventpaneldock.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
@@ -371,6 +372,8 @@ void MainWindow::openScreenTab(const QString &screenId)
         m_propertyPanel->setCurrentScene(tab->scene());
     if (m_eventPanel)
         m_eventPanel->setCurrentScene(tab->scene());
+    if (m_projectTree)
+        m_projectTree->setCurrentScene(tab->scene(), sd->name);
 }
 
 void MainWindow::closeScreenTab(const QString &screenId)
@@ -419,6 +422,18 @@ CanvasScene *MainWindow::currentScene() const
 {
     ScreenTab *tab = currentScreenTab();
     return tab ? tab->scene() : nullptr;
+}
+
+QString MainWindow::currentScreenName() const
+{
+    ScreenTab *tab = currentScreenTab();
+    if (!tab) return QString();
+    const QString id = tab->screenId();
+    for (const ScreenData &screen : m_project.screens) {
+        if (screen.id == id)
+            return screen.name;
+    }
+    return QString();
 }
 
 // 图页管理器信号
@@ -479,6 +494,8 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
 
     if (m_eventPanel)
         m_eventPanel->setProjectData(&m_project);
+    if (m_projectTree)
+        m_projectTree->setCurrentScene(currentScene(), currentScreenName());
 }
 
 void MainWindow::onTabCloseRequested(int index)
@@ -504,6 +521,10 @@ void MainWindow::setProjectOpen(bool open)
         m_screenManager->setVisible(open);
     if (m_widgetToolbox)
         m_widgetToolbox->setVisible(open);
+    if (m_projectTree) {
+        m_projectTree->setVisible(open);
+        if (!open) m_projectTree->setCurrentScene(nullptr);
+    }
     if(m_propertyPanel)
         m_propertyPanel->setVisible(open);
     if (m_eventPanel) {
@@ -1036,6 +1057,8 @@ void MainWindow::onScreenProperties()
             QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name));
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
+    if (m_projectTree)
+        m_projectTree->setCurrentScene(tab->scene(), sd->name);
 }
 
 void MainWindow::onTagDictionary() {}

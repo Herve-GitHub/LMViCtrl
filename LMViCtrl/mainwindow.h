@@ -10,6 +10,7 @@ class CanvasScene;
 class CanvasView;
 class ScreenTab;
 class ScreenManagerDock;
+class ProjectTreeDock;
 class WelcomeWidget;
 class PropertyPanelDock;
 class EventPanelDock;
@@ -264,6 +265,7 @@ public:
 private:
     Ui::MainWindow    *ui;
     WidgetToolbox     *m_widgetToolbox    = nullptr;
+    ProjectTreeDock   *m_projectTree      = nullptr;
     QStackedWidget    *m_stackedWidget    = nullptr;
     QTabWidget        *m_tabWidget        = nullptr;
     WelcomeWidget     *m_welcomeWidget    = nullptr;
@@ -337,6 +339,7 @@ private:
     void refreshTabWidgetMetas();       // 把 widgetMetas 注入所有打开的 tab
     ScreenTab *currentScreenTab() const;
     CanvasScene *currentScene() const;  // 当前活动图页的 scene（可为 nullptr）
+    QString currentScreenName() const;
 
     // 最近工程
     void loadRecentProjects();

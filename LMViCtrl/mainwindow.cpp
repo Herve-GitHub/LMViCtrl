@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "widgettoolbox.h"
+#include "projecttreedock.h"
 #include "screenmanagerdock.h"
 #include "propertypaneldock.h"
 #include "eventpaneldock.h"
@@ -47,6 +48,11 @@ MainWindow::MainWindow(QWidget* parent)
 	m_widgetToolbox = new WidgetToolbox(this);
 	addDockWidget(Qt::LeftDockWidgetArea, m_widgetToolbox);
 	splitDockWidget(m_screenManager, m_widgetToolbox, Qt::Vertical);
+	m_projectTree = new ProjectTreeDock(this);
+	addDockWidget(Qt::LeftDockWidgetArea, m_projectTree);
+	tabifyDockWidget(m_widgetToolbox, m_projectTree);
+	setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
+	m_widgetToolbox->raise();
 	const QString widgetsDir = QDir::current().absoluteFilePath(
 		QStringLiteral("lua/widgets"));
 	m_widgetToolbox->loadFromDirectory(widgetsDir);
@@ -70,6 +76,8 @@ MainWindow::MainWindow(QWidget* parent)
 			m_propertyPanel->setCurrentScene(currentScene());
 		if (m_eventPanel)
 			m_eventPanel->setCurrentScene(currentScene());
+		if (m_projectTree)
+			m_projectTree->setCurrentScene(currentScene(), currentScreenName());
 		});
 
 	// 属性面板（停靠在右侧）

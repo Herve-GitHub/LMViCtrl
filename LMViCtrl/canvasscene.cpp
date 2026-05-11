@@ -331,6 +331,7 @@ void CanvasScene::doAddItem(const WidgetInstance &inst)
 {
     CanvasItem *ci = makeItem(inst);
     addItem(ci);
+    emit sceneItemsChanged();
     if (!m_suppressOperationLog) {
         emit operationLogged(tr("添加元素：%1 (%2)，位置 %3,%4，大小 %5x%6")
             .arg(inst.name.isEmpty() ? inst.widgetId : inst.name,
@@ -345,6 +346,7 @@ void CanvasScene::doRemoveItem(const QString &instanceId)
         const WidgetInstance inst = ci->instance();
         removeItem(ci);
         delete ci;
+        emit sceneItemsChanged();
         if (!m_suppressOperationLog) {
             emit operationLogged(tr("删除元素：%1 (%2)")
                 .arg(inst.name.isEmpty() ? inst.widgetId : inst.name,
@@ -386,12 +388,17 @@ void CanvasScene::doSetPositions(const QList<QPair<QString, QPointF>> &moves)
 
 void CanvasScene::doSetZOrders(const QList<QPair<QString, int>> &orders)
 {
+    bool changed = false;
     for (const auto &[id, z] : orders) {
         if (CanvasItem *ci = findItem(id)) {
+            if (ci->instance().zOrder != z)
+                changed = true;
             ci->setZOrder(z);
             emit instanceChanged(id);
         }
     }
+    if (changed)
+        emit sceneItemsChanged();
 }
 
 void CanvasScene::doLoadInstances(const QList<WidgetInstance> &instances)
@@ -409,6 +416,7 @@ void CanvasScene::doLoadInstances(const QList<WidgetInstance> &instances)
     for (const WidgetInstance &inst : instances)
         doAddItem(inst);
     m_suppressOperationLog = false;
+    emit sceneItemsChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -857,13 +865,24 @@ QList<WidgetInstance> CanvasScene::allInstances() const
     return result;
 }
 
+QList<WidgetInstance> CanvasScene::instancesSortedByZ() const
+{
+    QList<WidgetInstance> result;
+    const QList<CanvasItem *> sortedItems = canvasItemsSortedByZ();
+    for (CanvasItem *item : sortedItems)
+        result.append(item->instance());
+    return result;
+}
+
 void CanvasScene::clearAllItems()
 {
+    bool removed = false;
     const auto its = items();
     for (QGraphicsItem *gi : its) {
         if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi)) {
             removeItem(ci);
             delete ci;
+            removed = true;
         }
     }
     m_clipboard.clear();
@@ -871,6 +890,8 @@ void CanvasScene::clearAllItems()
     m_pressPositions.clear();
     m_resizingIds.clear();
     m_undoStack->clear();
+    if (removed)
+        emit sceneItemsChanged();
 }
 
 void CanvasScene::loadInstances(const QList<WidgetInstance> &instances)

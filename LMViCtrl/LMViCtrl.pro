@@ -24,6 +24,7 @@ SOURCES += \
     eventactiondialog.cpp \
     eventpaneldock.cpp \
     eventtriggerdialog.cpp \
+    projecttreedock.cpp \
     widgettoolbox.cpp \
     canvasitem.cpp \
     canvasscene.cpp \
@@ -45,6 +46,7 @@ HEADERS += \
     eventactiondialog.h \
     eventpaneldock.h \
     eventtriggerdialog.h \
+    projecttreedock.h \
     widgettoolbox.h \
     canvasitem.h \
     canvasscene.h \
