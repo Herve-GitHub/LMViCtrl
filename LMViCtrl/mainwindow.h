@@ -90,6 +90,10 @@ private slots:
     void onAlignTop();
     void onAlignBottom();
     void onAlignCenter();
+    void onBringToFront();
+    void onSendToBack();
+    void onBringForward();
+    void onSendBackward();
     void onGroup();
     void onUngroup();
 
@@ -294,6 +298,10 @@ private:
     QAction           *m_alignTopAction    = nullptr;
     QAction           *m_alignBottomAction = nullptr;
     QAction           *m_alignCenterAction = nullptr;
+    QAction           *m_bringToFrontAction = nullptr;
+    QAction           *m_sendToBackAction   = nullptr;
+    QAction           *m_bringForwardAction = nullptr;
+    QAction           *m_sendBackwardAction = nullptr;
     QAction           *m_groupAction       = nullptr;
     QAction           *m_ungroupAction     = nullptr;
 

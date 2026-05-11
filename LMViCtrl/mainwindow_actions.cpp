@@ -893,6 +893,30 @@ void MainWindow::onAlignCenter()
         s->alignSelected(CanvasScene::AlignMode::Center);
 }
 
+void MainWindow::onBringToFront()
+{
+    if (auto *s = currentScene())
+        s->changeSelectedZOrder(CanvasScene::ZOrderMode::BringToFront);
+}
+
+void MainWindow::onSendToBack()
+{
+    if (auto *s = currentScene())
+        s->changeSelectedZOrder(CanvasScene::ZOrderMode::SendToBack);
+}
+
+void MainWindow::onBringForward()
+{
+    if (auto *s = currentScene())
+        s->changeSelectedZOrder(CanvasScene::ZOrderMode::BringForward);
+}
+
+void MainWindow::onSendBackward()
+{
+    if (auto *s = currentScene())
+        s->changeSelectedZOrder(CanvasScene::ZOrderMode::SendBackward);
+}
+
 void MainWindow::onGroup()
 {
     if (auto *s = currentScene())

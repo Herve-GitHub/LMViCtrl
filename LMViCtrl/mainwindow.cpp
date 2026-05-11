@@ -294,6 +294,21 @@ void MainWindow::setupEditMenu()
 	m_alignCenterAction = addAction(alignMenu, tr("居中对齐"));
 	connect(m_alignCenterAction, &QAction::triggered, this, &MainWindow::onAlignCenter);
 
+	QMenu* zOrderMenu = editMenu->addMenu(tr("层级顺序"));
+	m_bringToFrontAction = addAction(zOrderMenu, tr("置于顶层"),
+		QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_BracketRight));
+	connect(m_bringToFrontAction, &QAction::triggered, this, &MainWindow::onBringToFront);
+	m_sendToBackAction = addAction(zOrderMenu, tr("置于底层"),
+		QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_BracketLeft));
+	connect(m_sendToBackAction, &QAction::triggered, this, &MainWindow::onSendToBack);
+	zOrderMenu->addSeparator();
+	m_bringForwardAction = addAction(zOrderMenu, tr("上移一层"),
+		QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+	connect(m_bringForwardAction, &QAction::triggered, this, &MainWindow::onBringForward);
+	m_sendBackwardAction = addAction(zOrderMenu, tr("下移一层"),
+		QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
+	connect(m_sendBackwardAction, &QAction::triggered, this, &MainWindow::onSendBackward);
+
 	m_groupAction = addAction(editMenu, tr("组合"), QKeySequence(Qt::CTRL | Qt::Key_G));
 	connect(m_groupAction, &QAction::triggered, this, &MainWindow::onGroup);
 	m_ungroupAction = addAction(editMenu, tr("取消组合"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G));
@@ -345,6 +360,11 @@ void MainWindow::setupEditToolBar()
 	m_editToolBar->addAction(m_alignTopAction);
 	m_editToolBar->addAction(m_alignBottomAction);
 	m_editToolBar->addAction(m_alignCenterAction);
+	m_editToolBar->addSeparator();
+	m_editToolBar->addAction(m_bringToFrontAction);
+	m_editToolBar->addAction(m_sendToBackAction);
+	m_editToolBar->addAction(m_bringForwardAction);
+	m_editToolBar->addAction(m_sendBackwardAction);
 	m_editToolBar->addSeparator();
 	m_editToolBar->addAction(m_groupAction);
 	m_editToolBar->addAction(m_ungroupAction);

@@ -13,6 +13,7 @@
 #include <QUndoStack>
 #include <QUuid>
 
+#include <algorithm>
 #include <utility>
 
 static constexpr char kWidgetMimeType[] = "application/x-lvgl-widget";
@@ -56,6 +57,7 @@ private:
 
 // --- 移动（支持多个） -------------------------------------------------------
 struct MoveData { QString id; QPointF oldPos; QPointF newPos; };
+struct ZOrderData { QString id; int oldZ; int newZ; };
 
 class MoveItemsCommand : public QUndoCommand
 {
@@ -81,6 +83,32 @@ public:
 private:
     CanvasScene       *m_scene;
     QList<MoveData>    m_moves;
+};
+
+// --- 层级顺序 ---------------------------------------------------------------
+class ChangeZOrderCommand : public QUndoCommand
+{
+public:
+    ChangeZOrderCommand(CanvasScene *scene, const QList<ZOrderData> &changes,
+                        const QString &text, QUndoCommand *parent = nullptr)
+        : QUndoCommand(text, parent)
+        , m_scene(scene), m_changes(changes) {}
+
+    void undo() override {
+        QList<QPair<QString, int>> list;
+        for (const auto &c : m_changes) list.append({c.id, c.oldZ});
+        m_scene->doSetZOrders(list);
+    }
+
+    void redo() override {
+        QList<QPair<QString, int>> list;
+        for (const auto &c : m_changes) list.append({c.id, c.newZ});
+        m_scene->doSetZOrders(list);
+    }
+
+private:
+    CanvasScene       *m_scene;
+    QList<ZOrderData>  m_changes;
 };
 
 // --- 缩放 -------------------------------------------------------------------
@@ -261,6 +289,39 @@ CanvasItem *CanvasScene::findItem(const QString &instanceId) const
     return nullptr;
 }
 
+int CanvasScene::nextZOrder() const
+{
+    int maxZ = -1;
+    for (QGraphicsItem *gi : items()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            maxZ = qMax(maxZ, ci->instance().zOrder);
+    }
+    return maxZ + 1;
+}
+
+QList<CanvasItem *> CanvasScene::canvasItemsSortedByZ() const
+{
+    QList<CanvasItem *> result;
+    for (QGraphicsItem *gi : items()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            result.append(ci);
+    }
+    std::stable_sort(result.begin(), result.end(), [](CanvasItem *a, CanvasItem *b) {
+        return a->instance().zOrder < b->instance().zOrder;
+    });
+    return result;
+}
+
+QList<WidgetInstance> CanvasScene::normalizedZOrders(QList<WidgetInstance> instances) const
+{
+    std::stable_sort(instances.begin(), instances.end(), [](const WidgetInstance &a, const WidgetInstance &b) {
+        return a.zOrder < b.zOrder;
+    });
+    for (int i = 0; i < instances.size(); ++i)
+        instances[i].zOrder = i;
+    return instances;
+}
+
 // ---------------------------------------------------------------------------
 // do* — 供 undo 命令直接调用
 // ---------------------------------------------------------------------------
@@ -317,6 +378,16 @@ void CanvasScene::doSetPositions(const QList<QPair<QString, QPointF>> &moves)
                     .arg(after.name.isEmpty() ? after.widgetId : after.name)
                     .arg(before.x).arg(before.y).arg(after.x).arg(after.y));
             }
+        }
+    }
+}
+
+void CanvasScene::doSetZOrders(const QList<QPair<QString, int>> &orders)
+{
+    for (const auto &[id, z] : orders) {
+        if (CanvasItem *ci = findItem(id)) {
+            ci->setZOrder(z);
+            emit instanceChanged(id);
         }
     }
 }
@@ -510,6 +581,7 @@ void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pas
         idMap.insert(inst.instanceId, QUuid::createUuid().toString(QUuid::WithoutBraces));
 
     QList<WidgetInstance> newInsts;
+    int zOrder = nextZOrder();
     for (WidgetInstance inst : instances) {
         const QString oldId = inst.instanceId;
         inst.instanceId = idMap.value(oldId);
@@ -530,6 +602,7 @@ void CanvasScene::pasteInstances(const QList<WidgetInstance> &instances, int pas
         } else {
             inst.name = uniqueLocalName(baseName);
         }
+        inst.zOrder = zOrder++;
         newInsts.append(inst);
     }
     m_undoStack->push(new PasteItemsCommand(this, newInsts));
@@ -698,6 +771,80 @@ void CanvasScene::alignSelected(AlignMode mode)
     m_undoStack->push(new MoveItemsCommand(this, moves, text.arg(selectedCanvasItems.size())));
 }
 
+void CanvasScene::changeSelectedZOrder(ZOrderMode mode)
+{
+    if (selectedItems().isEmpty()) return;
+    expandSelectionToMoveGroups();
+
+    QSet<QString> selectedIds;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem*>(gi))
+            selectedIds.insert(ci->instance().instanceId);
+    }
+    if (selectedIds.isEmpty()) return;
+
+    QList<CanvasItem *> ordered = canvasItemsSortedByZ();
+    if (ordered.size() < 2) return;
+
+    auto isSelected = [&selectedIds](CanvasItem *item) {
+        return selectedIds.contains(item->instance().instanceId);
+    };
+
+    switch (mode) {
+    case ZOrderMode::BringToFront: {
+        QList<CanvasItem *> unselected;
+        QList<CanvasItem *> selected;
+        for (CanvasItem *item : std::as_const(ordered)) {
+            if (isSelected(item)) selected.append(item);
+            else                  unselected.append(item);
+        }
+        ordered = unselected + selected;
+        break;
+    }
+    case ZOrderMode::SendToBack: {
+        QList<CanvasItem *> unselected;
+        QList<CanvasItem *> selected;
+        for (CanvasItem *item : std::as_const(ordered)) {
+            if (isSelected(item)) selected.append(item);
+            else                  unselected.append(item);
+        }
+        ordered = selected + unselected;
+        break;
+    }
+    case ZOrderMode::BringForward:
+        for (int i = ordered.size() - 2; i >= 0; --i) {
+            if (isSelected(ordered[i]) && !isSelected(ordered[i + 1]))
+                ordered.swapItemsAt(i, i + 1);
+        }
+        break;
+    case ZOrderMode::SendBackward:
+        for (int i = 1; i < ordered.size(); ++i) {
+            if (isSelected(ordered[i]) && !isSelected(ordered[i - 1]))
+                ordered.swapItemsAt(i, i - 1);
+        }
+        break;
+    }
+
+    QList<ZOrderData> changes;
+    for (int i = 0; i < ordered.size(); ++i) {
+        const WidgetInstance inst = ordered[i]->instance();
+        if (inst.zOrder != i)
+            changes.append({inst.instanceId, inst.zOrder, i});
+    }
+    if (changes.isEmpty()) return;
+
+    QString text;
+    switch (mode) {
+    case ZOrderMode::BringToFront:  text = tr("置于顶层"); break;
+    case ZOrderMode::SendToBack:    text = tr("置于底层"); break;
+    case ZOrderMode::BringForward:  text = tr("上移一层"); break;
+    case ZOrderMode::SendBackward:  text = tr("下移一层"); break;
+    }
+    m_undoStack->push(new ChangeZOrderCommand(this, changes, text));
+    emit operationLogged(tr("调整层级：%1，影响 %2 个元素")
+        .arg(text).arg(changes.size()));
+}
+
 QList<WidgetInstance> CanvasScene::allInstances() const
 {
     QList<WidgetInstance> result;
@@ -728,7 +875,8 @@ void CanvasScene::loadInstances(const QList<WidgetInstance> &instances)
 {
     m_suppressOperationLog = true;
     clearAllItems();
-    for (const auto &inst : instances)
+    const QList<WidgetInstance> normalized = normalizedZOrders(instances);
+    for (const auto &inst : normalized)
         doAddItem(inst);
     m_suppressOperationLog = false;
 }
@@ -792,6 +940,7 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     inst.y          = qRound(event->scenePos().y()) - defH / 2;
     inst.width      = defW;
     inst.height     = defH;
+    inst.zOrder     = nextZOrder();
 
     // 生成工程内唯一名字（fallback 到本场景内部唯一）
     QString baseName = m_metaMap.contains(widgetId)

@@ -39,6 +39,7 @@ public:
     // 属性面板：直接修改实例数据（不入栈）
     void setInstanceName(const QString &name);
     void setInstanceProperty(const QString &key, const QVariant &value);
+    void setZOrder(int zOrder);
     void setEventBindings(const QList<WidgetEventBinding> &bindings);
 
     QRectF       boundingRect() const override;

@@ -41,6 +41,7 @@ public:
 
     // 公共编辑操作（均入 undo 栈）
     enum class AlignMode { Left, Right, Top, Bottom, Center };
+    enum class ZOrderMode { BringToFront, SendToBack, BringForward, SendBackward };
 
     void deleteSelected();
     void copySelected();
@@ -48,6 +49,7 @@ public:
     QList<WidgetInstance> selectedInstances() const;
     void pasteInstances(const QList<WidgetInstance> &instances, int pasteCount);
     void alignSelected(AlignMode mode);
+    void changeSelectedZOrder(ZOrderMode mode);
     void groupSelected();
     void ungroupSelected();
 
@@ -65,6 +67,7 @@ public:
     void doRemoveItem(const QString &instanceId);
     void doSetGeometry(const QString &instanceId, const QRectF &rect);
     void doSetPositions(const QList<QPair<QString, QPointF>> &moves);
+    void doSetZOrders(const QList<QPair<QString, int>> &orders);
     void doLoadInstances(const QList<WidgetInstance> &instances);
 
     // 属性面板编辑（不入栈，立刻生效）
@@ -120,6 +123,9 @@ private slots:
 
 private:
     CanvasItem *makeItem(const WidgetInstance &inst);
+    int nextZOrder() const;
+    QList<CanvasItem *> canvasItemsSortedByZ() const;
+    QList<WidgetInstance> normalizedZOrders(QList<WidgetInstance> instances) const;
     void expandSelectionToMoveGroups();
     QList<WidgetInstance> instancesWithDescendants(const QList<WidgetInstance> &roots) const;
     QString uniqueGroupName() const;

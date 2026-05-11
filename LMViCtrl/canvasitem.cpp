@@ -229,6 +229,15 @@ void CanvasItem::setInstanceProperty(const QString &key, const QVariant &value)
     update();
 }
 
+void CanvasItem::setZOrder(int zOrder)
+{
+    if (m_inst.zOrder == zOrder && this->zValue() == qreal(zOrder))
+        return;
+    m_inst.zOrder = zOrder;
+    setZValue(zOrder);
+    update();
+}
+
 void CanvasItem::setEventBindings(const QList<WidgetEventBinding> &bindings)
 {
     m_inst.eventBindings = bindings;
