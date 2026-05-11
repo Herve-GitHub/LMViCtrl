@@ -1,4 +1,4 @@
-QT += widgets
+QT += widgets svg
 
 CONFIG += c++17
 
@@ -60,6 +60,8 @@ HEADERS += \
 
 FORMS += \
     mainwindow.ui
+RESOURCES += resources.qrc
+RC_ICONS += logo.ico
 
 # 编译完成后，将 lua 和 img 文件夹拷贝到输出目录
 win32 {

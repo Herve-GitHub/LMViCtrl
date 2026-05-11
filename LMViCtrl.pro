@@ -2,8 +2,8 @@ TEMPLATE = subdirs
 SUBDIRS += \
     sdl2 \
     LvglLuaBinding \
-    simulator\
-    designer
+    LMViCtrlSimulator\
+    LMViCtrl
 	
 CONFIG += ordered \
     qt

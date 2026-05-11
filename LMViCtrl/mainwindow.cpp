@@ -105,6 +105,7 @@ MainWindow::MainWindow(QWidget* parent)
 	updateRecentMenu();
 	m_welcomeWidget->setRecentProjects(m_recentProjects);
 	setProjectOpen(false);   // 启动时停留在欢迎页
+    this->setWindowState(Qt::WindowState::WindowMaximized);
 }
 
 MainWindow::~MainWindow()

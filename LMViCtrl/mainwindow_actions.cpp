@@ -46,9 +46,9 @@
 
 namespace {
 constexpr const char *kProjectFilter =
-    "QtLvglDesigner Project (*.qlvgl.json *.json *.qlproj)";
+    "LMViCtrl Project (*.qlvgl.json *.json *.qlproj)";
 constexpr const char *kWidgetInstancesMimeType =
-    "application/x-qtlvgl-designer-widget-instances";
+    "application/x-qtlvgl-LMViCtrl-widget-instances";
 
 QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
 {
@@ -133,7 +133,7 @@ QByteArray encodeWidgetClipboard(const QList<WidgetInstance> &instances)
         widgets.append(widgetInstanceToJson(inst));
 
     QJsonObject root;
-    root.insert(QStringLiteral("schema"), QStringLiteral("qtlvgl-designer-widget-instances"));
+    root.insert(QStringLiteral("schema"), QStringLiteral("qtlvgl-LMViCtrl-widget-instances"));
     root.insert(QStringLiteral("version"), 1);
     root.insert(QStringLiteral("widgets"), widgets);
     return QJsonDocument(root).toJson(QJsonDocument::Compact);
@@ -148,7 +148,7 @@ QList<WidgetInstance> decodeWidgetClipboard(const QByteArray &data)
 
     const QJsonObject root = doc.object();
     if (root.value(QStringLiteral("schema")).toString()
-        != QLatin1String("qtlvgl-designer-widget-instances")) {
+        != QLatin1String("qtlvgl-LMViCtrl-widget-instances")) {
         return instances;
     }
 
@@ -494,7 +494,7 @@ void MainWindow::setProjectOpen(bool open)
 
 void MainWindow::updateWindowTitle()
 {
-    QString title = QStringLiteral("QtLvglDesigner");
+    QString title = QStringLiteral("罗米视控");
     if (m_projectOpen) {
         const QString name = m_projectFilePath.isEmpty()
                                  ? (m_project.name.isEmpty() ? tr("未命名") : m_project.name)
@@ -608,7 +608,7 @@ void MainWindow::onNewProject()
         addRecentProject(filePath);
     }
 
-    // 3) 把 designer 自带的 lua 运行时（runtime.lua / common / widgets）
+    // 3) 把 LMViCtrl 自带的 lua 运行时（runtime.lua / common / widgets）
     //    拷贝到工程目录，供后续编译产物 require 与仿真器加载
     QString depErr;
     if (!ProjectManager::deployRuntime(projectDir, /*overwriteWidgets=*/false, &depErr)) {
@@ -1257,12 +1257,12 @@ void MainWindow::onStartSimulate()
         return;
     }
 
-    // 5) 拉起仿真子进程：<appDir>/QtLvglSimu(.exe)（与 designer 同目录）
+    // 5) 拉起仿真子进程：<appDir>/QtLvglSimu(.exe)（与 LMViCtrl 同目录）
     const QString appDir = QCoreApplication::applicationDirPath();
 #ifdef Q_OS_WIN
-    const QString exeName = QStringLiteral("simulator.exe");
+    const QString exeName = QStringLiteral("LMViCtrlSimulator.exe");
 #else
-    const QString exeName = QStringLiteral("simulator");
+    const QString exeName = QStringLiteral("LMViCtrlSimulator");
 #endif
     const QString simuExe = QDir(appDir).filePath(exeName);
     if (!QFile::exists(simuExe)) {
@@ -1351,7 +1351,7 @@ void MainWindow::switchLanguage(const QString &locale)
 {
     static QTranslator *s_translator = nullptr;
 
-    const QString qmFile = QStringLiteral(":/i18n/designer_") + locale;
+    const QString qmFile = QStringLiteral(":/i18n/LMViCtrl_") + locale;
 
     if (s_translator) {
         qApp->removeTranslator(s_translator);

@@ -8,7 +8,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemDefinitionGroup>
     <QtTranslation>
-      <QmOutputFile>$(MSBuildProjectDirectory)\..\build\msvc\x86_64\debug\designer\rcc\%(Filename).qm</QmOutputFile>
+      <QmOutputFile>$(MSBuildProjectDirectory)\..\build\msvc\x86_64\debug\LMViCtrl\rcc\%(Filename).qm</QmOutputFile>
     </QtTranslation>
   </ItemDefinitionGroup>
 </Project>

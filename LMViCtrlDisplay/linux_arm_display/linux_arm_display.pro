@@ -2,7 +2,7 @@ TEMPLATE = subdirs
 CONFIG += ordered
 
 win32 {
-    error("linux_arm_dispaly is only supported on Linux/Unix targets")
+    error("linux_arm_display is only supported on Linux/Unix targets")
 }
 
 SUBDIRS += \

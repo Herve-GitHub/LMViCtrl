@@ -124,7 +124,7 @@ static QPixmap loadWidgetPixmap(const WidgetMeta &meta)
         // 相对 lua 同目录
         if (luaFi.exists())
             candidates << QDir(luaFi.absolutePath()).absoluteFilePath(meta.previewImage);
-        // 相对 lua 上一级（典型布局：designer/lua/widgets/.. + img/widgets/...）
+        // 相对 lua 上一级（典型布局：LMViCtrl/lua/widgets/.. + img/widgets/...）
         if (luaFi.exists())
             candidates << QDir(luaFi.absolutePath() + QStringLiteral("/../.."))
                           .absoluteFilePath(meta.previewImage);
