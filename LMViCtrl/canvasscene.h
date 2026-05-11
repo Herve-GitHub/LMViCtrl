@@ -11,6 +11,7 @@
 class QUndoStack;
 class CanvasItem;
 class QGraphicsRectItem;
+class QGraphicsSceneContextMenuEvent;
 
 class CanvasScene : public QGraphicsScene
 {
@@ -98,6 +99,16 @@ signals:
 
     void instanceEventsChanged(const QString &instanceId);
 
+    void cutRequested();
+    void copyRequested();
+    void pasteRequested();
+    void deleteRequested();
+    void bringToFrontRequested();
+    void sendToBackRequested();
+    void bringForwardRequested();
+    void sendBackwardRequested();
+    void eventPanelRequested(const QString &instanceId);
+
     // 画布上拖动/缩放过程中的实时几何变化（只含 x/y/width/height，
     // 属性面板可仅刷新占位编辑器而不重建）
     void instanceGeometryChanged(const QString &instanceId);
@@ -112,6 +123,7 @@ protected:
     void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
     void dragMoveEvent (QGraphicsSceneDragDropEvent *event) override;
     void dropEvent     (QGraphicsSceneDragDropEvent *event) override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent *event) override;
     void keyPressEvent (QKeyEvent *event) override;
     void mousePressEvent  (QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;

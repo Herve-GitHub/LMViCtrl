@@ -339,6 +339,29 @@ void MainWindow::openScreenTab(const QString &screenId)
     if (tab->scene())
         registerUndoStack(tab->scene()->undoStack(), screenId);
 
+    if (CanvasScene *scene = tab->scene()) {
+        connect(scene, &CanvasScene::cutRequested, this, &MainWindow::onCut);
+        connect(scene, &CanvasScene::copyRequested, this, &MainWindow::onCopy);
+        connect(scene, &CanvasScene::pasteRequested, this, &MainWindow::onPaste);
+        connect(scene, &CanvasScene::deleteRequested, this, &MainWindow::onDelete);
+        connect(scene, &CanvasScene::bringToFrontRequested, this, &MainWindow::onBringToFront);
+        connect(scene, &CanvasScene::sendToBackRequested, this, &MainWindow::onSendToBack);
+        connect(scene, &CanvasScene::bringForwardRequested, this, &MainWindow::onBringForward);
+        connect(scene, &CanvasScene::sendBackwardRequested, this, &MainWindow::onSendBackward);
+        connect(scene, &CanvasScene::eventPanelRequested, this,
+                [this, scene](const QString &instanceId) {
+            if (!m_eventPanel) return;
+            m_eventPanel->setCurrentScene(scene);
+            if (CanvasItem *item = scene->findItem(instanceId)) {
+                scene->clearSelection();
+                item->setSelected(true);
+            }
+            m_eventPanel->setVisible(true);
+            m_eventPanel->raise();
+            appendLog(tr("打开事件窗口"));
+        });
+    }
+
     const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
     m_tabWidget->addTab(tab, tabTitle);
     m_tabWidget->setCurrentWidget(tab);

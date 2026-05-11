@@ -2,11 +2,13 @@
 #include "canvasitem.h"
 
 #include <QGraphicsRectItem>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneDragDropEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMimeData>
 #include <QQueue>
 #include <QUndoCommand>
@@ -963,6 +965,70 @@ void CanvasScene::dropEvent(QGraphicsSceneDragDropEvent *event)
 
     m_undoStack->push(new AddItemCommand(this, inst));
     event->acceptProposedAction();
+}
+
+void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
+{
+    CanvasItem *targetItem = nullptr;
+    const QList<QGraphicsItem *> hitItems = items(event->scenePos());
+    for (QGraphicsItem *gi : hitItems) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem *>(gi)) {
+            targetItem = ci;
+            break;
+        }
+    }
+
+    if (targetItem && !targetItem->isSelected()) {
+        clearSelection();
+        targetItem->setSelected(true);
+    }
+
+    QList<CanvasItem *> selectedCanvasItems;
+    for (QGraphicsItem *gi : selectedItems()) {
+        if (auto *ci = qgraphicsitem_cast<CanvasItem *>(gi))
+            selectedCanvasItems.append(ci);
+    }
+    const bool hasSelection = !selectedCanvasItems.isEmpty();
+    const bool canOpenEvents = selectedCanvasItems.size() == 1
+        && !selectedCanvasItems.first()->instance().isGroup;
+
+    QMenu menu;
+    QAction *copyAction = menu.addAction(tr("复制"));
+    QAction *pasteAction = menu.addAction(tr("粘贴"));
+    QAction *cutAction = menu.addAction(tr("剪切"));
+    QAction *deleteAction = menu.addAction(tr("删除"));
+    menu.addSeparator();
+    QAction *bringForwardAction = menu.addAction(tr("上移一层"));
+    QAction *sendBackwardAction = menu.addAction(tr("下移一层"));
+    QAction *bringToFrontAction = menu.addAction(tr("置于顶层"));
+    QAction *sendToBackAction = menu.addAction(tr("置于底层"));
+    menu.addSeparator();
+    QAction *eventAction = menu.addAction(tr("event"));
+
+    copyAction->setEnabled(hasSelection);
+    cutAction->setEnabled(hasSelection);
+    deleteAction->setEnabled(hasSelection);
+    bringForwardAction->setEnabled(hasSelection);
+    sendBackwardAction->setEnabled(hasSelection);
+    bringToFrontAction->setEnabled(hasSelection);
+    sendToBackAction->setEnabled(hasSelection);
+    eventAction->setEnabled(canOpenEvents);
+
+    QAction *chosen = menu.exec(event->screenPos());
+    if (!chosen) return;
+
+    if (chosen == copyAction) emit copyRequested();
+    else if (chosen == pasteAction) emit pasteRequested();
+    else if (chosen == cutAction) emit cutRequested();
+    else if (chosen == deleteAction) emit deleteRequested();
+    else if (chosen == bringForwardAction) emit bringForwardRequested();
+    else if (chosen == sendBackwardAction) emit sendBackwardRequested();
+    else if (chosen == bringToFrontAction) emit bringToFrontRequested();
+    else if (chosen == sendToBackAction) emit sendToBackRequested();
+    else if (chosen == eventAction && canOpenEvents) {
+        emit eventPanelRequested(selectedCanvasItems.first()->instance().instanceId);
+    }
+    event->accept();
 }
 
 // ---------------------------------------------------------------------------
