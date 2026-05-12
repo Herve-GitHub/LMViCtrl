@@ -90,8 +90,8 @@ MainWindow::MainWindow(QWidget* parent)
 	m_eventPanel = new EventPanelDock(this);
 	m_eventPanel->setProjectData(&m_project);
 	addDockWidget(Qt::BottomDockWidgetArea, m_eventPanel);
-	tabifyDockWidget(m_logDock, m_eventPanel);
-	m_eventPanel->raise();
+	splitDockWidget(m_logDock, m_eventPanel, Qt::Horizontal);
+	resizeDocks({ m_logDock, m_eventPanel }, { 300, 700 }, Qt::Horizontal);
 
 	// 欢迎页
 	m_welcomeWidget = new WelcomeWidget;
