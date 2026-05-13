@@ -28,6 +28,7 @@ local M = {}
 -- 全局命名的控件实例表：可在事件代码中通过 widgets.<Name> 访问
 -- 例如：widgets.Button_1:set_property("label", "Hi")
 M.widgets = {}
+M.dataStore = nil
 _G.widgets = M.widgets
 if ok_data_client and data_client then
     M.data_client = data_client
@@ -56,6 +57,8 @@ end
 local function log_info(fmt, ...)
     io.stdout:write(string.format("[runtime] " .. fmt .. "\n", ...))
 end
+
+local g_data_store = nil
 
 -- ─── 1. 定位工程 widgets/ 目录 ────────────────────────────────────────
 -- 通过 package.searchpath 探测一个我们必然部署在工程目录的入口
@@ -326,6 +329,34 @@ local function action_delay_ms(action)
     return delay
 end
 
+local function read_widget_event_value(self, e)
+    if type(e) == "table" then
+        if e.value ~= nil then return e.value end
+        if e.text ~= nil then return e.text end
+        if e.checked ~= nil then return e.checked end
+    end
+    if type(self) == "table" and type(self.get_property) == "function" then
+        local ok, value = pcall(self.get_property, self, "value")
+        if ok and value ~= nil then return value end
+        ok, value = pcall(self.get_property, self, "text")
+        if ok and value ~= nil then return value end
+        ok, value = pcall(self.get_property, self, "label")
+        if ok and value ~= nil then return value end
+    end
+    return nil
+end
+
+local function resolve_action_value(value)
+    if type(value) == "string" and g_data_store then
+        local variable_ref = value:match("^%s*(%$[%w_]+)%s*$")
+        if variable_ref then
+            local variable_value = g_data_store:get(variable_ref)
+            if variable_value ~= nil then return variable_value end
+        end
+    end
+    return value
+end
+
 local function run_after(delay_ms, fn)
     if delay_ms <= 0 then
         fn()
@@ -419,7 +450,7 @@ local function execute_event_action(action, self, e)
         local target = action.targetName and M.widgets[action.targetName]
         local params = action.params or {}
         if target and type(target.set_property) == "function" then
-            target:set_property(params.property, params.value)
+            target:set_property(params.property, resolve_action_value(params.value))
         else
             log_warn("event action: target widget not found or cannot set property: %s", tostring(action.targetName))
         end
@@ -433,6 +464,31 @@ local function execute_event_action(action, self, e)
             target[method](target)
         else
             log_warn("event action: cannot call %s on %s", tostring(method), tostring(action.targetName))
+        end
+        return
+    end
+
+    if action_type == "data_variable" or action_type == "set_variable" or action_type == "variable" then
+        if not g_data_store then
+            log_warn("event action: DataStore unavailable")
+            return
+        end
+        local params = action.params or {}
+        local variable_ref = action.targetName or action.targetId or params.variable or params.name
+        local operation = action.method or params.operation or params.method or "set"
+        local value = params.value
+        if value == nil or value == "" then
+            value = read_widget_event_value(self, e)
+        end
+        value = resolve_action_value(value)
+        local ok, err = g_data_store:apply(variable_ref, operation, {
+            value = value,
+            index = params.index,
+            pattern = params.pattern,
+        }, self, e)
+        if not ok then
+            log_warn("event action: DataStore.%s failed for %s: %s",
+                     tostring(operation), tostring(variable_ref), tostring(err))
         end
         return
     end
@@ -465,6 +521,225 @@ local function execute_event_actions_parallel(actions, self, e)
             execute_event_action(action, self, e)
         end)
     end
+end
+
+local function normalize_variable_name(name)
+    if type(name) ~= "string" then return nil end
+    name = name:match("^%s*(.-)%s*$")
+    if name == "" then return nil end
+    return name
+end
+
+local function variable_key_aliases(variable)
+    local aliases = {}
+    if type(variable.id) == "string" and variable.id ~= "" then aliases[#aliases + 1] = variable.id end
+    if type(variable.name) == "string" and variable.name ~= "" then
+        aliases[#aliases + 1] = variable.name
+        aliases[#aliases + 1] = variable.name:gsub("^%$", "")
+    end
+    return aliases
+end
+
+local function clone_list(value)
+    local out = {}
+    if type(value) == "table" then
+        for i, item in ipairs(value) do out[i] = item end
+    end
+    return out
+end
+
+local function to_boolean(value)
+    if type(value) == "boolean" then return value end
+    if type(value) == "number" then return value ~= 0 end
+    if type(value) == "string" then
+        local lower = value:lower()
+        return lower == "true" or lower == "1" or lower == "yes" or lower == "on"
+    end
+    return not not value
+end
+
+local function coerce_variable_value(variable, value)
+    local value_type = variable.type or "number"
+    if value_type == "number" then
+        return tonumber(value) or 0
+    elseif value_type == "boolean" then
+        return to_boolean(value)
+    elseif value_type == "list" then
+        return clone_list(value)
+    elseif value_type == "string" then
+        if value == nil then return "" end
+        return tostring(value)
+    end
+    return value
+end
+
+local function create_data_store(definitions)
+    local store = {
+        variables = {},
+        values = {},
+        aliases = {},
+    }
+
+    local function find_variable(ref)
+        ref = normalize_variable_name(ref)
+        if not ref then return nil end
+        return store.aliases[ref] or store.aliases[ref:gsub("^%$", "")]
+    end
+
+    local function set_value(variable, value, event_hint)
+        local old_value = variable.value
+        local new_value = coerce_variable_value(variable, value)
+        variable.value = new_value
+        store.values[variable.name] = new_value
+        store.values[variable.name:gsub("^%$", "")] = new_value
+
+        if old_value ~= new_value then
+            store:emit(variable, "onChange", old_value, new_value)
+            store:emit(variable, "change", old_value, new_value)
+        end
+
+        local value_type = variable.type or "number"
+        if value_type == "number" then
+            local limit = tonumber(variable.limit)
+            local old_number = tonumber(old_value)
+            local new_number = tonumber(new_value)
+            if limit and new_number then
+                if (not old_number or old_number <= limit) and new_number > limit then
+                    store:emit(variable, "onAboveLimit", old_value, new_value)
+                    store:emit(variable, "above_limit", old_value, new_value)
+                end
+                if (not old_number or old_number >= limit) and new_number < limit then
+                    store:emit(variable, "onBelowLimit", old_value, new_value)
+                    store:emit(variable, "below_limit", old_value, new_value)
+                end
+                if new_number == limit then
+                    store:emit(variable, "onEquals", old_value, new_value)
+                    store:emit(variable, "equals", old_value, new_value)
+                end
+            end
+        elseif value_type == "boolean" and old_value ~= new_value then
+            if new_value then
+                store:emit(variable, "onTrue", old_value, new_value)
+                store:emit(variable, "true", old_value, new_value)
+            else
+                store:emit(variable, "onFalse", old_value, new_value)
+                store:emit(variable, "false", old_value, new_value)
+            end
+        elseif value_type == "list" and type(new_value) == "table" and #new_value == 0 then
+            store:emit(variable, "onEmpty", old_value, new_value)
+            store:emit(variable, "empty", old_value, new_value)
+        end
+
+        if event_hint and event_hint ~= "" then
+            store:emit(variable, event_hint, old_value, new_value)
+        end
+        return true
+    end
+
+    function store:get(ref)
+        local variable = find_variable(ref)
+        return variable and variable.value or nil
+    end
+
+    function store:set(ref, value)
+        local variable = find_variable(ref)
+        if not variable then return false, "variable not found" end
+        return set_value(variable, value)
+    end
+
+    function store:emit(variable, event_name, old_value, new_value)
+        if type(variable) ~= "table" or type(variable.events) ~= "table" then return end
+        local binding = variable.events[event_name]
+        if not binding then return end
+        local execution_mode, actions = normalize_event_binding(binding)
+        if type(actions) ~= "table" or #actions == 0 then return end
+        local event = {
+            name = event_name,
+            variable = variable,
+            variableName = variable.name,
+            oldValue = old_value,
+            value = new_value,
+        }
+        if execution_mode == "parallel" then
+            execute_event_actions_parallel(actions, variable, event)
+        else
+            execute_event_actions_sequence(actions, variable, event, 1)
+        end
+    end
+
+    function store:apply(ref, operation, params)
+        local variable = find_variable(ref)
+        if not variable then return false, "variable not found" end
+        params = params or {}
+        operation = operation or "set"
+
+        if operation == "set" or operation == "set_value" then
+            return set_value(variable, params.value)
+        elseif operation == "increment" then
+            local delta = tonumber(params.value) or 1
+            return set_value(variable, (tonumber(variable.value) or 0) + delta)
+        elseif operation == "decrement" then
+            local delta = tonumber(params.value) or 1
+            return set_value(variable, (tonumber(variable.value) or 0) - delta)
+        elseif operation == "reset" then
+            return set_value(variable, variable.defaultValue)
+        elseif operation == "toggle" then
+            return set_value(variable, not to_boolean(variable.value))
+        elseif operation == "set_true" then
+            return set_value(variable, true)
+        elseif operation == "set_false" then
+            return set_value(variable, false)
+        elseif operation == "append" then
+            return set_value(variable, tostring(variable.value or "") .. tostring(params.value or ""))
+        elseif operation == "format" then
+            local pattern = params.pattern or params.value or "%s"
+            local ok, formatted = pcall(string.format, tostring(pattern), variable.value)
+            return set_value(variable, ok and formatted or tostring(pattern))
+        elseif operation == "clear" then
+            return set_value(variable, variable.type == "list" and {} or "")
+        elseif operation == "push" then
+            local list = clone_list(variable.value)
+            list[#list + 1] = params.value
+            return set_value(variable, list)
+        elseif operation == "pop" then
+            local list = clone_list(variable.value)
+            table.remove(list)
+            return set_value(variable, list)
+        elseif operation == "set_item" then
+            local list = clone_list(variable.value)
+            local index = tonumber(params.index) or 1
+            list[math.max(1, math.floor(index))] = params.value
+            return set_value(variable, list)
+        end
+        return false, "unsupported operation"
+    end
+
+    if type(definitions) == "table" then
+        for _, def in ipairs(definitions) do
+            if type(def) == "table" and type(def.name) == "string" and def.name ~= "" then
+                local variable = {
+                    id = def.id,
+                    name = def.name,
+                    type = def.type or "number",
+                    value = coerce_variable_value(def, def.value ~= nil and def.value or def.defaultValue),
+                    defaultValue = coerce_variable_value(def, def.defaultValue ~= nil and def.defaultValue or def.value),
+                    min = def.min,
+                    max = def.max,
+                    limit = def.limit,
+                    description = def.description,
+                    events = def.events,
+                }
+                store.variables[#store.variables + 1] = variable
+                store.values[variable.name] = variable.value
+                store.values[variable.name:gsub("^%$", "")] = variable.value
+                for _, alias in ipairs(variable_key_aliases(variable)) do
+                    store.aliases[alias] = variable
+                end
+            end
+        end
+    end
+
+    return store
 end
 
 local function bind_event_actions(widget, inst)
@@ -626,6 +901,11 @@ function M.run(project)
 
     -- 1) 字体：在创建任何屏/控件之前完成，使后续 widget 默认使用此字体
     setup_project_font(project)
+
+    g_data_store = create_data_store(project.dataVariables or project.data_variables)
+    M.dataStore = g_data_store
+    _G.DataStore = g_data_store
+    _G.variables = g_data_store.values
 
     -- 2) 按 order 升序，第一个为活动屏
     local screens = {}

@@ -107,6 +107,7 @@ QJsonObject dataVariableToJson(const DataVariable &variable)
     o["max"] = variable.max;
     o["limit"] = variable.limit;
     o["description"] = variable.description;
+    o["events"] = eventBindingsToJson(variable.eventBindings);
     return o;
 }
 
@@ -122,6 +123,7 @@ DataVariable dataVariableFromJson(const QJsonObject &o)
     variable.max = o.value("max").toDouble(100);
     variable.limit = o.value("limit").toDouble(0);
     variable.description = o.value("description").toString();
+    variable.eventBindings = eventBindingsFromJson(o.value("events").toObject());
     if (!variable.defaultValue.isValid())
         variable.defaultValue = variable.value;
     return variable;
@@ -343,6 +345,7 @@ static QString luaQuote(const QString &s)
 }
 
 static QString variantMapToLua(const QVariantMap &map);
+static QString eventBindingsToLua(const QList<WidgetEventBinding> &bindings, int indent);
 
 static QString variantToLua(const QVariant &v)
 {
@@ -411,6 +414,7 @@ static QString dataVariablesToLua(const QList<DataVariable> &variables, int inde
         s << childPad << "  max = " << QString::number(variable.max, 'g', 12) << ",\n";
         s << childPad << "  limit = " << QString::number(variable.limit, 'g', 12) << ",\n";
         s << childPad << "  description = " << luaQuote(variable.description) << ",\n";
+        s << childPad << "  events = " << eventBindingsToLua(variable.eventBindings, indent + 2) << ",\n";
         s << childPad << "},\n";
     }
     s << pad << "}";

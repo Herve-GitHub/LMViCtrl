@@ -348,6 +348,7 @@ void EventPanelDock::addAction(const QString &eventName)
                           m_project ? m_project->screens : QList<ScreenData>{},
                           currentSceneInstances(),
                           currentSceneMetas(),
+                          m_project ? m_project->dataVariables : QList<DataVariable>{},
                           this);
     if (dlg.exec() != QDialog::Accepted) return;
     m_scene->addInstanceEventAction(m_currentInstanceId, eventName, dlg.action());
@@ -360,6 +361,7 @@ void EventPanelDock::editAction(const QString &eventName, const EventAction &act
                           m_project ? m_project->screens : QList<ScreenData>{},
                           currentSceneInstances(),
                           currentSceneMetas(),
+                          m_project ? m_project->dataVariables : QList<DataVariable>{},
                           this);
     dlg.setAction(action);
     if (dlg.exec() != QDialog::Accepted) return;

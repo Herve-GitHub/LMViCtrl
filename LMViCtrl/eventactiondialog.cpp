@@ -31,6 +31,7 @@ QString actionLabel(const QString &type)
     if (type == QLatin1String("custom_code")) return QObject::tr("Custom Code");
     if (type == QLatin1String("set_property")) return QObject::tr("Set Property");
     if (type == QLatin1String("call_method")) return QObject::tr("Call Method");
+    if (type == QLatin1String("data_variable")) return QObject::tr("Data Variable");
     if (type == QLatin1String("freemaster")) return QObject::tr("Freemaster");
     return type;
 }
@@ -41,11 +42,13 @@ EventActionDialog::EventActionDialog(const QString &eventName,
                                      const QList<ScreenData> &screens,
                                      const QList<WidgetInstance> &widgets,
                                      const QList<WidgetMeta> &widgetMetas,
+                                     const QList<DataVariable> &dataVariables,
                                      QWidget *parent)
     : QDialog(parent)
     , m_eventName(eventName)
     , m_screens(screens)
     , m_widgets(widgets)
+    , m_dataVariables(dataVariables)
 {
     for (const WidgetMeta &meta : std::as_const(widgetMetas))
         m_widgetMetas.insert(meta.id, meta);
@@ -63,6 +66,7 @@ EventActionDialog::EventActionDialog(const QString &eventName,
     m_typeCombo->addItem(tr("Custom Code"), QStringLiteral("custom_code"));
     m_typeCombo->addItem(tr("Set Property"), QStringLiteral("set_property"));
     m_typeCombo->addItem(tr("Call Method"), QStringLiteral("call_method"));
+    m_typeCombo->addItem(tr("Data Variable"), QStringLiteral("data_variable"));
     m_typeCombo->addItem(tr("Freemaster"), QStringLiteral("freemaster"));
     topForm->addRow(tr("动作"), m_typeCombo);
 
@@ -107,6 +111,30 @@ EventActionDialog::EventActionDialog(const QString &eventName,
     m_methodEdit->setPlaceholderText(tr("方法名，例如 set_property"));
     methodForm->addRow(tr("方法"), m_methodEdit);
     m_detailStack->addWidget(methodPage);
+
+    auto *variablePage = new QWidget(m_detailStack);
+    auto *variableForm = new QFormLayout(variablePage);
+    m_variableOperationCombo = new QComboBox(variablePage);
+    m_variableOperationCombo->addItem(tr("set"), QStringLiteral("set"));
+    m_variableOperationCombo->addItem(tr("increment"), QStringLiteral("increment"));
+    m_variableOperationCombo->addItem(tr("decrement"), QStringLiteral("decrement"));
+    m_variableOperationCombo->addItem(tr("reset"), QStringLiteral("reset"));
+    m_variableOperationCombo->addItem(tr("toggle"), QStringLiteral("toggle"));
+    m_variableOperationCombo->addItem(tr("set true"), QStringLiteral("set_true"));
+    m_variableOperationCombo->addItem(tr("set false"), QStringLiteral("set_false"));
+    m_variableOperationCombo->addItem(tr("append"), QStringLiteral("append"));
+    m_variableOperationCombo->addItem(tr("clear"), QStringLiteral("clear"));
+    m_variableOperationCombo->addItem(tr("push"), QStringLiteral("push"));
+    m_variableOperationCombo->addItem(tr("pop"), QStringLiteral("pop"));
+    m_variableOperationCombo->addItem(tr("set item"), QStringLiteral("set_item"));
+    m_variableValueEdit = new QLineEdit(variablePage);
+    m_variableValueEdit->setPlaceholderText(tr("固定值；留空时运行时尝试读取事件值"));
+    m_variableIndexEdit = new QLineEdit(variablePage);
+    m_variableIndexEdit->setPlaceholderText(tr("列表索引，仅 set item 使用"));
+    variableForm->addRow(tr("动作"), m_variableOperationCombo);
+    variableForm->addRow(tr("值"), m_variableValueEdit);
+    variableForm->addRow(tr("索引"), m_variableIndexEdit);
+    m_detailStack->addWidget(variablePage);
 
     auto *freemasterPage = new QWidget(m_detailStack);
     auto *fmForm = new QFormLayout(freemasterPage);
@@ -183,6 +211,14 @@ void EventActionDialog::setAction(const EventAction &action)
     m_methodEdit->setText(action.method.isEmpty()
                               ? action.params.value(QStringLiteral("method")).toString()
                               : action.method);
+    const QString variableOperation = action.method.isEmpty()
+        ? action.params.value(QStringLiteral("operation")).toString()
+        : action.method;
+    const int variableOperationIndex = m_variableOperationCombo->findData(variableOperation);
+    if (variableOperationIndex >= 0)
+        m_variableOperationCombo->setCurrentIndex(variableOperationIndex);
+    m_variableValueEdit->setText(action.params.value(QStringLiteral("value")).toString());
+    m_variableIndexEdit->setText(action.params.value(QStringLiteral("index")).toString());
     m_freemasterTargetEdit->setText(action.targetName);
     m_freemasterValueEdit->setText(action.params.value(QStringLiteral("value")).toString());
     m_conditionEdit->setText(action.condition);
@@ -243,6 +279,12 @@ EventAction EventActionDialog::action() const
     } else if (action.type == QLatin1String("call_method")) {
         action.method = m_methodEdit->text();
         action.params.insert(QStringLiteral("method"), m_methodEdit->text());
+    } else if (action.type == QLatin1String("data_variable")) {
+        const QString operation = m_variableOperationCombo->currentData().toString();
+        action.method = operation.isEmpty() ? QStringLiteral("set") : operation;
+        action.params.insert(QStringLiteral("operation"), action.method);
+        action.params.insert(QStringLiteral("value"), m_variableValueEdit->text());
+        action.params.insert(QStringLiteral("index"), m_variableIndexEdit->text());
     } else if (action.type == QLatin1String("freemaster")) {
         action.targetName = m_freemasterTargetEdit->text();
         action.method = QStringLiteral("write");
@@ -281,6 +323,11 @@ void EventActionDialog::rebuildTargetTable()
     } else if (type == QLatin1String("set_property") || type == QLatin1String("call_method")) {
         for (const WidgetInstance &widget : std::as_const(m_widgets))
             addRow(widget.widgetId, widget.instanceId, widget.name.isEmpty() ? widget.widgetId : widget.name);
+    } else if (type == QLatin1String("data_variable")) {
+        for (const DataVariable &variable : std::as_const(m_dataVariables)) {
+            const QString shownType = variable.type.isEmpty() ? QStringLiteral("number") : variable.type;
+            addRow(QStringLiteral("DataNode/%1").arg(shownType), variable.id, variable.name);
+        }
     }
 
     if (m_targetTable->rowCount() > 0)
@@ -372,7 +419,8 @@ void EventActionDialog::updateEditorState()
     const QString type = currentActionType();
     const bool needsTarget = type == QLatin1String("load_screen") ||
                              type == QLatin1String("set_property") ||
-                             type == QLatin1String("call_method");
+                             type == QLatin1String("call_method") ||
+                             type == QLatin1String("data_variable");
     m_searchEdit->setEnabled(needsTarget);
     m_targetTable->setEnabled(needsTarget);
 
@@ -382,8 +430,10 @@ void EventActionDialog::updateEditorState()
         m_detailStack->setCurrentIndex(2);
     else if (type == QLatin1String("call_method"))
         m_detailStack->setCurrentIndex(3);
-    else if (type == QLatin1String("freemaster"))
+    else if (type == QLatin1String("data_variable"))
         m_detailStack->setCurrentIndex(4);
+    else if (type == QLatin1String("freemaster"))
+        m_detailStack->setCurrentIndex(5);
     else
         m_detailStack->setCurrentIndex(0);
 }

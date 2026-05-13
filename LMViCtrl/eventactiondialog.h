@@ -19,6 +19,7 @@ public:
                                const QList<ScreenData> &screens,
                                const QList<WidgetInstance> &widgets,
                                const QList<WidgetMeta> &widgetMetas,
+                               const QList<DataVariable> &dataVariables = {},
                                QWidget *parent = nullptr);
 
     void setAction(const EventAction &action);
@@ -38,6 +39,7 @@ private:
     QString m_eventName;
     QList<ScreenData> m_screens;
     QList<WidgetInstance> m_widgets;
+    QList<DataVariable> m_dataVariables;
     QHash<QString, WidgetMeta> m_widgetMetas;
     EventAction m_initialAction;
 
@@ -49,6 +51,9 @@ private:
     QComboBox *m_propertyCombo = nullptr;
     QLineEdit *m_valueEdit = nullptr;
     QLineEdit *m_methodEdit = nullptr;
+    QComboBox *m_variableOperationCombo = nullptr;
+    QLineEdit *m_variableValueEdit = nullptr;
+    QLineEdit *m_variableIndexEdit = nullptr;
     QLineEdit *m_freemasterTargetEdit = nullptr;
     QLineEdit *m_freemasterValueEdit = nullptr;
     QLineEdit *m_conditionEdit = nullptr;

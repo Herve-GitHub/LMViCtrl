@@ -201,6 +201,7 @@ struct DataVariable {
     double max = 100;
     double limit = 0;
     QString description;
+    QList<WidgetEventBinding> eventBindings;
 };
 
 // 项目目标配置
