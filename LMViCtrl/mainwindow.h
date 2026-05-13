@@ -8,6 +8,7 @@
 class WidgetToolbox;
 class CanvasScene;
 class CanvasView;
+class BindingGraphView;
 class ScreenTab;
 class ScreenManagerDock;
 class ProjectTreeDock;
@@ -45,6 +46,7 @@ private:
     void setupMenus();
     void setupFileMenu();
     void setupEditMenu();
+    void setupViewMenu();
     void setupRunMenu();
     void setupLanguageMenu();
     
@@ -109,6 +111,7 @@ private slots:
     void onTogglePropertyPanel(bool checked);
     void onToggleOutputWindow(bool checked);
     void onToggleStatusBar(bool checked);
+    void onOpenBindingMode();
     void onZoomIn();
     void onZoomOut();
     void onFitToWindow();
@@ -277,6 +280,7 @@ private:
     ProjectTreeDock   *m_projectTree      = nullptr;
     QStackedWidget    *m_stackedWidget    = nullptr;
     QTabWidget        *m_tabWidget        = nullptr;
+    BindingGraphView  *m_bindingGraphView = nullptr;
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
@@ -306,6 +310,7 @@ private:
     QAction           *m_pasteAction       = nullptr;
     QAction           *m_deleteAction      = nullptr;
     QAction           *m_selectAllAction   = nullptr;
+    QAction           *m_openBindingModeAction = nullptr;
     QAction           *m_alignLeftAction   = nullptr;
     QAction           *m_alignRightAction  = nullptr;
     QAction           *m_alignTopAction    = nullptr;
@@ -345,6 +350,8 @@ private:
 
     // 图页辅助
     void openScreenTab(const QString &screenId);
+    void openBindingGraphTab();
+    void refreshBindingGraphTab();
     void closeScreenTab(const QString &screenId);
     void applyProjectToTabs();          // 工程加载后打开所有图页
     void refreshTabWidgetMetas();       // 把 widgetMetas 注入所有打开的 tab

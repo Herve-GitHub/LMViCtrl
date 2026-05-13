@@ -15,6 +15,7 @@
 #include "propertypaneldock.h"
 #include "projecttreedock.h"
 #include "eventpaneldock.h"
+#include "bindinggraphview.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
 #include "welcomewidget.h"
@@ -358,6 +359,7 @@ void MainWindow::resetProject()
 
     // 默认打开第一个图页
     openScreenTab(s.id);
+    openBindingGraphTab();
 }
 
 void MainWindow::syncSceneToProject()
@@ -367,6 +369,7 @@ void MainWindow::syncSceneToProject()
         if (ScreenTab *tab = m_openTabs.value(screen.id, nullptr))
             tab->syncToScreen(screen);
     }
+    refreshBindingGraphTab();
     m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
 }
 
@@ -398,6 +401,33 @@ void MainWindow::applyProjectToTabs()
     // 开启所有图页
     for (const ScreenData &s : std::as_const(m_project.screens))
         openScreenTab(s.id);
+    openBindingGraphTab();
+}
+
+void MainWindow::openBindingGraphTab()
+{
+    if (!m_tabWidget || !m_bindingGraphView) return;
+    m_bindingGraphView->setProjectData(&m_project);
+    m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+
+    const int existing = m_tabWidget->indexOf(m_bindingGraphView);
+    if (existing >= 0) {
+        m_tabWidget->setCurrentIndex(existing);
+        m_bindingGraphView->refreshGraph();
+        return;
+    }
+
+    m_tabWidget->addTab(m_bindingGraphView, tr("绑定模式"));
+    m_tabWidget->setCurrentWidget(m_bindingGraphView);
+    m_bindingGraphView->refreshGraph();
+}
+
+void MainWindow::refreshBindingGraphTab()
+{
+    if (!m_bindingGraphView) return;
+    m_bindingGraphView->setProjectData(m_projectOpen ? &m_project : nullptr);
+    m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+    m_bindingGraphView->refreshGraph();
 }
 
 void MainWindow::openScreenTab(const QString &screenId)
@@ -588,6 +618,13 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
 
 void MainWindow::onTabCloseRequested(int index)
 {
+    QWidget *widget = m_tabWidget->widget(index);
+    if (widget == m_bindingGraphView) {
+        m_tabWidget->removeTab(index);
+        if (m_tabWidget->count() == 0 && !m_project.screens.isEmpty())
+            openScreenTab(m_project.screens.first().id);
+        return;
+    }
     auto *tab = qobject_cast<ScreenTab *>(m_tabWidget->widget(index));
     if (!tab) return;
     closeScreenTab(tab->screenId());
@@ -1086,6 +1123,14 @@ void MainWindow::onTogglePropertyPanel(bool checked)
 void MainWindow::onToggleOutputWindow(bool /*checked*/) {}
 
 void MainWindow::onToggleStatusBar(bool /*checked*/) {}
+
+void MainWindow::onOpenBindingMode()
+{
+    if (!m_projectOpen) return;
+    syncSceneToProject();
+    openBindingGraphTab();
+    appendLog(tr("打开绑定模式画布"));
+}
 
 void MainWindow::onZoomIn() {}
 

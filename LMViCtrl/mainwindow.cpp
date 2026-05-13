@@ -5,6 +5,7 @@
 #include "screenmanagerdock.h"
 #include "propertypaneldock.h"
 #include "eventpaneldock.h"
+#include "bindinggraphview.h"
 #include "screentab.h"
 #include "canvasscene.h"
 #include "welcomewidget.h"
@@ -77,6 +78,8 @@ MainWindow::MainWindow(QWidget* parent)
 	connect(m_tabWidget, &QTabWidget::tabCloseRequested,
 		this, &MainWindow::onTabCloseRequested);
 	connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+		if (m_bindingGraphView && m_tabWidget->currentWidget() == m_bindingGraphView)
+			m_bindingGraphView->refreshGraph();
 		if (m_propertyPanel)
 			m_propertyPanel->setCurrentScene(currentScene());
 		if (m_eventPanel)
@@ -84,6 +87,14 @@ MainWindow::MainWindow(QWidget* parent)
 		if (m_projectTree)
 			m_projectTree->setCurrentScene(currentScene(), currentScreenName());
 		});
+
+	m_bindingGraphView = new BindingGraphView(m_tabWidget);
+	m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+	connect(m_bindingGraphView, &BindingGraphView::statusMessageRequested,
+		this, &MainWindow::appendLog);
+	connect(m_bindingGraphView, &BindingGraphView::graphChanged, this, [this]() {
+		m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+	});
 
 	// 属性面板（停靠在右侧）
 	m_propertyPanel = new PropertyPanelDock(this);
@@ -223,8 +234,16 @@ void MainWindow::setupMenus()
 	menuBar()->clear();
 	setupFileMenu();
 	setupEditMenu();
+	setupViewMenu();
 	setupRunMenu();
 	//setupLanguageMenu();
+}
+
+void MainWindow::setupViewMenu()
+{
+	QMenu* viewMenu = menuBar()->addMenu(tr("视图(&V)"));
+	m_openBindingModeAction = addAction(viewMenu, tr("绑定模式"), QKeySequence(Qt::CTRL | Qt::Key_B));
+	connect(m_openBindingModeAction, &QAction::triggered, this, &MainWindow::onOpenBindingMode);
 }
 
 void MainWindow::setupFileMenu()

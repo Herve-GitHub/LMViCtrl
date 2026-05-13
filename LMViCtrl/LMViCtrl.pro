@@ -22,6 +22,7 @@ SOURCES += \
     luawidgetparser.cpp \
     projectmanager.cpp \
     eventactiondialog.cpp \
+    bindinggraphview.cpp \
     eventpaneldock.cpp \
     eventtriggerdialog.cpp \
     projecttreedock.cpp \
@@ -44,6 +45,7 @@ HEADERS += \
     luawidgetparser.h \
     projectmanager.h \
     eventactiondialog.h \
+    bindinggraphview.h \
     eventpaneldock.h \
     eventtriggerdialog.h \
     projecttreedock.h \
