@@ -13,3 +13,4 @@
 *.user
 *.sln
 *.slnx
+/LMViCtrl/LMViCtrl_resource.rc

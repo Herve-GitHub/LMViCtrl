@@ -22,12 +22,19 @@ if not ok_nav then
     common = {}
 end
 local parse_hex_color = common.colorToNumber
+local ok_data_client, data_client = pcall(require, "common.data_client")
 local M = {}
 
 -- 全局命名的控件实例表：可在事件代码中通过 widgets.<Name> 访问
 -- 例如：widgets.Button_1:set_property("label", "Hi")
 M.widgets = {}
 _G.widgets = M.widgets
+if ok_data_client and data_client then
+    M.data_client = data_client
+    _G.DataClient = data_client
+else
+    io.stderr:write("[runtime] warning: common.data_client module not found, data interface unavailable\n")
+end
 
 -- 事件处理代码运行时的环境：
 --   1) widgets.<Name>      —— 始终可用
@@ -536,6 +543,16 @@ function M.run(project)
 
     _G.PageManager = create_page_manager(pages)
     _G.PageManager.goto_page(1)
+
+    if ok_data_client and data_client and type(data_client.start) == "function" then
+        local cfg = project.dataClient or project.data_client
+        if type(cfg) == "table" and cfg.enabled then
+            local ok, err = data_client.start(cfg)
+            if not ok then
+                log_warn("data client: start failed: %s", tostring(err))
+            end
+        end
+    end
 end
 
 return M

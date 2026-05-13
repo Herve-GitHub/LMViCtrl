@@ -1,6 +1,7 @@
 #include "projectpropertiesdialog.h"
 
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -48,6 +49,12 @@ ProjectData ProjectPropertiesDialog::projectData() const
 
     d.font.file = m_fontFileEdit->text().trimmed();
     d.font.size = m_fontSizeSpin->value();
+
+    d.dataClient.enabled = m_dataEnabledCheck->isChecked();
+    d.dataClient.server = m_gatewayHmiAddressEdit->text().trimmed();
+    d.dataClient.websocketPath = m_dataWsPathEdit->text().trimmed();
+    d.dataClient.token = m_dataTokenEdit->text().trimmed();
+    d.dataClient.timeoutMs = m_dataTimeoutSpin->value();
 
     return d;
 }
@@ -144,6 +151,39 @@ void ProjectPropertiesDialog::buildUi()
 
     mainLayout->addWidget(fontGroup);
 
+    // ---- HMI 网关配置 ----
+    auto *gatewayGroup = new QGroupBox(tr("HMI网关配置"), this);
+    auto *gatewayForm = new QFormLayout(gatewayGroup);
+
+    m_gatewayHmiAddressEdit = new QLineEdit(this);
+    m_gatewayHmiAddressEdit->setPlaceholderText(tr("例如：192.168.1.100"));
+    gatewayForm->addRow(tr("HMI 地址："), m_gatewayHmiAddressEdit);
+
+    mainLayout->addWidget(gatewayGroup);
+
+    // ---- 数据接口配置 ----
+    auto *dataGroup = new QGroupBox(tr("数据接口"), this);
+    auto *dataForm = new QFormLayout(dataGroup);
+
+    m_dataEnabledCheck = new QCheckBox(tr("启用启动时自动连接"), this);
+    dataForm->addRow(QString(), m_dataEnabledCheck);
+
+    m_dataWsPathEdit = new QLineEdit(this);
+    m_dataWsPathEdit->setPlaceholderText(QStringLiteral("/ws"));
+    dataForm->addRow(tr("WebSocket 路径："), m_dataWsPathEdit);
+
+    m_dataTokenEdit = new QLineEdit(this);
+    m_dataTokenEdit->setPlaceholderText(tr("HTTP 查询 token，可为空"));
+    dataForm->addRow(tr("Token："), m_dataTokenEdit);
+
+    m_dataTimeoutSpin = new QSpinBox(this);
+    m_dataTimeoutSpin->setRange(1000, 60000);
+    m_dataTimeoutSpin->setSingleStep(500);
+    m_dataTimeoutSpin->setSuffix(tr(" ms"));
+    dataForm->addRow(tr("连接超时："), m_dataTimeoutSpin);
+
+    mainLayout->addWidget(dataGroup);
+
     // ---- 只读信息 ----
     auto *infoGroup = new QGroupBox(tr("工程信息"), this);
     auto *infoForm  = new QFormLayout(infoGroup);
@@ -180,6 +220,17 @@ void ProjectPropertiesDialog::loadData()
 
     m_fontFileEdit->setText(m_data.font.file);
     m_fontSizeSpin->setValue(m_data.font.size > 0 ? m_data.font.size : 16);
+
+    m_gatewayHmiAddressEdit->setText(m_data.dataClient.server);
+
+    m_dataEnabledCheck->setChecked(m_data.dataClient.enabled);
+    m_dataWsPathEdit->setText(m_data.dataClient.websocketPath.isEmpty()
+                                  ? QStringLiteral("/ws")
+                                  : m_data.dataClient.websocketPath);
+    m_dataTokenEdit->setText(m_data.dataClient.token);
+    m_dataTimeoutSpin->setValue(m_data.dataClient.timeoutMs > 0
+                                    ? m_data.dataClient.timeoutMs
+                                    : 5000);
 }
 
 // 用户点击"浏览…"，把所选 TTF/OTF 文件拷贝到 <projectDir>/fonts/ 中，
