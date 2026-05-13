@@ -1,0 +1,216 @@
+{
+  "code": "200",
+  "data": 
+  [
+    {
+      "name": "I/O点",
+      "children": [
+        {
+          "channelCode": "Channel2",
+          "name": "Channel2",
+          "protocol": "BACnetMSTP",
+          "protocolText": "BACnetMSTP",
+          "children": [
+            {
+              "name": "Device1",
+              "description": null,
+              "children": [
+                {
+                  "name": "tag0001",
+                  "description": null,
+                  "id": "Device1.tag0001"
+                }
+              ],
+              "disable": false
+            }
+          ]
+        },
+        {
+          "channelCode": "Channel1",
+          "name": "Channel1",
+          "protocol": "SimulatorSerialport",
+          "protocolText": "仿真设备",
+          "children": [
+            {
+              "name": "暖通空调",
+              "description": null,
+              "children": [
+                {
+                  "name": "AirRoomTemp1",
+                  "description": "空调房温度1",
+                  "id": "暖通空调.AirRoomTemp1"
+                },
+                {
+                  "name": "AirRoomTemp2",
+                  "description": "空调房温度2",
+                  "id": "暖通空调.AirRoomTemp2"
+                },
+                {
+                  "name": "AirRoomTemp3",
+                  "description": "空调房温度3",
+                  "id": "暖通空调.AirRoomTemp3"
+                },
+                {
+                  "name": "CoilHumidity",
+                  "description": "盘管湿度",
+                  "id": "暖通空调.CoilHumidity"
+                },
+                {
+                  "name": "CoilTemp",
+                  "description": "盘管温度",
+                  "id": "暖通空调.CoilTemp"
+                },
+                {
+                  "name": "DRoomTemp",
+                  "description": "配电室温度",
+                  "id": "暖通空调.DRoomTemp"
+                },
+                {
+                  "name": "ReAirVelocity",
+                  "description": "回风速度",
+                  "id": "暖通空调.ReAirVelocity"
+                },
+                {
+                  "name": "ShopHumidity",
+                  "description": "车间湿度",
+                  "id": "暖通空调.ShopHumidity"
+                },
+                {
+                  "name": "SupAirVelocity",
+                  "description": "送风速度",
+                  "id": "暖通空调.SupAirVelocity"
+                },
+                {
+                  "name": "Switch1",
+                  "description": "开关1",
+                  "id": "暖通空调.Switch1"
+                },
+                {
+                  "name": "Switch2",
+                  "description": "开关2",
+                  "id": "暖通空调.Switch2"
+                },
+                {
+                  "name": "TempSet1",
+                  "description": "温度设定1",
+                  "id": "暖通空调.TempSet1"
+                },
+                {
+                  "name": "TempSet2",
+                  "description": "温度设定2",
+                  "id": "暖通空调.TempSet2"
+                },
+                {
+                  "name": "tag0001",
+                  "description": "总控",
+                  "id": "暖通空调.tag0001"
+                }
+              ],
+              "disable": false
+            },
+            {
+              "name": "物联网灯演示",
+              "description": null,
+              "children": [
+                {
+                  "name": "tag0001",
+                  "description": "娱乐室",
+                  "id": "物联网灯演示.tag0001"
+                },
+                {
+                  "name": "tag0002",
+                  "description": "财务室",
+                  "id": "物联网灯演示.tag0002"
+                },
+                {
+                  "name": "tag0003",
+                  "description": "会议室",
+                  "id": "物联网灯演示.tag0003"
+                },
+                {
+                  "name": "tag0004",
+                  "description": "办公区",
+                  "id": "物联网灯演示.tag0004"
+                },
+                {
+                  "name": "tag0005",
+                  "description": "总控",
+                  "id": "物联网灯演示.tag0005"
+                }
+              ],
+              "disable": false
+            },
+            {
+              "name": "风机",
+              "description": null,
+              "children": [
+                {
+                  "name": "冷冻水",
+                  "description": null,
+                  "id": "风机.冷冻水"
+                },
+                {
+                  "name": "回风控制",
+                  "description": null,
+                  "id": "风机.回风控制"
+                },
+                {
+                  "name": "室外温度",
+                  "description": null,
+                  "id": "风机.室外温度"
+                },
+                {
+                  "name": "室外湿度",
+                  "description": null,
+                  "id": "风机.室外湿度"
+                },
+                {
+                  "name": "故障报警",
+                  "description": null,
+                  "id": "风机.故障报警"
+                },
+                {
+                  "name": "新风",
+                  "description": null,
+                  "id": "风机.新风"
+                },
+                {
+                  "name": "水阀",
+                  "description": null,
+                  "id": "风机.水阀"
+                },
+                {
+                  "name": "湿球湿度",
+                  "description": null,
+                  "id": "风机.湿球湿度"
+                },
+                {
+                  "name": "空调箱启停",
+                  "description": null,
+                  "id": "风机.空调箱启停"
+                },
+                {
+                  "name": "送风参数",
+                  "description": null,
+                  "id": "风机.送风参数"
+                },
+                {
+                  "name": "风机",
+                  "description": null,
+                  "id": "风机.风机"
+                },
+                {
+                  "name": "风机启停",
+                  "description": null,
+                  "id": "风机.风机启停"
+                }
+              ],
+              "disable": false
+            }
+          ]
+        }
+      ],
+      "device2tag": null
+      }
+    ]
+}

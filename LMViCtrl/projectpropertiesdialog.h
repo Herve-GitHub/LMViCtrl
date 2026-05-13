@@ -7,6 +7,7 @@ class QSpinBox;
 class QComboBox;
 class QTextEdit;
 class QPushButton;
+class QCheckBox;
 
 class ProjectPropertiesDialog : public QDialog
 {
@@ -50,4 +51,13 @@ private:
     QSpinBox    *m_fontSizeSpin   = nullptr;
     QPushButton *m_fontBrowseBtn  = nullptr;
     QPushButton *m_fontClearBtn   = nullptr;
+
+    // HMI 网关配置
+    QLineEdit  *m_gatewayHmiAddressEdit = nullptr;
+
+    // 数据接口配置
+    QCheckBox  *m_dataEnabledCheck = nullptr;
+    QLineEdit  *m_dataWsPathEdit   = nullptr;
+    QLineEdit  *m_dataTokenEdit    = nullptr;
+    QSpinBox   *m_dataTimeoutSpin  = nullptr;
 };

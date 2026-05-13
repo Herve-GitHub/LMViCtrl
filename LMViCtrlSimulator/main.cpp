@@ -12,7 +12,6 @@
 
 #include <QCoreApplication>
 #include <QCommandLineParser>
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QString>
@@ -23,47 +22,9 @@
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
-#  include <io.h>
-#  include <fcntl.h>
 #endif
 
 #include "lvgl_lua_bindings.h"
-
-namespace {
-
-/// 把 stdout/stderr 重定向到 <scriptDir>/simulator.log，
-/// 让 LVGL/Lua/runtime 的诊断信息在没有控制台时也能落盘。
-/// 同时尝试附着到父进程的控制台（若有）以便调试模式可见。
-void setupSimulatorLogging(const QString &scriptPath)
-{
-#ifdef Q_OS_WIN
-    // 优先尝试挂到父进程控制台（从命令行启动时可见）
-    if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
-        FILE *f = nullptr;
-        freopen_s(&f, "CONOUT$", "w", stdout);
-        freopen_s(&f, "CONOUT$", "w", stderr);
-        return;
-    }
-#endif
-    const QString logPath =
-        QFileInfo(scriptPath).absoluteDir().filePath(QStringLiteral("simulator.log"));
-    const QByteArray logUtf8 = QFile::encodeName(logPath);
-
-#ifdef Q_OS_WIN
-    FILE *fout = nullptr;
-    FILE *ferr = nullptr;
-    freopen_s(&fout, logUtf8.constData(), "w", stdout);
-    freopen_s(&ferr, logUtf8.constData(), "a", stderr);
-#else
-    std::freopen(logUtf8.constData(), "w", stdout);
-    std::freopen(logUtf8.constData(), "a", stderr);
-#endif
-    // 尽快 flush，避免崩溃时丢失最后几行
-    //if (fout) std::setvbuf(stdout, nullptr, _IOLBF, 0);
-    //if (ferr) std::setvbuf(stderr, nullptr, _IONBF, 0);
-}
-
-} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -126,13 +87,9 @@ int main(int argc, char *argv[])
 
     const QString title = parser.value(titleOpt);
 
-    // 在调用 lvgl_simulator_run 之前把日志通道接好
-    //setupSimulatorLogging(scriptPath);
-    //std::fprintf(stdout, "[simulator] script=%s size=%dx%d title=%s\n",
-    //             scriptPath.toLocal8Bit().constData(),
-    //             width, height,
-    //             title.toLocal8Bit().constData());
-    //std::fflush(stdout);
+    // 不写入 simulator.log：仿真日志仅通过 stdout/stderr 交给组态软件界面显示。
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
 
     const QByteArray scriptUtf8 = QFile::encodeName(scriptPath);
     const QByteArray titleUtf8  = title.toUtf8();

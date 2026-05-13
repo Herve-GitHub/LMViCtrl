@@ -172,6 +172,14 @@ QJsonObject ProjectManager::toJson(const ProjectData &p)
     font["size"] = p.font.size;
     root["font"] = font;
 
+    QJsonObject dataClient;
+    dataClient["enabled"] = p.dataClient.enabled;
+    dataClient["server"] = p.dataClient.server;
+    dataClient["websocketPath"] = p.dataClient.websocketPath;
+    dataClient["token"] = p.dataClient.token;
+    dataClient["timeoutMs"] = p.dataClient.timeoutMs;
+    root["dataClient"] = dataClient;
+
     QJsonArray screens;
     for (const auto &s : p.screens) screens.append(screenToJson(s));
     root["screens"] = screens;
@@ -202,6 +210,17 @@ ProjectData ProjectManager::fromJson(const QJsonObject &o)
     const QJsonObject fo = o.value("font").toObject();
     p.font.file = fo.value("file").toString();
     p.font.size = fo.value("size").toInt(16);
+
+    const QJsonObject dc = o.value("dataClient").toObject();
+    p.dataClient.enabled = dc.value("enabled").toBool(false);
+    p.dataClient.server = dc.value("server").toString();
+    if (p.dataClient.server.isEmpty()) {
+        const QJsonObject gw = o.value("gateway").toObject();
+        p.dataClient.server = gw.value("hmiAddress").toString();
+    }
+    p.dataClient.websocketPath = dc.value("websocketPath").toString("/ws");
+    p.dataClient.token = dc.value("token").toString();
+    p.dataClient.timeoutMs = dc.value("timeoutMs").toInt(5000);
 
     const QJsonArray arr = o.value("screens").toArray();
     for (const auto &v : arr) p.screens.append(screenFromJson(v.toObject()));
@@ -351,6 +370,16 @@ QString ProjectManager::compileToLua(const ProjectData &p)
       << "file = " << luaQuote(p.font.file) << ", "
       << "size = " << p.font.size
       << " }\n\n";
+
+        s << "project.dataClient = { "
+            << "enabled = " << (p.dataClient.enabled ? "true" : "false") << ", "
+            << "server = " << luaQuote(p.dataClient.server) << ", "
+            << "websocketPath = " << luaQuote(p.dataClient.websocketPath.isEmpty()
+                                                                                        ? QStringLiteral("/ws")
+                                                                                        : p.dataClient.websocketPath) << ", "
+            << "token = " << luaQuote(p.dataClient.token) << ", "
+            << "timeoutMs = " << (p.dataClient.timeoutMs > 0 ? p.dataClient.timeoutMs : 5000)
+            << " }\n\n";
 
     s << "project.screens = {\n";
     for (const ScreenData &scr : p.screens) {

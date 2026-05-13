@@ -1,8 +1,4 @@
-﻿
-
-
-
-#include "lvgl_lua_bindings_internal.h"
+﻿#include "lvgl_lua_bindings_internal.h"
 #include <cJSON.h>
 #include <string.h>
 #include <time.h>

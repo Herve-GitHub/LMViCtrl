@@ -165,6 +165,15 @@ struct ProjectFont {
     int size = 16;
 };
 
+// 数据接口配置：仿真器和 HMI 共用同一套 Lua 数据客户端
+struct ProjectDataClient {
+    bool enabled = false;
+    QString server;          // HMI 网关地址，例如 "192.168.1.100:8080"
+    QString websocketPath = "/ws";
+    QString token;
+    int timeoutMs = 5000;
+};
+
 // 项目目标配置
 struct ProjectTarget {
     int width = 1024;// 分辨率
@@ -185,6 +194,7 @@ struct ProjectData {
     ProjectTarget target;//目标配置
     ProjectResources resources;//资源配置   
     ProjectFont font;//字体配置
+    ProjectDataClient dataClient;//数据接口配置
     QList<ScreenData> screens;//页面列表
 };
 
@@ -201,4 +211,5 @@ Q_DECLARE_METATYPE(ScreenData)
 Q_DECLARE_METATYPE(ProjectResources)
 Q_DECLARE_METATYPE(ProjectTarget)
 Q_DECLARE_METATYPE(ProjectFont)
+Q_DECLARE_METATYPE(ProjectDataClient)
 Q_DECLARE_METATYPE(ProjectData)

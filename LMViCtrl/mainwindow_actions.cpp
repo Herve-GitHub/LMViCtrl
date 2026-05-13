@@ -533,6 +533,7 @@ void MainWindow::setProjectOpen(bool open)
         if (!open) m_eventPanel->setCurrentScene(nullptr);
     }
     resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
+    resizeDocks({ m_logDock, m_eventPanel }, { 300, 700 }, Qt::Horizontal);
     // 若切回欢迎页，刷新最近工程列表
     if (!open && m_welcomeWidget)
         m_welcomeWidget->setRecentProjects(m_recentProjects);
