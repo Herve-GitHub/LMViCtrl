@@ -14,3 +14,5 @@
 *.sln
 *.slnx
 /LMViCtrl/LMViCtrl_resource.rc
+/SimuWebSocket/obj
+/SimuWebSocket/bin
