@@ -27,15 +27,15 @@ public:
     // 输出可在 LVGL+Lua 运行时加载的脚本字符串。
     static QString compileToLua(const ProjectData &project);
 
-    // 将 JSON 工程文件直接编译为同名 .lua 文件（写盘）
+    // 将工程文件直接编译为同名 .lua 文件（写盘）
     static bool compileFileToLua(const QString &jsonPath,
                                  const QString &luaPath,
                                  QString *errorMessage = nullptr);
 
     // ---- 工程目录布局 ----
     /**
-     * @brief 工程数据 JSON 文件名（位于工程目录内）
-     *        约定：<projectName>.qlvgl.json
+        * @brief 工程数据文件名（位于工程目录内）
+        *        约定：<projectName>.victrl
      */
     static QString projectJsonFileName(const QString &projectName);
 

@@ -46,10 +46,18 @@
 #include <QUuid>
 
 namespace {
+constexpr const char *kProjectFileSuffix = ".victrl";
 constexpr const char *kProjectFilter =
-    "LMViCtrl Project (*.qlvgl.json *.json *.qlproj)";
+    "LMViCtrl Project (*.victrl)";
 constexpr const char *kWidgetInstancesMimeType =
     "application/x-qtlvgl-LMViCtrl-widget-instances";
+
+QString ensureProjectFileSuffix(const QString &path)
+{
+    if (path.endsWith(QString::fromLatin1(kProjectFileSuffix), Qt::CaseInsensitive))
+        return path;
+    return path + QString::fromLatin1(kProjectFileSuffix);
+}
 
 QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
 {
@@ -745,18 +753,21 @@ void MainWindow::onSaveAs()
 {
     if (!m_projectOpen) return;
 
-    QString defaultName = m_project.name.isEmpty() ? QStringLiteral("project")
-                                                   : m_project.name;
+    const QString projectName = m_project.name.isEmpty() ? QStringLiteral("project")
+                                                         : m_project.name;
+    QString defaultName;
     if (!m_projectFilePath.isEmpty())
-        defaultName = m_projectFilePath;
+        defaultName = QFileInfo(m_projectFilePath).absoluteDir().absoluteFilePath(
+            ProjectManager::projectJsonFileName(projectName));
     else
-        defaultName = QDir::current().absoluteFilePath(defaultName + ".json");
+        defaultName = QDir::current().absoluteFilePath(
+            ProjectManager::projectJsonFileName(projectName));
 
     const QString path = QFileDialog::getSaveFileName(
         this, tr("另存为"), defaultName, tr(kProjectFilter));
     if (path.isEmpty()) return;
 
-    saveProjectToPath(path);
+    saveProjectToPath(ensureProjectFileSuffix(path));
 }
 
 void MainWindow::onExportZip() {}

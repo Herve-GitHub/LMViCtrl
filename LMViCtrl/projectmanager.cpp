@@ -461,7 +461,7 @@ bool ProjectManager::compileFileToLua(const QString &jsonPath,
 // ===========================================================================
 QString ProjectManager::projectJsonFileName(const QString &projectName)
 {
-    return projectName + QStringLiteral(".qlvgl.json");
+    return projectName + QStringLiteral(".victrl");
 }
 
 QString ProjectManager::projectLuaFileName(const QString &projectName)
