@@ -6,10 +6,12 @@
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
 #include <QGraphicsTextItem>
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -18,6 +20,7 @@
 #include <QShowEvent>
 #include <QStyleOptionGraphicsItem>
 #include <QVBoxLayout>
+#include <QUuid>
 
 namespace {
 constexpr qreal kNodeWidth = 240.0;
@@ -25,6 +28,7 @@ constexpr qreal kHeaderHeight = 34.0;
 constexpr qreal kPortRowHeight = 22.0;
 constexpr qreal kPortRadius = 5.0;
 constexpr qreal kNodePadding = 10.0;
+constexpr qreal kPortHitRadius = 14.0;
 
 QColor colorForNodeType(const QString &type)
 {
@@ -49,6 +53,20 @@ QString widgetNodeId(const QString &instanceId)
 QString dataNodeId(const QString &id)
 {
     return QStringLiteral("data:%1").arg(id);
+}
+
+bool isWildcardValueType(const QString &type)
+{
+    return type.isEmpty()
+        || type == QLatin1String("any")
+        || type == QLatin1String("event")
+        || type == QLatin1String("void");
+}
+
+bool valueTypesCompatible(const QString &sourceType, const QString &targetType)
+{
+    if (isWildcardValueType(sourceType) || isWildcardValueType(targetType)) return true;
+    return sourceType.compare(targetType, Qt::CaseInsensitive) == 0;
 }
 
 class BindingNodeItem : public QGraphicsRectItem
@@ -94,6 +112,62 @@ private:
     BindingGraphView *m_owner = nullptr;
     QString m_nodeId;
 };
+
+class PortItem : public QGraphicsEllipseItem
+{
+public:
+    PortItem(BindingGraphView *owner,
+             const QString &portKey,
+             bool output,
+             const QRectF &rect,
+             QGraphicsItem *parent = nullptr)
+        : QGraphicsEllipseItem(rect, parent)
+        , m_owner(owner)
+        , m_portKey(portKey)
+        , m_output(output)
+    {
+        setAcceptHoverEvents(true);
+        setAcceptedMouseButtons(output ? Qt::LeftButton : Qt::NoButton);
+        setCursor(output ? Qt::CrossCursor : Qt::ArrowCursor);
+        setZValue(4);
+    }
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        if (!m_output || event->button() != Qt::LeftButton || !m_owner) {
+            QGraphicsEllipseItem::mousePressEvent(event);
+            return;
+        }
+        m_owner->beginConnectionDrag(m_portKey, mapToScene(boundingRect().center()));
+        event->accept();
+    }
+
+    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        if (m_output && m_owner) {
+            m_owner->updateConnectionDrag(event->scenePos());
+            event->accept();
+            return;
+        }
+        QGraphicsEllipseItem::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        if (m_output && m_owner) {
+            m_owner->finishConnectionDrag(event->scenePos());
+            event->accept();
+            return;
+        }
+        QGraphicsEllipseItem::mouseReleaseEvent(event);
+    }
+
+private:
+    BindingGraphView *m_owner = nullptr;
+    QString m_portKey;
+    bool m_output = false;
+};
 }
 
 BindingGraphView::BindingGraphView(QWidget *parent)
@@ -117,6 +191,7 @@ void BindingGraphView::setWidgetMetas(const QList<WidgetMeta> &metas)
 void BindingGraphView::refreshGraph()
 {
     if (!m_scene) return;
+    cancelConnectionDrag();
     reconcileGraphNodes();
     rebuildScene();
     updateStatus();
@@ -161,6 +236,56 @@ void BindingGraphView::updateEdgesForNode(const QString &nodeId)
 {
     Q_UNUSED(nodeId)
     rebuildEdges();
+}
+
+void BindingGraphView::beginConnectionDrag(const QString &portKey, const QPointF &scenePos)
+{
+    if (!m_project || !m_ports.contains(portKey)) return;
+    const PortVisual source = m_ports.value(portKey);
+    if (!source.output) return;
+
+    cancelConnectionDrag();
+    m_dragSourceKey = portKey;
+    m_dragPathItem = new QGraphicsPathItem(connectionPath(scenePos, scenePos));
+    QPen pen(source.color.lighter(125), 2.0, Qt::DashLine);
+    pen.setCapStyle(Qt::RoundCap);
+    m_dragPathItem->setPen(pen);
+    m_dragPathItem->setZValue(30);
+    m_scene->addItem(m_dragPathItem);
+    updatePortHighlights();
+}
+
+void BindingGraphView::updateConnectionDrag(const QPointF &scenePos)
+{
+    if (m_dragSourceKey.isEmpty() || !m_dragPathItem) return;
+    PortVisual source = m_ports.value(m_dragSourceKey);
+    if (source.item)
+        source.scenePos = source.item->mapToScene(source.item->boundingRect().center());
+    m_dragPathItem->setPath(connectionPath(source.scenePos, scenePos));
+    updatePortHighlights(portAt(scenePos));
+}
+
+void BindingGraphView::finishConnectionDrag(const QPointF &scenePos)
+{
+    const QString sourceKey = m_dragSourceKey;
+    const QString targetKey = portAt(scenePos);
+    const bool created = createEdge(sourceKey, targetKey);
+    cancelConnectionDrag();
+    if (created) {
+        rebuildEdges();
+        updateStatus();
+    }
+}
+
+void BindingGraphView::cancelConnectionDrag()
+{
+    if (m_dragPathItem) {
+        m_scene->removeItem(m_dragPathItem);
+        delete m_dragPathItem;
+        m_dragPathItem = nullptr;
+    }
+    m_dragSourceKey.clear();
+    resetPortHighlights();
 }
 
 void BindingGraphView::showEvent(QShowEvent *event)
@@ -276,6 +401,8 @@ void BindingGraphView::rebuildScene()
     m_nodeItems.clear();
     m_ports.clear();
     m_edgeItems.clear();
+    m_dragPathItem = nullptr;
+    m_dragSourceKey.clear();
     if (!m_project) return;
 
     m_scene->setSceneRect(-600, -400, 2200, 1600);
@@ -334,26 +461,31 @@ void BindingGraphView::addWidgetNodePorts(const WidgetInstance &instance,
         for (const ActionDef &action : meta->actions)
             addPort(nodeItem, nodeId, QStringLiteral("action"), action.name,
                     action.label.isEmpty() ? action.name : action.label,
+                    action.valueType.isEmpty() ? QStringLiteral("any") : action.valueType,
                     false, (*leftRow)++, QColor(QStringLiteral("#27ae60")));
         for (const PropertyMeta &property : meta->properties) {
             if (!property.bindable) continue;
             addPort(nodeItem, nodeId, QStringLiteral("property"), property.name,
                     property.label.isEmpty() ? property.name : property.label,
+                    property.type.isEmpty() ? QStringLiteral("any") : property.type,
                     false, (*leftRow)++, QColor(QStringLiteral("#95a5a6")));
         }
         for (const EventDef &event : meta->eventDefs)
             addPort(nodeItem, nodeId, QStringLiteral("event"), event.name,
                     event.label.isEmpty() ? event.name : event.label,
+                    QStringLiteral("event"),
                     true, (*rightRow)++, QColor(QStringLiteral("#3498db")));
     }
 
     if (*leftRow == 0) {
         addPort(nodeItem, nodeId, QStringLiteral("action"), QStringLiteral("set_property"),
-                tr("设置属性"), false, (*leftRow)++, QColor(QStringLiteral("#27ae60")));
+                tr("设置属性"), QStringLiteral("any"),
+                false, (*leftRow)++, QColor(QStringLiteral("#27ae60")));
     }
     if (*rightRow == 0) {
         addPort(nodeItem, nodeId, QStringLiteral("event"), QStringLiteral("clicked"),
-                tr("点击"), true, (*rightRow)++, QColor(QStringLiteral("#3498db")));
+                tr("点击"), QStringLiteral("event"),
+                true, (*rightRow)++, QColor(QStringLiteral("#3498db")));
     }
 }
 
@@ -363,6 +495,7 @@ void BindingGraphView::addDataNodePorts(const DataVariable &variable,
                                         int *rightRow)
 {
     const QString nodeId = dataNodeId(variable.id);
+    const QString valueType = variable.type.isEmpty() ? QStringLiteral("any") : variable.type;
     QStringList setters;
     if (variable.type == QLatin1String("boolean"))
         setters = { QStringLiteral("set_true"), QStringLiteral("set_false"), QStringLiteral("toggle") };
@@ -375,7 +508,7 @@ void BindingGraphView::addDataNodePorts(const DataVariable &variable,
 
     for (const QString &setter : setters)
         addPort(nodeItem, nodeId, QStringLiteral("data_set"), setter, setter,
-                false, (*leftRow)++, QColor(QStringLiteral("#e67e22")));
+                valueType, false, (*leftRow)++, QColor(QStringLiteral("#e67e22")));
 
     QStringList events = { QStringLiteral("onChange") };
     if (variable.type == QLatin1String("number"))
@@ -387,7 +520,7 @@ void BindingGraphView::addDataNodePorts(const DataVariable &variable,
 
     for (const QString &event : events)
         addPort(nodeItem, nodeId, QStringLiteral("data_get"), event, event,
-                true, (*rightRow)++, QColor(QStringLiteral("#8e44ad")));
+                valueType, true, (*rightRow)++, QColor(QStringLiteral("#8e44ad")));
 }
 
 void BindingGraphView::addPort(QGraphicsItem *nodeItem,
@@ -395,13 +528,17 @@ void BindingGraphView::addPort(QGraphicsItem *nodeItem,
                                const QString &kind,
                                const QString &name,
                                const QString &label,
+                               const QString &valueType,
                                bool output,
                                int row,
                                const QColor &color)
 {
     const qreal y = kHeaderHeight + 28.0 + row * kPortRowHeight;
     const qreal x = output ? kNodeWidth - 14.0 : 14.0;
-    auto *dot = new QGraphicsEllipseItem(x - kPortRadius, y - kPortRadius, kPortRadius * 2.0, kPortRadius * 2.0, nodeItem);
+    const QString key = portKey(nodeId, kind, name);
+    auto *dot = new PortItem(this, key, output,
+                             QRectF(x - kPortRadius, y - kPortRadius, kPortRadius * 2.0, kPortRadius * 2.0),
+                             nodeItem);
     dot->setPen(QPen(color.lighter(130), 1));
     dot->setBrush(color);
     dot->setToolTip(QStringLiteral("%1.%2").arg(kind, name));
@@ -412,10 +549,14 @@ void BindingGraphView::addPort(QGraphicsItem *nodeItem,
     text->setPos(output ? kNodeWidth / 2.0 + 6.0 : 24.0, y - 12.0);
 
     PortVisual visual;
-    visual.key = portKey(nodeId, kind, name);
+    visual.key = key;
     visual.nodeId = nodeId;
     visual.portKind = kind;
     visual.portName = name;
+    visual.label = label;
+    visual.valueType = valueType;
+    visual.output = output;
+    visual.color = color;
     visual.scenePos = dot->mapToScene(dot->boundingRect().center());
     visual.item = dot;
     m_ports.insert(visual.key, visual);
@@ -442,20 +583,14 @@ void BindingGraphView::rebuildEdges()
         const PortVisual target = m_ports.value(portKey(edge.target));
         if (!source.item || !target.item) continue;
 
-        const QPointF a = source.scenePos;
-        const QPointF b = target.scenePos;
-        QPainterPath path(a);
-        const qreal dx = qMax<qreal>(80.0, qAbs(b.x() - a.x()) * 0.45);
-        path.cubicTo(a + QPointF(dx, 0), b - QPointF(dx, 0), b);
-
-        auto *item = new QGraphicsPathItem(path);
+        auto *item = new QGraphicsPathItem(connectionPath(source.scenePos, target.scenePos));
         QPen pen(colorForEdgeType(edge.type), edge.enabled ? 2.4 : 1.6);
         if (edge.type == QLatin1String("event_data")) pen.setStyle(Qt::DashLine);
         if (edge.type == QLatin1String("data_action")) pen.setStyle(Qt::DotLine);
         if (edge.type == QLatin1String("property_binding")) pen.setStyle(Qt::DashDotLine);
         if (!edge.enabled) pen.setColor(QColor(QStringLiteral("#686868")));
         item->setPen(pen);
-        item->setZValue(-10);
+        item->setZValue(3);
         item->setToolTip(edge.label.isEmpty()
             ? QStringLiteral("%1 -> %2").arg(edge.source.portName, edge.target.portName)
             : edge.label);
@@ -474,6 +609,178 @@ void BindingGraphView::updateStatus()
     m_statusLabel->setText(tr("节点 %1 · 连线 %2")
         .arg(m_project->bindingGraph.nodes.size())
         .arg(m_project->bindingGraph.edges.size()));
+}
+
+void BindingGraphView::updatePortHighlights(const QString &hoverKey)
+{
+    if (m_dragSourceKey.isEmpty() || !m_ports.contains(m_dragSourceKey)) {
+        resetPortHighlights();
+        return;
+    }
+
+    const PortVisual source = m_ports.value(m_dragSourceKey);
+    for (const PortVisual &port : std::as_const(m_ports)) {
+        if (port.key == source.key) {
+            setPortHighlighted(port, true, false);
+            continue;
+        }
+        if (port.output) {
+            setPortHighlighted(port, false, false);
+            continue;
+        }
+        const bool compatible = isCompatibleConnection(source, port);
+        setPortHighlighted(port, compatible, port.key == hoverKey);
+    }
+}
+
+void BindingGraphView::resetPortHighlights()
+{
+    for (const PortVisual &port : std::as_const(m_ports))
+        setPortHighlighted(port, false, false);
+}
+
+void BindingGraphView::setPortHighlighted(const PortVisual &port, bool compatible, bool hover)
+{
+    auto *ellipse = dynamic_cast<QGraphicsEllipseItem *>(port.item);
+    if (!ellipse) return;
+
+    if (hover && compatible) {
+        ellipse->setPen(QPen(QColor(QStringLiteral("#f1c40f")), 3.0));
+        ellipse->setBrush(QColor(QStringLiteral("#f1c40f")));
+    } else if (compatible) {
+        ellipse->setPen(QPen(port.color.lighter(170), 2.4));
+        ellipse->setBrush(port.color.lighter(130));
+    } else if (!port.output && !m_dragSourceKey.isEmpty()) {
+        ellipse->setPen(QPen(QColor(QStringLiteral("#555555")), 1.0));
+        ellipse->setBrush(QColor(QStringLiteral("#3a3a3a")));
+    } else {
+        ellipse->setPen(QPen(port.color.lighter(130), 1.0));
+        ellipse->setBrush(port.color);
+    }
+}
+
+QString BindingGraphView::portAt(const QPointF &scenePos) const
+{
+    QString bestKey;
+    qreal bestDistance = kPortHitRadius;
+    for (const PortVisual &port : m_ports) {
+        if (!port.item) continue;
+        const QPointF center = port.item->mapToScene(port.item->boundingRect().center());
+        const qreal distance = QLineF(center, scenePos).length();
+        if (distance <= bestDistance) {
+            bestDistance = distance;
+            bestKey = port.key;
+        }
+    }
+    return bestKey;
+}
+
+bool BindingGraphView::isCompatibleConnection(const PortVisual &source, const PortVisual &target) const
+{
+    if (source.key.isEmpty() || target.key.isEmpty()) return false;
+    if (source.key == target.key) return false;
+    if (!source.output || target.output) return false;
+
+    const bool sourceOk = source.portKind == QLatin1String("event")
+        || source.portKind == QLatin1String("data_get");
+    const bool targetOk = target.portKind == QLatin1String("action")
+        || target.portKind == QLatin1String("data_set")
+        || target.portKind == QLatin1String("property");
+    if (!sourceOk || !targetOk) return false;
+
+    if (source.portKind == QLatin1String("event"))
+        return true;
+    return valueTypesCompatible(source.valueType, target.valueType);
+}
+
+BindingEndpoint BindingGraphView::endpointFromPort(const PortVisual &port) const
+{
+    BindingEndpoint endpoint;
+    endpoint.nodeId = port.nodeId;
+    endpoint.portKind = port.portKind;
+    endpoint.portName = port.portName;
+    endpoint.valueType = port.valueType;
+
+    if (BindingNode *node = findNode(port.nodeId)) {
+        endpoint.nodeType = node->type;
+        endpoint.refId = node->refId;
+        endpoint.refName = node->refName;
+    }
+    return endpoint;
+}
+
+QString BindingGraphView::edgeTypeForPorts(const PortVisual &source, const PortVisual &target) const
+{
+    if (target.portKind == QLatin1String("property"))
+        return QStringLiteral("property_binding");
+    if (target.portKind == QLatin1String("data_set"))
+        return QStringLiteral("event_data");
+    if (source.portKind == QLatin1String("data_get"))
+        return QStringLiteral("data_action");
+    return QStringLiteral("event_action");
+}
+
+QString BindingGraphView::edgeLabelForPorts(const PortVisual &source, const PortVisual &target) const
+{
+    const BindingEndpoint sourceEndpoint = endpointFromPort(source);
+    const BindingEndpoint targetEndpoint = endpointFromPort(target);
+    const QString sourceName = sourceEndpoint.refName.isEmpty() ? source.nodeId : sourceEndpoint.refName;
+    const QString targetName = targetEndpoint.refName.isEmpty() ? target.nodeId : targetEndpoint.refName;
+    return QStringLiteral("%1.%2 -> %3.%4")
+        .arg(sourceName, source.portName, targetName, target.portName);
+}
+
+bool BindingGraphView::edgeExists(const QString &sourceKey, const QString &targetKey) const
+{
+    if (!m_project) return false;
+    for (const BindingEdge &edge : m_project->bindingGraph.edges) {
+        if (portKey(edge.source) == sourceKey && portKey(edge.target) == targetKey)
+            return true;
+    }
+    return false;
+}
+
+bool BindingGraphView::createEdge(const QString &sourceKey, const QString &targetKey)
+{
+    if (!m_project || sourceKey.isEmpty() || targetKey.isEmpty()) return false;
+    if (!m_ports.contains(sourceKey) || !m_ports.contains(targetKey)) return false;
+
+    const PortVisual source = m_ports.value(sourceKey);
+    const PortVisual target = m_ports.value(targetKey);
+    if (!isCompatibleConnection(source, target)) {
+        emit statusMessageRequested(tr("绑定失败：端口类型不兼容"));
+        return false;
+    }
+    if (edgeExists(sourceKey, targetKey)) {
+        emit statusMessageRequested(tr("绑定已存在"));
+        return false;
+    }
+
+    BindingEdge edge;
+    edge.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    edge.type = edgeTypeForPorts(source, target);
+    edge.source = endpointFromPort(source);
+    edge.target = endpointFromPort(target);
+    edge.label = edgeLabelForPorts(source, target);
+    edge.executionMode = QStringLiteral("sequence");
+    edge.order = 0;
+    for (const BindingEdge &existing : std::as_const(m_project->bindingGraph.edges)) {
+        if (portKey(existing.source) == sourceKey)
+            edge.order = qMax(edge.order, existing.order + 1);
+    }
+    edge.enabled = true;
+    m_project->bindingGraph.edges.append(edge);
+    emit graphChanged();
+    emit statusMessageRequested(tr("已创建绑定：%1").arg(edge.label));
+    return true;
+}
+
+QPainterPath BindingGraphView::connectionPath(const QPointF &source, const QPointF &target) const
+{
+    QPainterPath path(source);
+    const qreal dx = qMax<qreal>(80.0, qAbs(target.x() - source.x()) * 0.45);
+    path.cubicTo(source + QPointF(dx, 0), target - QPointF(dx, 0), target);
+    return path;
 }
 
 const WidgetMeta *BindingGraphView::findWidgetMeta(const QString &widgetId) const

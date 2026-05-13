@@ -1,14 +1,17 @@
 #pragma once
 
 #include <QHash>
+#include <QColor>
 #include <QWidget>
 
 #include "widgemeta.h"
 
 class QGraphicsItem;
+class QGraphicsPathItem;
 class QGraphicsScene;
 class QGraphicsView;
 class QLabel;
+class QPainterPath;
 
 class BindingGraphView : public QWidget
 {
@@ -26,6 +29,10 @@ public:
 
     void persistNodePosition(const QString &nodeId, const QPointF &pos);
     void updateEdgesForNode(const QString &nodeId);
+    void beginConnectionDrag(const QString &portKey, const QPointF &scenePos);
+    void updateConnectionDrag(const QPointF &scenePos);
+    void finishConnectionDrag(const QPointF &scenePos);
+    void cancelConnectionDrag();
 
 signals:
     void graphChanged();
@@ -40,6 +47,10 @@ private:
         QString nodeId;
         QString portKind;
         QString portName;
+        QString label;
+        QString valueType;
+        bool output = false;
+        QColor color;
         QPointF scenePos;
         QGraphicsItem *item = nullptr;
     };
@@ -61,11 +72,23 @@ private:
                  const QString &kind,
                  const QString &name,
                  const QString &label,
+                 const QString &valueType,
                  bool output,
                  int row,
                  const QColor &color);
     void rebuildEdges();
     void updateStatus();
+    void updatePortHighlights(const QString &hoverKey = QString());
+    void resetPortHighlights();
+    void setPortHighlighted(const PortVisual &port, bool compatible, bool hover);
+    QString portAt(const QPointF &scenePos) const;
+    bool isCompatibleConnection(const PortVisual &source, const PortVisual &target) const;
+    BindingEndpoint endpointFromPort(const PortVisual &port) const;
+    QString edgeTypeForPorts(const PortVisual &source, const PortVisual &target) const;
+    QString edgeLabelForPorts(const PortVisual &source, const PortVisual &target) const;
+    bool edgeExists(const QString &sourceKey, const QString &targetKey) const;
+    bool createEdge(const QString &sourceKey, const QString &targetKey);
+    QPainterPath connectionPath(const QPointF &source, const QPointF &target) const;
 
     const WidgetMeta *findWidgetMeta(const QString &widgetId) const;
     const WidgetInstance *findWidgetInstance(const QString &instanceId) const;
@@ -83,4 +106,6 @@ private:
     QHash<QString, QGraphicsItem *> m_nodeItems;
     QHash<QString, PortVisual> m_ports;
     QHash<QString, QGraphicsItem *> m_edgeItems;
+    QString m_dragSourceKey;
+    QGraphicsPathItem *m_dragPathItem = nullptr;
 };
