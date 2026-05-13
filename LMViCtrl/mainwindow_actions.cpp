@@ -210,6 +210,24 @@ QList<WidgetInstance> systemWidgetClipboard()
     return decodeWidgetClipboard(mime->data(QLatin1String(kWidgetInstancesMimeType)));
 }
 
+QVariant defaultValueForDataVariableType(const QString &type)
+{
+    if (type == QLatin1String("string")) return QString();
+    if (type == QLatin1String("boolean")) return false;
+    if (type == QLatin1String("list")) return QVariantList{};
+    return 0.0;
+}
+
+QString normalizedDataVariableName(const QString &name)
+{
+    QString normalized = name.trimmed();
+    if (normalized.isEmpty())
+        normalized = QStringLiteral("value");
+    if (!normalized.startsWith(QLatin1Char('$')))
+        normalized.prepend(QLatin1Char('$'));
+    return normalized;
+}
+
 // ------------------------------------------------------------
 // 图页 Undo 命令
 // ------------------------------------------------------------
@@ -259,6 +277,51 @@ private:
     QString     m_id;
     ScreenData  m_data;
     int         m_order   = 0;
+};
+
+class AddDataVariableCommand : public QUndoCommand
+{
+public:
+    AddDataVariableCommand(MainWindow *mw, const DataVariable &variable, int order)
+        : QUndoCommand(QObject::tr("新增数据变量 %1").arg(variable.name))
+        , m_mw(mw)
+        , m_variable(variable)
+        , m_order(order)
+    {}
+
+    void redo() override { m_mw->cmdAddDataVariable(m_variable, m_order); }
+    void undo() override { m_mw->cmdRemoveDataVariable(m_variable.id); }
+
+private:
+    MainWindow *m_mw;
+    DataVariable m_variable;
+    int m_order = 0;
+};
+
+class RemoveDataVariableCommand : public QUndoCommand
+{
+public:
+    RemoveDataVariableCommand(MainWindow *mw, const QString &id)
+        : QUndoCommand(QObject::tr("删除数据变量"))
+        , m_mw(mw)
+        , m_id(id)
+    {}
+
+    void redo() override
+    {
+        m_variable = m_mw->snapshotDataVariable(m_id);
+        m_order = m_mw->dataVariableOrder(m_id);
+        setText(QObject::tr("删除数据变量 %1").arg(m_variable.name));
+        m_mw->cmdRemoveDataVariable(m_id);
+    }
+
+    void undo() override { m_mw->cmdAddDataVariable(m_variable, m_order); }
+
+private:
+    MainWindow *m_mw;
+    QString m_id;
+    DataVariable m_variable;
+    int m_order = 0;
 };
 }  // namespace
 
@@ -1794,6 +1857,37 @@ void MainWindow::onScreenDeleteRequested(const QString &screenId)
     m_projectUndoStack->push(new RemoveScreenCommand(this, screenId));
 }
 
+void MainWindow::onDataVariableAddRequested(const QString &name, const QString &type)
+{
+    if (!m_projectUndoStack) return;
+
+    QSet<QString> used;
+    for (const DataVariable &variable : std::as_const(m_project.dataVariables))
+        used.insert(variable.name);
+
+    const QString baseName = normalizedDataVariableName(name);
+    QString candidate = baseName;
+    int suffix = 2;
+    while (used.contains(candidate))
+        candidate = QStringLiteral("%1_%2").arg(baseName).arg(suffix++);
+
+    DataVariable variable;
+    variable.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    variable.name = candidate;
+    variable.type = type.isEmpty() ? QStringLiteral("number") : type;
+    variable.value = defaultValueForDataVariableType(variable.type);
+    variable.defaultValue = variable.value;
+    variable.description = tr("项目级数据变量");
+
+    m_projectUndoStack->push(new AddDataVariableCommand(this, variable, m_project.dataVariables.size()));
+}
+
+void MainWindow::onDataVariableRemoveRequested(const QString &id)
+{
+    if (!m_projectUndoStack || id.isEmpty()) return;
+    m_projectUndoStack->push(new RemoveDataVariableCommand(this, id));
+}
+
 void MainWindow::cmdAddScreen(const ScreenData &screen, int order)
 {
     const int insertIdx = qBound(0, order, m_project.screens.size());
@@ -1835,6 +1929,50 @@ ScreenData MainWindow::snapshotScreen(const QString &screenId) const
         return copy;
     }
     return ScreenData{};
+}
+
+void MainWindow::cmdAddDataVariable(const DataVariable &variable, int order)
+{
+    for (const DataVariable &existing : std::as_const(m_project.dataVariables)) {
+        if (existing.id == variable.id)
+            return;
+    }
+    const int insertIdx = qBound(0, order, m_project.dataVariables.size());
+    m_project.dataVariables.insert(insertIdx, variable);
+    m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    if (m_projectTree)
+        m_projectTree->setProjectData(&m_project);
+}
+
+void MainWindow::cmdRemoveDataVariable(const QString &id)
+{
+    for (int i = 0; i < m_project.dataVariables.size(); ++i) {
+        if (m_project.dataVariables[i].id == id) {
+            m_project.dataVariables.removeAt(i);
+            break;
+        }
+    }
+    m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    if (m_projectTree)
+        m_projectTree->setProjectData(&m_project);
+}
+
+DataVariable MainWindow::snapshotDataVariable(const QString &id) const
+{
+    for (const DataVariable &variable : m_project.dataVariables) {
+        if (variable.id == id)
+            return variable;
+    }
+    return DataVariable{};
+}
+
+int MainWindow::dataVariableOrder(const QString &id) const
+{
+    for (int i = 0; i < m_project.dataVariables.size(); ++i) {
+        if (m_project.dataVariables[i].id == id)
+            return i;
+    }
+    return m_project.dataVariables.size();
 }
 
 // ============================================================

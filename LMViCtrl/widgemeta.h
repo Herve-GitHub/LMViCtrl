@@ -190,6 +190,19 @@ struct ProjectDataClient {
     int timeoutMs = 5000;
 };
 
+// 项目级数据变量节点（DataNode）
+struct DataVariable {
+    QString id;
+    QString name;        // 建议以 $ 开头，如 $speed
+    QString type = QStringLiteral("number"); // number/string/boolean/list
+    QVariant value;
+    QVariant defaultValue;
+    double min = 0;
+    double max = 100;
+    double limit = 0;
+    QString description;
+};
+
 // 项目目标配置
 struct ProjectTarget {
     int width = 1024;// 分辨率
@@ -211,6 +224,7 @@ struct ProjectData {
     ProjectResources resources;//资源配置   
     ProjectFont font;//字体配置
     ProjectDataClient dataClient;//数据接口配置
+    QList<DataVariable> dataVariables;//项目级数据变量节点
     QList<ScreenData> screens;//页面列表
 };
 
@@ -229,4 +243,5 @@ Q_DECLARE_METATYPE(ProjectResources)
 Q_DECLARE_METATYPE(ProjectTarget)
 Q_DECLARE_METATYPE(ProjectFont)
 Q_DECLARE_METATYPE(ProjectDataClient)
+Q_DECLARE_METATYPE(DataVariable)
 Q_DECLARE_METATYPE(ProjectData)

@@ -255,6 +255,8 @@ private slots:
     void onScreensChanged(const QList<ScreenData> &screens);
     void onTabCloseRequested(int index);
     void onOpenRecentProject(const QString &path);
+    void onDataVariableAddRequested(const QString &name, const QString &type);
+    void onDataVariableRemoveRequested(const QString &id);
     // 来自 ScreenManagerDock 的新增/删除请求（走 Undo 命令）
     void onScreenAddRequested(const QString &name);
     void onScreenDeleteRequested(const QString &screenId);
@@ -263,7 +265,11 @@ public:
     // ===== 供 Undo 命令调用的内部接口（不要在其他地方直接调用） =====
     void cmdAddScreen(const ScreenData &screen, int order);
     void cmdRemoveScreen(const QString &screenId);
+    void cmdAddDataVariable(const DataVariable &variable, int order);
+    void cmdRemoveDataVariable(const QString &id);
     ScreenData snapshotScreen(const QString &screenId) const;
+    DataVariable snapshotDataVariable(const QString &id) const;
+    int dataVariableOrder(const QString &id) const;
 
 private:
     Ui::MainWindow    *ui;

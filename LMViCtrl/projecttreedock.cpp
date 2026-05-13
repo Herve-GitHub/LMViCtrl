@@ -5,7 +5,10 @@
 #include <QAbstractItemView>
 #include <QGraphicsScene>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -13,6 +16,13 @@
 
 namespace {
 constexpr int kInstanceIdRole = Qt::UserRole + 1;
+constexpr int kNodeTypeRole = Qt::UserRole + 2;
+constexpr int kVariableIdRole = Qt::UserRole + 3;
+
+constexpr const char *kNodeScreen = "screen";
+constexpr const char *kNodeWidget = "widget";
+constexpr const char *kNodeVariablesRoot = "variablesRoot";
+constexpr const char *kNodeVariable = "variable";
 }
 
 ProjectTreeDock::ProjectTreeDock(QWidget *parent)
@@ -37,6 +47,7 @@ void ProjectTreeDock::buildUi()
     m_tree->setRootIsDecorated(true);
     m_tree->setUniformRowHeights(true);
     m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setStyleSheet(QStringLiteral(
         "QTreeWidget { background: #2b2b2b; color: #d8d8d8; border: 1px solid #3a3a3a; }"
         "QTreeWidget::item { padding: 3px 4px; }"
@@ -46,6 +57,8 @@ void ProjectTreeDock::buildUi()
         m_tree->header()->setSectionResizeMode(QHeaderView::Stretch);
     connect(m_tree, &QTreeWidget::itemSelectionChanged,
             this, &ProjectTreeDock::onCurrentTreeItemChanged);
+    connect(m_tree, &QTreeWidget::customContextMenuRequested,
+            this, &ProjectTreeDock::showContextMenu);
     layout->addWidget(m_tree, 1);
 
     m_countLabel = new QLabel(container);
@@ -60,6 +73,12 @@ void ProjectTreeDock::buildUi()
 void ProjectTreeDock::setCurrentScene(CanvasScene *scene)
 {
     setCurrentScene(scene, QString());
+}
+
+void ProjectTreeDock::setProjectData(const ProjectData *project)
+{
+    m_project = project;
+    refreshTree();
 }
 
 void ProjectTreeDock::setCurrentScene(CanvasScene *scene, const QString &screenName)
@@ -110,6 +129,7 @@ void ProjectTreeDock::refreshTree()
             : m_screenName.trimmed();
         auto *root = new QTreeWidgetItem(m_tree);
         root->setText(0, rootName);
+        root->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeScreen));
 
         const QList<WidgetInstance> instances = m_scene->instancesSortedByZ();
         for (const WidgetInstance &inst : instances) {
@@ -120,6 +140,7 @@ void ProjectTreeDock::refreshTree()
                 : inst.name.trimmed();
             auto *item = new QTreeWidgetItem(root);
             item->setText(0, displayName);
+            item->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeWidget));
             item->setData(0, kInstanceIdRole, inst.instanceId);
             item->setToolTip(0, displayName);
             if (inst.instanceId == selectedId)
@@ -129,14 +150,76 @@ void ProjectTreeDock::refreshTree()
         root->setExpanded(true);
     }
 
+    const QList<DataVariable> variables = m_project ? m_project->dataVariables : QList<DataVariable>{};
+    auto *variablesRoot = new QTreeWidgetItem(m_tree);
+    variablesRoot->setText(0, tr("数据变量"));
+    variablesRoot->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeVariablesRoot));
+    for (const DataVariable &variable : variables) {
+        const QString type = variable.type.isEmpty() ? QStringLiteral("number") : variable.type;
+        const QString label = QStringLiteral("%1  <%2>").arg(variable.name, type);
+        auto *item = new QTreeWidgetItem(variablesRoot);
+        item->setText(0, label);
+        item->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeVariable));
+        item->setData(0, kVariableIdRole, variable.id);
+        item->setToolTip(0, variable.description.isEmpty() ? label : variable.description);
+    }
+    variablesRoot->setExpanded(true);
+
     m_updatingTree = false;
 
     if (m_countLabel) {
         if (m_scene)
-            m_countLabel->setText(tr("%1 个元素").arg(count));
+            m_countLabel->setText(tr("%1 个元素 / %2 个变量").arg(count).arg(variables.size()));
         else
             m_countLabel->setText(tr("未激活图页"));
     }
+}
+
+void ProjectTreeDock::showContextMenu(const QPoint &pos)
+{
+    if (!m_tree) return;
+    QTreeWidgetItem *item = m_tree->itemAt(pos);
+    const QString nodeType = item ? item->data(0, kNodeTypeRole).toString() : QString();
+
+    QMenu menu(this);
+    QAction *addVariable = nullptr;
+    QAction *removeVariable = nullptr;
+    if (!item || nodeType == QLatin1String(kNodeVariablesRoot) || nodeType == QLatin1String(kNodeVariable))
+        addVariable = menu.addAction(tr("新增数据变量"));
+    if (nodeType == QLatin1String(kNodeVariable))
+        removeVariable = menu.addAction(tr("删除数据变量"));
+
+    if (menu.actions().isEmpty()) return;
+    QAction *chosen = menu.exec(m_tree->viewport()->mapToGlobal(pos));
+    if (!chosen) return;
+    if (chosen == addVariable)
+        requestAddDataVariable();
+    else if (chosen == removeVariable)
+        requestRemoveDataVariable(item);
+}
+
+void ProjectTreeDock::requestAddDataVariable()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("新增数据变量"),
+                                               tr("变量名"), QLineEdit::Normal,
+                                               QStringLiteral("$value"), &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
+
+    const QStringList types { QStringLiteral("number"), QStringLiteral("string"), QStringLiteral("boolean"), QStringLiteral("list") };
+    const QString type = QInputDialog::getItem(this, tr("变量类型"), tr("类型"),
+                                               types, 0, false, &ok);
+    if (!ok || type.isEmpty()) return;
+
+    emit addDataVariableRequested(name, type);
+}
+
+void ProjectTreeDock::requestRemoveDataVariable(QTreeWidgetItem *item)
+{
+    if (!item) return;
+    const QString id = item->data(0, kVariableIdRole).toString();
+    if (!id.isEmpty())
+        emit removeDataVariableRequested(id);
 }
 
 

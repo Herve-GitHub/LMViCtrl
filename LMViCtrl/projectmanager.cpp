@@ -95,6 +95,38 @@ QList<WidgetEventBinding> eventBindingsFromJson(const QJsonObject &events)
     return bindings;
 }
 
+QJsonObject dataVariableToJson(const DataVariable &variable)
+{
+    QJsonObject o;
+    o["id"] = variable.id;
+    o["name"] = variable.name;
+    o["type"] = variable.type;
+    o["value"] = QJsonValue::fromVariant(variable.value);
+    o["defaultValue"] = QJsonValue::fromVariant(variable.defaultValue);
+    o["min"] = variable.min;
+    o["max"] = variable.max;
+    o["limit"] = variable.limit;
+    o["description"] = variable.description;
+    return o;
+}
+
+DataVariable dataVariableFromJson(const QJsonObject &o)
+{
+    DataVariable variable;
+    variable.id = o.value("id").toString();
+    variable.name = o.value("name").toString();
+    variable.type = o.value("type").toString("number");
+    variable.value = o.value("value").toVariant();
+    variable.defaultValue = o.value("defaultValue").toVariant();
+    variable.min = o.value("min").toDouble(0);
+    variable.max = o.value("max").toDouble(100);
+    variable.limit = o.value("limit").toDouble(0);
+    variable.description = o.value("description").toString();
+    if (!variable.defaultValue.isValid())
+        variable.defaultValue = variable.value;
+    return variable;
+}
+
 } // namespace
 
 QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
@@ -198,6 +230,11 @@ QJsonObject ProjectManager::toJson(const ProjectData &p)
     dataClient["timeoutMs"] = p.dataClient.timeoutMs;
     root["dataClient"] = dataClient;
 
+    QJsonArray dataVariables;
+    for (const DataVariable &variable : p.dataVariables)
+        dataVariables.append(dataVariableToJson(variable));
+    root["dataVariables"] = dataVariables;
+
     QJsonArray screens;
     for (const auto &s : p.screens) screens.append(screenToJson(s));
     root["screens"] = screens;
@@ -239,6 +276,14 @@ ProjectData ProjectManager::fromJson(const QJsonObject &o)
     p.dataClient.websocketPath = dc.value("websocketPath").toString("/ws");
     p.dataClient.token = dc.value("token").toString();
     p.dataClient.timeoutMs = dc.value("timeoutMs").toInt(5000);
+
+    const QJsonArray variables = o.value("dataVariables").toArray();
+    for (const QJsonValue &value : variables) {
+        if (!value.isObject()) continue;
+        DataVariable variable = dataVariableFromJson(value.toObject());
+        if (!variable.name.isEmpty())
+            p.dataVariables.append(variable);
+    }
 
     const QJsonArray arr = o.value("screens").toArray();
     for (const auto &v : arr) p.screens.append(screenFromJson(v.toObject()));
@@ -297,8 +342,26 @@ static QString luaQuote(const QString &s)
     return '"' + r + '"';
 }
 
+static QString variantMapToLua(const QVariantMap &map);
+
 static QString variantToLua(const QVariant &v)
 {
+    if (v.typeId() == QMetaType::QVariantList || v.typeId() == QMetaType::QStringList) {
+        QString out = QStringLiteral("{");
+        bool first = true;
+        const QVariantList list = v.toList();
+        for (const QVariant &item : list) {
+            if (!first) out += QStringLiteral(",");
+            out += QStringLiteral(" ") + variantToLua(item);
+            first = false;
+        }
+        if (!list.isEmpty()) out += QStringLiteral(" ");
+        out += QStringLiteral("}");
+        return out;
+    }
+    if (v.typeId() == QMetaType::QVariantMap)
+        return variantMapToLua(v.toMap());
+
     switch (v.typeId()) {
     case QMetaType::Bool:    return v.toBool() ? "true" : "false";
     case QMetaType::Int:
@@ -326,6 +389,31 @@ static QString variantMapToLua(const QVariantMap &map)
         first = false;
     }
     out += QStringLiteral(" }");
+    return out;
+}
+
+static QString dataVariablesToLua(const QList<DataVariable> &variables, int indent)
+{
+    if (variables.isEmpty()) return QStringLiteral("{}");
+    const QString pad(indent, QLatin1Char(' '));
+    const QString childPad(indent + 2, QLatin1Char(' '));
+    QString out = QStringLiteral("{\n");
+    QTextStream s(&out);
+    for (const DataVariable &variable : variables) {
+        if (variable.name.isEmpty()) continue;
+        s << childPad << "{\n";
+        s << childPad << "  id = " << luaQuote(variable.id) << ",\n";
+        s << childPad << "  name = " << luaQuote(variable.name) << ",\n";
+        s << childPad << "  type = " << luaQuote(variable.type.isEmpty() ? QStringLiteral("number") : variable.type) << ",\n";
+        s << childPad << "  value = " << variantToLua(variable.value) << ",\n";
+        s << childPad << "  defaultValue = " << variantToLua(variable.defaultValue) << ",\n";
+        s << childPad << "  min = " << QString::number(variable.min, 'g', 12) << ",\n";
+        s << childPad << "  max = " << QString::number(variable.max, 'g', 12) << ",\n";
+        s << childPad << "  limit = " << QString::number(variable.limit, 'g', 12) << ",\n";
+        s << childPad << "  description = " << luaQuote(variable.description) << ",\n";
+        s << childPad << "},\n";
+    }
+    s << pad << "}";
     return out;
 }
 
@@ -401,11 +489,13 @@ QString ProjectManager::compileToLua(const ProjectData &p)
             << "enabled = " << (p.dataClient.enabled ? "true" : "false") << ", "
             << "server = " << luaQuote(p.dataClient.server) << ", "
             << "websocketPath = " << luaQuote(p.dataClient.websocketPath.isEmpty()
-                                                                                        ? QStringLiteral("/ws")
-                                                                                        : p.dataClient.websocketPath) << ", "
+                                                                                                        ? QStringLiteral("/ws")
+                                                                                                        : p.dataClient.websocketPath) << ", "
             << "token = " << luaQuote(p.dataClient.token) << ", "
             << "timeoutMs = " << (p.dataClient.timeoutMs > 0 ? p.dataClient.timeoutMs : 5000)
             << " }\n\n";
+
+        s << "project.dataVariables = " << dataVariablesToLua(p.dataVariables, 0) << "\n\n";
 
     s << "project.screens = {\n";
     for (const ScreenData &scr : p.screens) {

@@ -49,6 +49,7 @@ MainWindow::MainWindow(QWidget* parent)
 	addDockWidget(Qt::LeftDockWidgetArea, m_widgetToolbox);
 	splitDockWidget(m_screenManager, m_widgetToolbox, Qt::Vertical);
 	m_projectTree = new ProjectTreeDock(this);
+	m_projectTree->setProjectData(&m_project);
 	addDockWidget(Qt::LeftDockWidgetArea, m_projectTree);
 	tabifyDockWidget(m_widgetToolbox, m_projectTree);
 	setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
@@ -64,6 +65,10 @@ MainWindow::MainWindow(QWidget* parent)
 		this, &MainWindow::onScreenAddRequested);
 	connect(m_screenManager, &ScreenManagerDock::deleteScreenRequested,
 		this, &MainWindow::onScreenDeleteRequested);
+	connect(m_projectTree, &ProjectTreeDock::addDataVariableRequested,
+		this, &MainWindow::onDataVariableAddRequested);
+	connect(m_projectTree, &ProjectTreeDock::removeDataVariableRequested,
+		this, &MainWindow::onDataVariableRemoveRequested);
 
 	// 多图页 TabWidget
 	m_tabWidget = new QTabWidget;
