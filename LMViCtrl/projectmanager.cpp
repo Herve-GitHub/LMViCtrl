@@ -129,6 +129,128 @@ DataVariable dataVariableFromJson(const QJsonObject &o)
     return variable;
 }
 
+QJsonObject bindingEndpointToJson(const BindingEndpoint &endpoint)
+{
+    QJsonObject o;
+    o["nodeId"] = endpoint.nodeId;
+    o["nodeType"] = endpoint.nodeType;
+    o["refId"] = endpoint.refId;
+    o["refName"] = endpoint.refName;
+    o["portKind"] = endpoint.portKind;
+    o["portName"] = endpoint.portName;
+    o["valueType"] = endpoint.valueType;
+    return o;
+}
+
+BindingEndpoint bindingEndpointFromJson(const QJsonObject &o)
+{
+    BindingEndpoint endpoint;
+    endpoint.nodeId = o.value("nodeId").toString();
+    endpoint.nodeType = o.value("nodeType").toString();
+    endpoint.refId = o.value("refId").toString();
+    endpoint.refName = o.value("refName").toString();
+    endpoint.portKind = o.value("portKind").toString();
+    endpoint.portName = o.value("portName").toString();
+    endpoint.valueType = o.value("valueType").toString();
+    return endpoint;
+}
+
+QJsonObject bindingNodeToJson(const BindingNode &node)
+{
+    QJsonObject o;
+    o["id"] = node.id;
+    o["type"] = node.type;
+    o["refId"] = node.refId;
+    o["refName"] = node.refName;
+    o["title"] = node.title;
+    o["x"] = node.x;
+    o["y"] = node.y;
+    o["collapsed"] = node.collapsed;
+    o["visualState"] = QJsonObject::fromVariantMap(node.visualState);
+    return o;
+}
+
+BindingNode bindingNodeFromJson(const QJsonObject &o)
+{
+    BindingNode node;
+    node.id = o.value("id").toString();
+    node.type = o.value("type").toString();
+    node.refId = o.value("refId").toString();
+    node.refName = o.value("refName").toString();
+    node.title = o.value("title").toString();
+    node.x = o.value("x").toInt(0);
+    node.y = o.value("y").toInt(0);
+    node.collapsed = o.value("collapsed").toBool(false);
+    node.visualState = o.value("visualState").toObject().toVariantMap();
+    return node;
+}
+
+QJsonObject bindingEdgeToJson(const BindingEdge &edge)
+{
+    QJsonObject o;
+    o["id"] = edge.id;
+    o["type"] = edge.type;
+    o["source"] = bindingEndpointToJson(edge.source);
+    o["target"] = bindingEndpointToJson(edge.target);
+    o["label"] = edge.label;
+    o["executionMode"] = edge.executionMode;
+    o["order"] = edge.order;
+    o["condition"] = edge.condition;
+    o["delayMs"] = edge.delayMs;
+    o["enabled"] = edge.enabled;
+    o["params"] = QJsonObject::fromVariantMap(edge.params);
+    return o;
+}
+
+BindingEdge bindingEdgeFromJson(const QJsonObject &o)
+{
+    BindingEdge edge;
+    edge.id = o.value("id").toString();
+    edge.type = o.value("type").toString();
+    edge.source = bindingEndpointFromJson(o.value("source").toObject());
+    edge.target = bindingEndpointFromJson(o.value("target").toObject());
+    edge.label = o.value("label").toString();
+    edge.executionMode = o.value("executionMode").toString("sequence");
+    edge.order = o.value("order").toInt(0);
+    edge.condition = o.value("condition").toString();
+    edge.delayMs = o.value("delayMs").toInt(0);
+    edge.enabled = o.value("enabled").toBool(true);
+    edge.params = o.value("params").toObject().toVariantMap();
+    return edge;
+}
+
+QJsonObject bindingGraphToJson(const BindingGraph &graph)
+{
+    QJsonObject o;
+    o["schemaVersion"] = graph.schemaVersion;
+    QJsonArray nodes;
+    for (const BindingNode &node : graph.nodes)
+        nodes.append(bindingNodeToJson(node));
+    o["nodes"] = nodes;
+    QJsonArray edges;
+    for (const BindingEdge &edge : graph.edges)
+        edges.append(bindingEdgeToJson(edge));
+    o["edges"] = edges;
+    return o;
+}
+
+BindingGraph bindingGraphFromJson(const QJsonObject &o)
+{
+    BindingGraph graph;
+    graph.schemaVersion = o.value("schemaVersion").toString("1.0");
+    const QJsonArray nodes = o.value("nodes").toArray();
+    for (const QJsonValue &value : nodes) {
+        if (value.isObject())
+            graph.nodes.append(bindingNodeFromJson(value.toObject()));
+    }
+    const QJsonArray edges = o.value("edges").toArray();
+    for (const QJsonValue &value : edges) {
+        if (value.isObject())
+            graph.edges.append(bindingEdgeFromJson(value.toObject()));
+    }
+    return graph;
+}
+
 } // namespace
 
 QJsonObject ProjectManager::instanceToJson(const WidgetInstance &inst)
@@ -237,6 +359,8 @@ QJsonObject ProjectManager::toJson(const ProjectData &p)
         dataVariables.append(dataVariableToJson(variable));
     root["dataVariables"] = dataVariables;
 
+    root["bindingGraph"] = bindingGraphToJson(p.bindingGraph);
+
     QJsonArray screens;
     for (const auto &s : p.screens) screens.append(screenToJson(s));
     root["screens"] = screens;
@@ -286,6 +410,9 @@ ProjectData ProjectManager::fromJson(const QJsonObject &o)
         if (!variable.name.isEmpty())
             p.dataVariables.append(variable);
     }
+
+    if (o.value("bindingGraph").isObject())
+        p.bindingGraph = bindingGraphFromJson(o.value("bindingGraph").toObject());
 
     const QJsonArray arr = o.value("screens").toArray();
     for (const auto &v : arr) p.screens.append(screenFromJson(v.toObject()));
@@ -421,6 +548,67 @@ static QString dataVariablesToLua(const QList<DataVariable> &variables, int inde
     return out;
 }
 
+static QString bindingEndpointToLua(const BindingEndpoint &endpoint, int indent)
+{
+    const QString pad(indent, QLatin1Char(' '));
+    QString out = QStringLiteral("{\n");
+    QTextStream s(&out);
+    s << pad << "  nodeId = " << luaQuote(endpoint.nodeId) << ",\n";
+    s << pad << "  nodeType = " << luaQuote(endpoint.nodeType) << ",\n";
+    s << pad << "  refId = " << luaQuote(endpoint.refId) << ",\n";
+    s << pad << "  refName = " << luaQuote(endpoint.refName) << ",\n";
+    s << pad << "  portKind = " << luaQuote(endpoint.portKind) << ",\n";
+    s << pad << "  portName = " << luaQuote(endpoint.portName) << ",\n";
+    s << pad << "  valueType = " << luaQuote(endpoint.valueType) << ",\n";
+    s << pad << "}";
+    return out;
+}
+
+static QString bindingGraphToLua(const BindingGraph &graph, int indent)
+{
+    const QString pad(indent, QLatin1Char(' '));
+    const QString childPad(indent + 2, QLatin1Char(' '));
+    QString out = QStringLiteral("{\n");
+    QTextStream s(&out);
+    s << childPad << "schemaVersion = " << luaQuote(graph.schemaVersion) << ",\n";
+    s << childPad << "nodes = {\n";
+    for (const BindingNode &node : graph.nodes) {
+        if (node.id.isEmpty()) continue;
+        s << childPad << "  {\n";
+        s << childPad << "    id = " << luaQuote(node.id) << ",\n";
+        s << childPad << "    type = " << luaQuote(node.type) << ",\n";
+        s << childPad << "    refId = " << luaQuote(node.refId) << ",\n";
+        s << childPad << "    refName = " << luaQuote(node.refName) << ",\n";
+        s << childPad << "    title = " << luaQuote(node.title) << ",\n";
+        s << childPad << "    x = " << node.x << ",\n";
+        s << childPad << "    y = " << node.y << ",\n";
+        s << childPad << "    collapsed = " << (node.collapsed ? "true" : "false") << ",\n";
+        s << childPad << "    visualState = " << variantMapToLua(node.visualState) << ",\n";
+        s << childPad << "  },\n";
+    }
+    s << childPad << "},\n";
+    s << childPad << "edges = {\n";
+    for (const BindingEdge &edge : graph.edges) {
+        if (edge.id.isEmpty()) continue;
+        s << childPad << "  {\n";
+        s << childPad << "    id = " << luaQuote(edge.id) << ",\n";
+        s << childPad << "    type = " << luaQuote(edge.type) << ",\n";
+        s << childPad << "    source = " << bindingEndpointToLua(edge.source, indent + 4) << ",\n";
+        s << childPad << "    target = " << bindingEndpointToLua(edge.target, indent + 4) << ",\n";
+        s << childPad << "    label = " << luaQuote(edge.label) << ",\n";
+        s << childPad << "    executionMode = " << luaQuote(edge.executionMode.isEmpty() ? QStringLiteral("sequence") : edge.executionMode) << ",\n";
+        s << childPad << "    order = " << edge.order << ",\n";
+        s << childPad << "    condition = " << luaQuote(edge.condition) << ",\n";
+        s << childPad << "    delayMs = " << qMax(0, edge.delayMs) << ",\n";
+        s << childPad << "    enabled = " << (edge.enabled ? "true" : "false") << ",\n";
+        s << childPad << "    params = " << variantMapToLua(edge.params) << ",\n";
+        s << childPad << "  },\n";
+    }
+    s << childPad << "},\n";
+    s << pad << "}";
+    return out;
+}
+
 static QString eventBindingsToLua(const QList<WidgetEventBinding> &bindings, int indent)
 {
     if (bindings.isEmpty()) return QStringLiteral("{}");
@@ -500,6 +688,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
             << " }\n\n";
 
         s << "project.dataVariables = " << dataVariablesToLua(p.dataVariables, 0) << "\n\n";
+        s << "project.bindingGraph = " << bindingGraphToLua(p.bindingGraph, 0) << "\n\n";
 
     s << "project.screens = {\n";
     for (const ScreenData &scr : p.screens) {

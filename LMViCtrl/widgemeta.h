@@ -204,6 +204,51 @@ struct DataVariable {
     QList<WidgetEventBinding> eventBindings;
 };
 
+// 绑定图端点：描述某个节点上的事件、动作、属性或数据槽
+struct BindingEndpoint {
+    QString nodeId;
+    QString nodeType;     // widget / data / screen / project
+    QString refId;        // widget instanceId / data variable id / screen id
+    QString refName;      // widget name / $variable / screen name
+    QString portKind;     // event / action / property / data_get / data_set
+    QString portName;     // clicked / setText / value / onChange ...
+    QString valueType;    // string / number / boolean / list / any / void
+};
+
+// 绑定图节点：绑定模式画布中的可视节点
+struct BindingNode {
+    QString id;
+    QString type;         // widget / data / screen / project
+    QString refId;
+    QString refName;
+    QString title;
+    int x = 0;
+    int y = 0;
+    bool collapsed = false;
+    QVariantMap visualState;
+};
+
+// 绑定图连线：事件到动作、事件到变量、变量到动作或属性绑定
+struct BindingEdge {
+    QString id;
+    QString type;         // event_action / event_data / data_action / property_binding
+    BindingEndpoint source;
+    BindingEndpoint target;
+    QString label;
+    QString executionMode = QStringLiteral("sequence");
+    int order = 0;
+    QString condition;
+    int delayMs = 0;
+    bool enabled = true;
+    QVariantMap params;
+};
+
+struct BindingGraph {
+    QString schemaVersion = QStringLiteral("1.0");
+    QList<BindingNode> nodes;
+    QList<BindingEdge> edges;
+};
+
 // 项目目标配置
 struct ProjectTarget {
     int width = 1024;// 分辨率
@@ -226,6 +271,7 @@ struct ProjectData {
     ProjectFont font;//字体配置
     ProjectDataClient dataClient;//数据接口配置
     QList<DataVariable> dataVariables;//项目级数据变量节点
+    BindingGraph bindingGraph;//绑定模式画布的数据模型
     QList<ScreenData> screens;//页面列表
 };
 
@@ -245,4 +291,8 @@ Q_DECLARE_METATYPE(ProjectTarget)
 Q_DECLARE_METATYPE(ProjectFont)
 Q_DECLARE_METATYPE(ProjectDataClient)
 Q_DECLARE_METATYPE(DataVariable)
+Q_DECLARE_METATYPE(BindingEndpoint)
+Q_DECLARE_METATYPE(BindingNode)
+Q_DECLARE_METATYPE(BindingEdge)
+Q_DECLARE_METATYPE(BindingGraph)
 Q_DECLARE_METATYPE(ProjectData)

@@ -29,6 +29,7 @@ local M = {}
 -- 例如：widgets.Button_1:set_property("label", "Hi")
 M.widgets = {}
 M.dataStore = nil
+M.bindingGraph = nil
 _G.widgets = M.widgets
 if ok_data_client and data_client then
     M.data_client = data_client
@@ -904,7 +905,9 @@ function M.run(project)
 
     g_data_store = create_data_store(project.dataVariables or project.data_variables)
     M.dataStore = g_data_store
+    M.bindingGraph = project.bindingGraph or project.binding_graph or { nodes = {}, edges = {} }
     _G.DataStore = g_data_store
+    _G.BindingGraph = M.bindingGraph
     _G.variables = g_data_store.values
 
     -- 2) 按 order 升序，第一个为活动屏
