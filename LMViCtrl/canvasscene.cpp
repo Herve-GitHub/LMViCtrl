@@ -171,6 +171,28 @@ private:
     QList<WidgetInstance> m_after;
 };
 
+// --- 事件绑定 ---------------------------------------------------------------
+class SetEventBindingsCommand : public QUndoCommand
+{
+public:
+    SetEventBindingsCommand(CanvasScene *scene,
+                            const QString &instanceId,
+                            const QList<WidgetEventBinding> &before,
+                            const QList<WidgetEventBinding> &after,
+                            QUndoCommand *parent = nullptr)
+        : QUndoCommand(QStringLiteral("修改事件绑定"), parent)
+        , m_scene(scene), m_instanceId(instanceId), m_before(before), m_after(after) {}
+
+    void undo() override { m_scene->doSetEventBindings(m_instanceId, m_before); }
+    void redo() override { m_scene->doSetEventBindings(m_instanceId, m_after); }
+
+private:
+    CanvasScene *m_scene;
+    QString m_instanceId;
+    QList<WidgetEventBinding> m_before;
+    QList<WidgetEventBinding> m_after;
+};
+
 // ===========================================================================
 // CanvasScene
 // ===========================================================================
@@ -399,6 +421,18 @@ void CanvasScene::doSetZOrders(const QList<QPair<QString, int>> &orders)
     }
     if (changed)
         emit sceneItemsChanged();
+}
+
+void CanvasScene::doSetEventBindings(const QString &instanceId,
+                                     const QList<WidgetEventBinding> &bindings)
+{
+    CanvasItem *ci = findItem(instanceId);
+    if (!ci) return;
+    ci->setEventBindings(bindings);
+    emit instanceEventsChanged(instanceId);
+    emit instanceChanged(instanceId);
+    emit operationLogged(tr("修改事件：%1")
+        .arg(ci->instance().name.isEmpty() ? ci->instance().widgetId : ci->instance().name));
 }
 
 void CanvasScene::doLoadInstances(const QList<WidgetInstance> &instances)
@@ -1247,11 +1281,10 @@ void CanvasScene::setInstanceEventBindings(const QString &instanceId,
 {
     CanvasItem *ci = findItem(instanceId);
     if (!ci) return;
-    ci->setEventBindings(bindings);
-    emit instanceEventsChanged(instanceId);
-    emit instanceChanged(instanceId);
-    emit operationLogged(tr("修改事件：%1")
-        .arg(ci->instance().name.isEmpty() ? ci->instance().widgetId : ci->instance().name));
+    m_undoStack->push(new SetEventBindingsCommand(this,
+                                                  instanceId,
+                                                  ci->instance().eventBindings,
+                                                  bindings));
 }
 
 void CanvasScene::addInstanceEventAction(const QString &instanceId,

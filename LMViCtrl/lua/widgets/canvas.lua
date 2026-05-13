@@ -89,6 +89,7 @@ Canvas.__widget_meta = {
     { name = "clicked",  label = "点击",    params = {} },
     { name = "pressed",  label = "按下",    params = {} },
     { name = "released", label = "释放",    params = {} },
+    { name = "long_pressed", label = "长按", params = {} },
   },
 
   event_properties = {
@@ -96,6 +97,15 @@ Canvas.__widget_meta = {
       event = "clicked", label = "点击处理代码",
       default = "", multiline = true, lines = 6,
       snippet = "-- 在此使用 self.canvas:set_px / fill_bg 等方法绘制" },
+    { name = "on_pressed_handler", type = "code", language = "lua",
+      event = "pressed", label = "按下处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler", type = "code", language = "lua",
+      event = "released", label = "释放处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler", type = "code", language = "lua",
+      event = "long_pressed", label = "长按处理代码",
+      default = "", multiline = true, lines = 6 },
   },
 
   draw_hints = {
@@ -235,6 +245,7 @@ function Canvas.new(parent, state)
     if     event_name == "clicked"  then ev_code = lv.EVENT_CLICKED
     elseif event_name == "pressed"  then ev_code = lv.EVENT_PRESSED
     elseif event_name == "released" then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed" then ev_code = lv.EVENT_LONG_PRESSED
     else print("[canvas] unsupported event:", event_name); return end
     local cb = safe_cb()
     if self.canvas.add_event_cb then self.canvas:add_event_cb(cb, ev_code, nil)

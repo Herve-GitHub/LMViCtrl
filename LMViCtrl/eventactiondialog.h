@@ -8,6 +8,7 @@ class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
+class QSpinBox;
 class QStackedWidget;
 class QTableWidget;
 
@@ -26,6 +27,7 @@ public:
 private:
     void rebuildTargetTable();
     void rebuildPropertyCombo(const QString &preferredProperty = QString(), bool updateValue = true);
+    void rebuildMethodCombo(const QString &preferredMethod = QString());
     void updateEditorState();
     QString currentActionType() const;
     QString currentActionLabel() const;
@@ -49,5 +51,7 @@ private:
     QLineEdit *m_methodEdit = nullptr;
     QLineEdit *m_freemasterTargetEdit = nullptr;
     QLineEdit *m_freemasterValueEdit = nullptr;
+    QLineEdit *m_conditionEdit = nullptr;
+    QSpinBox *m_delaySpin = nullptr;
     QCheckBox *m_enabledCheck = nullptr;
 };

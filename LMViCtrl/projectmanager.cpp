@@ -27,6 +27,8 @@ QJsonObject eventActionToJson(const EventAction &action)
     o["method"] = action.method;
     o["params"] = QJsonObject::fromVariantMap(action.params);
     o["code"] = action.code;
+    o["condition"] = action.condition;
+    o["delayMs"] = action.delayMs;
     o["enabled"] = action.enabled;
     return o;
 }
@@ -42,6 +44,8 @@ EventAction eventActionFromJson(const QJsonObject &o)
     action.method = o.value("method").toString();
     action.params = o.value("params").toObject().toVariantMap();
     action.code = o.value("code").toString();
+    action.condition = o.value("condition").toString();
+    action.delayMs = o.value("delayMs").toInt(0);
     action.enabled = o.value("enabled").toBool(true);
     return action;
 }
@@ -54,8 +58,14 @@ QJsonObject eventBindingsToJson(const QList<WidgetEventBinding> &bindings)
         QJsonArray actions;
         for (const EventAction &action : binding.actions)
             actions.append(eventActionToJson(action));
-        if (!actions.isEmpty())
-            events.insert(binding.eventName, actions);
+        if (!actions.isEmpty()) {
+            QJsonObject eventObject;
+            eventObject["executionMode"] = binding.executionMode.isEmpty()
+                ? QStringLiteral("sequence")
+                : binding.executionMode;
+            eventObject["actions"] = actions;
+            events.insert(binding.eventName, eventObject);
+        }
     }
     return events;
 }
@@ -66,7 +76,15 @@ QList<WidgetEventBinding> eventBindingsFromJson(const QJsonObject &events)
     for (auto it = events.constBegin(); it != events.constEnd(); ++it) {
         WidgetEventBinding binding;
         binding.eventName = it.key();
-        const QJsonArray actions = it.value().toArray();
+        QJsonArray actions;
+        if (it.value().isArray()) {
+            actions = it.value().toArray();
+            binding.executionMode = QStringLiteral("sequence");
+        } else {
+            const QJsonObject eventObject = it.value().toObject();
+            binding.executionMode = eventObject.value("executionMode").toString("sequence");
+            actions = eventObject.value("actions").toArray();
+        }
         for (const QJsonValue &value : actions) {
             if (value.isObject())
                 binding.actions.append(eventActionFromJson(value.toObject()));
@@ -322,19 +340,27 @@ static QString eventBindingsToLua(const QList<WidgetEventBinding> &bindings, int
     for (const WidgetEventBinding &binding : bindings) {
         if (binding.eventName.isEmpty() || binding.actions.isEmpty()) continue;
         s << childPad << "[" << luaQuote(binding.eventName) << "] = {\n";
+        s << actionPad << "executionMode = "
+          << luaQuote(binding.executionMode.isEmpty()
+              ? QStringLiteral("sequence")
+              : binding.executionMode) << ",\n";
+        s << actionPad << "actions = {\n";
         for (const EventAction &action : binding.actions) {
-            s << actionPad << "{\n";
-            s << actionPad << "  id = " << luaQuote(action.id) << ",\n";
-            s << actionPad << "  type = " << luaQuote(action.type) << ",\n";
-            s << actionPad << "  label = " << luaQuote(action.label) << ",\n";
-            s << actionPad << "  targetId = " << luaQuote(action.targetId) << ",\n";
-            s << actionPad << "  targetName = " << luaQuote(action.targetName) << ",\n";
-            s << actionPad << "  method = " << luaQuote(action.method) << ",\n";
-            s << actionPad << "  params = " << variantMapToLua(action.params) << ",\n";
-            s << actionPad << "  code = " << luaQuote(action.code) << ",\n";
-            s << actionPad << "  enabled = " << (action.enabled ? "true" : "false") << ",\n";
-            s << actionPad << "},\n";
+            s << actionPad << "  {\n";
+            s << actionPad << "    id = " << luaQuote(action.id) << ",\n";
+            s << actionPad << "    type = " << luaQuote(action.type) << ",\n";
+            s << actionPad << "    label = " << luaQuote(action.label) << ",\n";
+            s << actionPad << "    targetId = " << luaQuote(action.targetId) << ",\n";
+            s << actionPad << "    targetName = " << luaQuote(action.targetName) << ",\n";
+            s << actionPad << "    method = " << luaQuote(action.method) << ",\n";
+            s << actionPad << "    params = " << variantMapToLua(action.params) << ",\n";
+            s << actionPad << "    code = " << luaQuote(action.code) << ",\n";
+            s << actionPad << "    condition = " << luaQuote(action.condition) << ",\n";
+            s << actionPad << "    delayMs = " << qMax(0, action.delayMs) << ",\n";
+            s << actionPad << "    enabled = " << (action.enabled ? "true" : "false") << ",\n";
+            s << actionPad << "  },\n";
         }
+        s << actionPad << "},\n";
         s << childPad << "},\n";
     }
     s << pad << "}";

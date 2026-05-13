@@ -89,17 +89,44 @@ Slider.__widget_meta = {
     { name = "enabled",         target = "enabled", direction = "in"    },
     { name = "visible",         target = "visible", direction = "in"    },
     { name = "changed",         target = "trigger", direction = "out"   },
+    { name = "reach_min",       target = "trigger", direction = "out"   },
+    { name = "reach_max",       target = "trigger", direction = "out"   },
+  },
+
+  actions = {
+    { name = "setValue",   label = "设置值",     kind = "set_property", property = "value",   value_type = "number",
+      description = "设置滑块当前值" },
+    { name = "setMin",     label = "设置最小值", kind = "set_property", property = "min",     value_type = "number",
+      description = "设置滑块最小值" },
+    { name = "setMax",     label = "设置最大值", kind = "set_property", property = "max",     value_type = "number",
+      description = "设置滑块最大值" },
+    { name = "setEnabled", label = "设置启用",   kind = "set_property", property = "enabled", value_type = "boolean",
+      description = "启用或禁用滑块" },
+    { name = "show",       label = "显示",       kind = "set_property", property = "visible", value_type = "boolean", default_value = "true",
+      description = "显示滑块" },
+    { name = "hide",       label = "隐藏",       kind = "set_property", property = "visible", value_type = "boolean", default_value = "false",
+      description = "隐藏滑块" },
   },
 
   events = {
     { name = "clicked",       label = "点击",
       description = "滑块被点击时触发", params = {} },
+    { name = "pressed",       label = "按下",
+      description = "手指或鼠标按下滑块时触发", params = {} },
+    { name = "long_pressed",  label = "长按",
+      description = "滑块被持续按住达到长按阈值时触发", params = {} },
     { name = "value_changed", label = "值改变",
       description = "拖动或点击导致值变化时触发",
       params = { { name = "value", type = "number", description = "新的当前值" } } },
     { name = "released",      label = "释放",
       description = "拖动结束、手指/鼠标抬起时触发",
       params = { { name = "value", type = "number", description = "释放时的值" } } },
+    { name = "reach_min",     label = "到达最小值",
+      description = "滑块值从非最小值进入最小值时触发，对应原型 onReachMin",
+      params = { { name = "value", type = "number", description = "当前最小值" } } },
+    { name = "reach_max",     label = "到达最大值",
+      description = "滑块值从非最大值进入最大值时触发，对应原型 onReachMax",
+      params = { { name = "value", type = "number", description = "当前最大值" } } },
   },
 
   event_properties = {
@@ -107,6 +134,14 @@ Slider.__widget_meta = {
       event = "clicked",       label = "点击处理代码",
       default = "", multiline = true, lines = 6,
       description = "点击滑块时执行的 Lua 代码" },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "按下滑块时执行的 Lua 代码" },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "长按滑块时执行的 Lua 代码" },
     { name = "on_value_changed_handler", type = "code", language = "lua",
       event = "value_changed", label = "值改变处理代码",
       default = "", multiline = true, lines = 6,
@@ -115,6 +150,14 @@ Slider.__widget_meta = {
     { name = "on_released_handler",      type = "code", language = "lua",
       event = "released",      label = "释放处理代码",
       default = "", multiline = true, lines = 6 },
+    { name = "on_reach_min_handler",     type = "code", language = "lua",
+      event = "reach_min",     label = "到达最小值处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "滑块值到达最小值时执行（self.props.value 已更新）" },
+    { name = "on_reach_max_handler",     type = "code", language = "lua",
+      event = "reach_max",     label = "到达最大值处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "滑块值到达最大值时执行（self.props.value 已更新）" },
   },
 
   draw_hints = {
@@ -248,26 +291,61 @@ function Slider.new(parent, state)
   self.draw()
 
   function self:on(event_name, callback)
+    local last_value = tonumber(self.props.value) or 0
+    local function update_value_from_slider()
+      if self.sl and self.sl.get_value then
+        self.props.value = self.sl:get_value()
+      end
+      return tonumber(self.props.value) or 0
+    end
+    local function call_handler(e)
+      if self._suppress_event then return end
+      local ok, err = pcall(callback, self, e)
+      if not ok then print("[slider] callback error:", err) end
+    end
     local function make_safe_cb()
       return function(e)
         if not self.props.enabled then return end
-        if self.sl and self.sl.get_value then
-          self.props.value = self.sl:get_value()
+        update_value_from_slider()
+        call_handler(e)
+      end
+    end
+    local function make_reach_cb(kind)
+      return function(e)
+        if not self.props.enabled then return end
+        local value = update_value_from_slider()
+        local min_value = tonumber(self.props.min) or 0
+        local max_value = tonumber(self.props.max) or min_value
+        local should_fire = false
+        if kind == "min" then
+          should_fire = value <= min_value and last_value > min_value
+        else
+          should_fire = value >= max_value and last_value < max_value
         end
-        if self._suppress_event then return end
-        local ok, err = pcall(callback, self, e)
-        if not ok then print("[slider] callback error:", err) end
+        last_value = value
+        if should_fire then call_handler(e) end
       end
     end
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "reach_min"     then ev_code = lv.EVENT_VALUE_CHANGED
+    elseif event_name == "reach_max"     then ev_code = lv.EVENT_VALUE_CHANGED
     else
       print("[slider] unsupported event:", event_name)
       return
     end
-    local cb = make_safe_cb()
+    local cb
+    if event_name == "reach_min" then
+      cb = make_reach_cb("min")
+    elseif event_name == "reach_max" then
+      cb = make_reach_cb("max")
+    else
+      cb = make_safe_cb()
+    end
     if self.sl.add_event_cb then
       self.sl:add_event_cb(cb, ev_code, nil)
     elseif lv.obj_add_event_cb then

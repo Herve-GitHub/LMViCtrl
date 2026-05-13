@@ -70,6 +70,8 @@ public:
     void doSetGeometry(const QString &instanceId, const QRectF &rect);
     void doSetPositions(const QList<QPair<QString, QPointF>> &moves);
     void doSetZOrders(const QList<QPair<QString, int>> &orders);
+    void doSetEventBindings(const QString &instanceId,
+                            const QList<WidgetEventBinding> &bindings);
     void doLoadInstances(const QList<WidgetInstance> &instances);
 
     // 属性面板编辑（不入栈，立刻生效）

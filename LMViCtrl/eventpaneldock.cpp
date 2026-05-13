@@ -5,18 +5,35 @@
 #include "canvasscene.h"
 
 #include <QFrame>
+#include <QComboBox>
 #include <QDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include <QSet>
 
 #include <utility>
+
+namespace {
+
+QString actionSummary(const EventAction &action)
+{
+    QStringList parts;
+    if (!action.targetName.isEmpty()) parts << action.targetName;
+    if (!action.condition.trimmed().isEmpty()) parts << QObject::tr("条件: %1").arg(action.condition);
+    if (action.delayMs > 0) parts << QObject::tr("延迟: %1 ms").arg(action.delayMs);
+    if (!action.enabled) parts << QObject::tr("已禁用");
+    if (parts.isEmpty()) return action.code;
+    return parts.join(QStringLiteral("\n"));
+}
+
+} // namespace
 
 EventPanelDock::EventPanelDock(QWidget *parent)
     : QDockWidget(tr("Event"), parent)
@@ -146,15 +163,51 @@ void EventPanelDock::addEventRow(int row, const EventDef &eventDef, const Widget
     actionsLayout->setContentsMargins(0, 0, 0, 0);
     actionsLayout->setSpacing(6);
 
+    auto *modeCombo = new QComboBox(actionsWidget);
+    modeCombo->addItem(tr("顺序"), QStringLiteral("sequence"));
+    modeCombo->addItem(tr("并行"), QStringLiteral("parallel"));
+    const QString mode = executionModeForEvent(inst, eventDef.name);
+    const int modeIndex = modeCombo->findData(mode.isEmpty() ? QStringLiteral("sequence") : mode);
+    if (modeIndex >= 0) modeCombo->setCurrentIndex(modeIndex);
+    modeCombo->setToolTip(tr("动作序列执行模式"));
+    connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this, eventName = eventDef.name, modeCombo]() {
+        setEventExecutionMode(eventName, modeCombo->currentData().toString());
+    });
+    actionsLayout->addWidget(modeCombo);
+
     const QList<EventAction> actions = actionsForEvent(inst, eventDef.name);
-    for (const EventAction &action : actions) {
-        auto *chip = new QPushButton(action.label.isEmpty() ? action.type : action.label, actionsWidget);
-        chip->setToolTip(action.targetName.isEmpty() ? action.code : action.targetName);
+    for (int i = 0; i < actions.size(); ++i) {
+        const EventAction action = actions[i];
+        const QString label = QStringLiteral("%1. %2%3")
+            .arg(i + 1)
+            .arg(action.enabled ? QString() : QStringLiteral("[off] "))
+            .arg(action.label.isEmpty() ? action.type : action.label);
+        auto *chip = new QPushButton(label, actionsWidget);
+        chip->setToolTip(actionSummary(action));
         chip->setStyleSheet(QStringLiteral("QPushButton { background:#2b7f8d; color:#ddd; border:0; padding:4px 10px; }"));
         connect(chip, &QPushButton::clicked, this, [this, eventName = eventDef.name, action]() {
             editAction(eventName, action);
         });
         actionsLayout->addWidget(chip);
+
+        auto *up = new QToolButton(actionsWidget);
+        up->setText(QStringLiteral("^"));
+        up->setToolTip(tr("上移动作"));
+        up->setEnabled(i > 0);
+        connect(up, &QToolButton::clicked, this, [this, eventName = eventDef.name, id = action.id]() {
+            moveAction(eventName, id, -1);
+        });
+        actionsLayout->addWidget(up);
+
+        auto *down = new QToolButton(actionsWidget);
+        down->setText(QStringLiteral("v"));
+        down->setToolTip(tr("下移动作"));
+        down->setEnabled(i + 1 < actions.size());
+        connect(down, &QToolButton::clicked, this, [this, eventName = eventDef.name, id = action.id]() {
+            moveAction(eventName, id, 1);
+        });
+        actionsLayout->addWidget(down);
 
         auto *del = new QToolButton(actionsWidget);
         del->setText(QStringLiteral("x"));
@@ -244,6 +297,15 @@ QList<EventAction> EventPanelDock::actionsForEvent(const WidgetInstance &inst, c
     return {};
 }
 
+QString EventPanelDock::executionModeForEvent(const WidgetInstance &inst, const QString &eventName) const
+{
+    for (const WidgetEventBinding &binding : inst.eventBindings) {
+        if (binding.eventName == eventName)
+            return binding.executionMode.isEmpty() ? QStringLiteral("sequence") : binding.executionMode;
+    }
+    return QStringLiteral("sequence");
+}
+
 QList<WidgetInstance> EventPanelDock::currentSceneInstances() const
 {
     return m_scene ? m_scene->allInstances() : QList<WidgetInstance>{};
@@ -308,4 +370,37 @@ void EventPanelDock::deleteAction(const QString &eventName, const QString &actio
 {
     if (!m_scene || m_currentInstanceId.isEmpty()) return;
     m_scene->removeInstanceEventAction(m_currentInstanceId, eventName, actionId);
+}
+
+void EventPanelDock::setEventExecutionMode(const QString &eventName, const QString &mode)
+{
+    if (!m_scene || m_currentInstanceId.isEmpty()) return;
+    QList<WidgetEventBinding> bindings = m_scene->instanceEventBindings(m_currentInstanceId);
+    for (WidgetEventBinding &binding : bindings) {
+        if (binding.eventName != eventName) continue;
+        const QString normalized = mode == QLatin1String("parallel")
+            ? QStringLiteral("parallel")
+            : QStringLiteral("sequence");
+        if (binding.executionMode == normalized) return;
+        binding.executionMode = normalized;
+        m_scene->setInstanceEventBindings(m_currentInstanceId, bindings);
+        return;
+    }
+}
+
+void EventPanelDock::moveAction(const QString &eventName, const QString &actionId, int delta)
+{
+    if (!m_scene || m_currentInstanceId.isEmpty() || delta == 0) return;
+    QList<WidgetEventBinding> bindings = m_scene->instanceEventBindings(m_currentInstanceId);
+    for (WidgetEventBinding &binding : bindings) {
+        if (binding.eventName != eventName) continue;
+        for (int i = 0; i < binding.actions.size(); ++i) {
+            if (binding.actions[i].id != actionId) continue;
+            const int target = i + delta;
+            if (target < 0 || target >= binding.actions.size()) return;
+            binding.actions.swapItemsAt(i, target);
+            m_scene->setInstanceEventBindings(m_currentInstanceId, bindings);
+            return;
+        }
+    }
 }

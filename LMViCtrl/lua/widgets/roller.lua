@@ -95,6 +95,12 @@ Roller.__widget_meta = {
   events = {
     { name = "clicked",       label = "点击",
       description = "滚轮被点击时触发", params = {} },
+    { name = "pressed",       label = "按下",
+      description = "手指或鼠标按下滚轮时触发", params = {} },
+    { name = "released",      label = "释放",
+      description = "手指或鼠标从滚轮抬起时触发", params = {} },
+    { name = "long_pressed",  label = "长按",
+      description = "滚轮被持续按住达到长按阈值时触发", params = {} },
     { name = "value_changed", label = "选择改变",
       description = "选中项发生变化时触发",
       params = {
@@ -105,6 +111,15 @@ Roller.__widget_meta = {
   event_properties = {
     { name = "on_clicked_handler",       type = "code", language = "lua",
       event = "clicked",       label = "点击处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler",      type = "code", language = "lua",
+      event = "released",      label = "释放处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
       default = "", multiline = true, lines = 6 },
     { name = "on_value_changed_handler", type = "code", language = "lua",
       event = "value_changed", label = "选择改变处理代码",
@@ -248,6 +263,9 @@ function Roller.new(parent, state)
     end
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     else
       print("[roller] unsupported event:", event_name)

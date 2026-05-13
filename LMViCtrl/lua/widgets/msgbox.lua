@@ -81,6 +81,9 @@ MsgBox.__widget_meta = {
     { name = "value_changed", label = "按钮点击",
       params = { { name = "index", type = "number", description = "被点击按钮索引" } } },
     { name = "clicked", label = "点击", params = {} },
+    { name = "pressed", label = "按下", params = {} },
+    { name = "released", label = "释放", params = {} },
+    { name = "long_pressed", label = "长按", params = {} },
   },
 
   event_properties = {
@@ -88,6 +91,18 @@ MsgBox.__widget_meta = {
       event = "value_changed", label = "按钮点击代码",
       default = "", multiline = true, lines = 6,
       snippet = "print('button =', self.props.selected_button)" },
+    { name = "on_clicked_handler", type = "code", language = "lua",
+      event = "clicked", label = "点击代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_pressed_handler", type = "code", language = "lua",
+      event = "pressed", label = "按下代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler", type = "code", language = "lua",
+      event = "released", label = "释放代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler", type = "code", language = "lua",
+      event = "long_pressed", label = "长按代码",
+      default = "", multiline = true, lines = 6 },
   },
 
   draw_hints = {
@@ -182,6 +197,9 @@ function MsgBox.new(parent, state)
     end
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     else print("[msgbox] unsupported event:", event_name); return end
     local cb = safe_cb()

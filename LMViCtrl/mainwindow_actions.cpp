@@ -88,10 +88,17 @@ QJsonObject widgetInstanceToJson(const WidgetInstance &inst)
             item.insert(QStringLiteral("method"), action.method);
             item.insert(QStringLiteral("params"), QJsonObject::fromVariantMap(action.params));
             item.insert(QStringLiteral("code"), action.code);
+            item.insert(QStringLiteral("condition"), action.condition);
+            item.insert(QStringLiteral("delayMs"), action.delayMs);
             item.insert(QStringLiteral("enabled"), action.enabled);
             actions.append(item);
         }
-        events.insert(binding.eventName, actions);
+        QJsonObject eventObject;
+        eventObject.insert(QStringLiteral("executionMode"), binding.executionMode.isEmpty()
+            ? QStringLiteral("sequence")
+            : binding.executionMode);
+        eventObject.insert(QStringLiteral("actions"), actions);
+        events.insert(binding.eventName, eventObject);
     }
     obj.insert(QStringLiteral("events"), events);
     return obj;
@@ -117,7 +124,15 @@ WidgetInstance widgetInstanceFromJson(const QJsonObject &obj)
     for (auto it = events.constBegin(); it != events.constEnd(); ++it) {
         WidgetEventBinding binding;
         binding.eventName = it.key();
-        const QJsonArray actions = it.value().toArray();
+        QJsonArray actions;
+        if (it.value().isArray()) {
+            actions = it.value().toArray();
+            binding.executionMode = QStringLiteral("sequence");
+        } else {
+            const QJsonObject eventObject = it.value().toObject();
+            binding.executionMode = eventObject.value(QStringLiteral("executionMode")).toString(QStringLiteral("sequence"));
+            actions = eventObject.value(QStringLiteral("actions")).toArray();
+        }
         for (const QJsonValue &value : actions) {
             if (!value.isObject()) continue;
             const QJsonObject item = value.toObject();
@@ -130,6 +145,8 @@ WidgetInstance widgetInstanceFromJson(const QJsonObject &obj)
             action.method = item.value(QStringLiteral("method")).toString();
             action.params = item.value(QStringLiteral("params")).toObject().toVariantMap();
             action.code = item.value(QStringLiteral("code")).toString();
+            action.condition = item.value(QStringLiteral("condition")).toString();
+            action.delayMs = item.value(QStringLiteral("delayMs")).toInt(0);
             action.enabled = item.value(QStringLiteral("enabled")).toBool(true);
             binding.actions.append(action);
         }

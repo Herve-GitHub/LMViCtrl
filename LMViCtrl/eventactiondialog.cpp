@@ -3,6 +3,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHeaderView>
@@ -10,6 +11,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -117,6 +119,16 @@ EventActionDialog::EventActionDialog(const QString &eventName,
     m_detailStack->addWidget(freemasterPage);
     root->addWidget(m_detailStack);
 
+    auto *ruleForm = new QFormLayout;
+    m_conditionEdit = new QLineEdit(this);
+    m_conditionEdit->setPlaceholderText(tr("Lua 表达式，例如 self:get_property('value') > 10；为空则总是执行"));
+    ruleForm->addRow(tr("条件"), m_conditionEdit);
+    m_delaySpin = new QSpinBox(this);
+    m_delaySpin->setRange(0, 3600000);
+    m_delaySpin->setSuffix(tr(" ms"));
+    ruleForm->addRow(tr("延迟"), m_delaySpin);
+    root->addLayout(ruleForm);
+
     m_enabledCheck = new QCheckBox(tr("启用"), this);
     m_enabledCheck->setChecked(true);
     root->addWidget(m_enabledCheck);
@@ -132,7 +144,10 @@ EventActionDialog::EventActionDialog(const QString &eventName,
     });
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this]() { rebuildTargetTable(); });
     connect(m_targetTable, &QTableWidget::currentCellChanged, this,
-            [this](int, int, int, int) { rebuildPropertyCombo(); });
+            [this](int, int, int, int) {
+        rebuildPropertyCombo();
+        rebuildMethodCombo();
+    });
     connect(m_propertyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         const QString propertyName = currentPropertyName();
         if (propertyName.isEmpty()) return;
@@ -152,6 +167,7 @@ EventActionDialog::EventActionDialog(const QString &eventName,
     updateEditorState();
     rebuildTargetTable();
     rebuildPropertyCombo();
+    rebuildMethodCombo();
 }
 
 void EventActionDialog::setAction(const EventAction &action)
@@ -169,6 +185,8 @@ void EventActionDialog::setAction(const EventAction &action)
                               : action.method);
     m_freemasterTargetEdit->setText(action.targetName);
     m_freemasterValueEdit->setText(action.params.value(QStringLiteral("value")).toString());
+    m_conditionEdit->setText(action.condition);
+    m_delaySpin->setValue(qMax(0, action.delayMs));
     m_enabledCheck->setChecked(action.enabled);
     updateEditorState();
     rebuildTargetTable();
@@ -186,6 +204,9 @@ void EventActionDialog::setAction(const EventAction &action)
     rebuildPropertyCombo(propertyName, false);
     m_propertyCombo->setEditText(propertyName);
     m_valueEdit->setText(propertyValue);
+    rebuildMethodCombo(action.method.isEmpty()
+                           ? action.params.value(QStringLiteral("method")).toString()
+                           : action.method);
 }
 
 EventAction EventActionDialog::action() const
@@ -202,6 +223,8 @@ EventAction EventActionDialog::action() const
     action.method.clear();
     action.params.clear();
     action.code.clear();
+    action.condition = m_conditionEdit->text().trimmed();
+    action.delayMs = m_delaySpin->value();
 
     const int row = m_targetTable->currentRow();
     if (row >= 0) {
@@ -308,6 +331,39 @@ void EventActionDialog::rebuildPropertyCombo(const QString &preferredProperty, b
             m_valueEdit->setText(valueTextForProperty(widget, property));
             return;
         }
+    }
+}
+
+void EventActionDialog::rebuildMethodCombo(const QString &preferredMethod)
+{
+    if (!m_methodEdit) return;
+
+    const QString previous = preferredMethod.isEmpty()
+        ? m_methodEdit->text()
+        : preferredMethod;
+
+    const WidgetInstance widget = currentTargetWidget();
+    const WidgetMeta meta = m_widgetMetas.value(widget.widgetId);
+
+    QStringList items;
+    for (const ActionDef &action : meta.actions) {
+        if (action.kind != QLatin1String("call_method")) continue;
+        const QString method = action.method.isEmpty() ? action.name : action.method;
+        if (!method.isEmpty() && !items.contains(method))
+            items.append(method);
+    }
+
+    auto *completer = new QCompleter(items, m_methodEdit);
+    completer->setCaseSensitivity(Qt::CaseInsensitive);
+    m_methodEdit->setCompleter(completer);
+    m_methodEdit->setPlaceholderText(items.isEmpty()
+        ? tr("方法名，例如 set_property")
+        : tr("方法名，例如 %1").arg(items.first()));
+
+    if (!previous.isEmpty()) {
+        m_methodEdit->setText(previous);
+    } else if (!items.isEmpty()) {
+        m_methodEdit->setText(items.first());
     }
 }
 

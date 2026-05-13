@@ -96,9 +96,30 @@ TextArea.__widget_meta = {
     { name = "changed", target = "trigger", direction = "out"   },
   },
 
+  actions = {
+    { name = "setText",    label = "设置文本", kind = "set_property", property = "text",    value_type = "string",
+      description = "设置输入框文本" },
+    { name = "setEnabled", label = "设置启用", kind = "set_property", property = "enabled", value_type = "boolean",
+      description = "启用或禁用输入框" },
+    { name = "clear",      label = "清空",     kind = "set_property", property = "text",    value_type = "string", default_value = "",
+      description = "清空输入框文本" },
+    { name = "focus",      label = "聚焦",     kind = "call_method",  method = "focus",     value_type = "void",
+      description = "让输入框获得焦点" },
+    { name = "show",       label = "显示",     kind = "set_property", property = "visible", value_type = "boolean", default_value = "true",
+      description = "显示输入框" },
+    { name = "hide",       label = "隐藏",     kind = "set_property", property = "visible", value_type = "boolean", default_value = "false",
+      description = "隐藏输入框" },
+  },
+
   events = {
     { name = "clicked",       label = "点击",
       description = "文本框被点击时触发", params = {} },
+    { name = "pressed",       label = "按下",
+      description = "手指或鼠标按下文本框时触发", params = {} },
+    { name = "released",      label = "释放",
+      description = "手指或鼠标从文本框抬起时触发", params = {} },
+    { name = "long_pressed",  label = "长按",
+      description = "文本框被持续按住达到长按阈值时触发", params = {} },
     { name = "focused",       label = "获得焦点",
       description = "文本框获得焦点时触发", params = {} },
     { name = "defocused",     label = "失去焦点",
@@ -114,6 +135,15 @@ TextArea.__widget_meta = {
   event_properties = {
     { name = "on_clicked_handler",       type = "code", language = "lua",
       event = "clicked",       label = "点击处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler",      type = "code", language = "lua",
+      event = "released",      label = "释放处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
       default = "", multiline = true, lines = 6 },
     { name = "on_focused_handler",       type = "code", language = "lua",
       event = "focused",       label = "获得焦点处理代码",
@@ -291,6 +321,9 @@ function TextArea.new(parent, state)
     end
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "focused"       then ev_code = lv.EVENT_FOCUSED
     elseif event_name == "defocused"     then ev_code = lv.EVENT_DEFOCUSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
@@ -339,6 +372,15 @@ function TextArea.new(parent, state)
   end
   function self:apply_properties(t) for k, v in pairs(t) do self:set_property(k, v) end; return true end
   function self:to_state() return self:get_properties() end
+
+  function self:focus()
+    if self.ta and self.ta.add_state and lv.STATE_FOCUSED then
+      self.ta:add_state(lv.STATE_FOCUSED)
+    end
+    if lv.group_get_default and lv.group_focus_obj then
+      pcall(lv.group_focus_obj, self.ta)
+    end
+  end
 
   function self:destroy()
     self._cb_handles = {}

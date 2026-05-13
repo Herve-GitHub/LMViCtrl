@@ -97,6 +97,15 @@ Switch.__widget_meta = {
     { name = "clicked",       label = "点击",
       description = "开关被点击时触发",
       params = {} },
+    { name = "pressed",       label = "按下",
+      description = "手指或鼠标按下开关时触发",
+      params = {} },
+    { name = "released",      label = "释放",
+      description = "手指或鼠标从开关抬起时触发",
+      params = {} },
+    { name = "long_pressed",  label = "长按",
+      description = "开关被持续按住达到长按阈值时触发",
+      params = {} },
     { name = "value_changed", label = "状态改变",
       description = "开关状态在开/关之间切换时触发",
       params = { { name = "checked", type = "boolean", description = "新的开启状态" } } },
@@ -109,6 +118,18 @@ Switch.__widget_meta = {
       default = "", multiline = true, lines = 6,
       description = "点击开关时执行的 Lua 代码",
       snippet = "-- self 为开关实例\nprint('clicked')" },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "按下开关时执行的 Lua 代码" },
+    { name = "on_released_handler",      type = "code", language = "lua",
+      event = "released",      label = "释放处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "释放开关时执行的 Lua 代码" },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "长按开关时执行的 Lua 代码" },
     { name = "on_value_changed_handler", type = "code", language = "lua",
       event = "value_changed", label = "状态改变处理代码",
       default = "", multiline = true, lines = 6,
@@ -278,6 +299,9 @@ function Switch.new(parent, state)
 
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     else
       print("[switch] unsupported event:", event_name)

@@ -108,11 +108,33 @@ Label.__widget_meta = {
     { name = "visible", target = "visible", direction = "in" },
   },
 
+  actions = {
+    { name = "setText",     label = "设置文本",     kind = "set_property", property = "text",      value_type = "string",
+      description = "设置标签显示文本" },
+    { name = "setColor",    label = "设置文本颜色", kind = "set_property", property = "color",     value_type = "color",
+      description = "设置标签文本颜色" },
+    { name = "setFontSize", label = "设置字号",     kind = "set_property", property = "font_size", value_type = "number",
+      description = "设置标签字体大小" },
+    { name = "show",        label = "显示",         kind = "set_property", property = "visible",   value_type = "boolean", default_value = "true",
+      description = "显示标签" },
+    { name = "hide",        label = "隐藏",         kind = "set_property", property = "visible",   value_type = "boolean", default_value = "false",
+      description = "隐藏标签" },
+  },
+
   -- ===== 事件定义（结构化） =====
   -- 标签默认不响应点击；如果用户给它绑定了事件回调，仍然支持
   events = {
     { name = "clicked", label = "点击",
       description = "标签被点击时触发（需开启可点击标志）",
+      params = {} },
+    { name = "pressed", label = "按下",
+      description = "手指或鼠标按下标签时触发（需开启可点击标志）",
+      params = {} },
+    { name = "released", label = "释放",
+      description = "手指或鼠标从标签抬起时触发（需开启可点击标志）",
+      params = {} },
+    { name = "long_pressed", label = "长按",
+      description = "标签被持续按住达到长按阈值时触发（需开启可点击标志）",
       params = {} },
   },
 
@@ -123,6 +145,18 @@ Label.__widget_meta = {
       default = "", multiline = true, lines = 6,
       description = "点击标签时执行的 Lua 代码（需 enabled_click = true）",
       snippet = "-- self 为标签实例，可访问 self.props\nprint('label clicked')" },
+    { name = "on_pressed_handler", type = "code", language = "lua",
+      event = "pressed", label = "按下处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "按下标签时执行的 Lua 代码（需 enabled_click = true）" },
+    { name = "on_released_handler", type = "code", language = "lua",
+      event = "released", label = "释放处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "释放标签时执行的 Lua 代码（需 enabled_click = true）" },
+    { name = "on_long_pressed_handler", type = "code", language = "lua",
+      event = "long_pressed", label = "长按处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "长按标签时执行的 Lua 代码（需 enabled_click = true）" },
   },
 
   -- ===== 自定义渲染提示（供 render_mode = "custom" 时 Qt 端通用绘制使用） =====
@@ -273,8 +307,10 @@ function Label.new(parent, state)
     end
 
     local ev_code
-    if event_name == "clicked" then
-      ev_code = lv.EVENT_CLICKED
+    if event_name == "clicked" then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed" then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released" then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed" then ev_code = lv.EVENT_LONG_PRESSED
     else
       print("[label] unsupported event:", event_name)
       return

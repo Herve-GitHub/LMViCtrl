@@ -82,6 +82,12 @@ Valve.__widget_meta = {
   events = {
     { name = "clicked", label = "点击",
       description = "阀门被点击时触发", params = {} },
+    { name = "pressed", label = "按下",
+      description = "手指或鼠标按下阀门时触发", params = {} },
+    { name = "released", label = "释放",
+      description = "手指或鼠标从阀门抬起时触发", params = {} },
+    { name = "long_pressed", label = "长按",
+      description = "阀门被持续按住达到长按阈值时触发", params = {} },
     { name = "angle_changed", label = "角度改变",
       description = "当前角度发生变化时触发",
       params = { { name = "angle", type = "number", description = "新的角度（0~360）" } } },
@@ -93,6 +99,15 @@ Valve.__widget_meta = {
   event_properties = {
     { name = "on_clicked_handler",       type = "code", language = "lua",
       event = "clicked",       label = "点击处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler",      type = "code", language = "lua",
+      event = "released",      label = "释放处理代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
       default = "", multiline = true, lines = 6 },
     { name = "on_angle_changed_handler", type = "code", language = "lua",
       event = "angle_changed", label = "角度改变处理代码",
@@ -140,7 +155,10 @@ function Valve.new(parent, state)
   end
 
   self._cb_handles     = {}
-  self._event_listeners = { clicked = {}, angle_changed = {}, toggled = {} }
+  self._event_listeners = {
+    clicked = {}, pressed = {}, released = {}, long_pressed = {},
+    angle_changed = {}, toggled = {}
+  }
   self._suppress_event = false
   self.is_open = math.abs((self.props.angle or 0) - (self.props.open_angle or 90)) < 1
 
@@ -296,6 +314,15 @@ function Valve.new(parent, state)
     if self.container.add_event_cb and lv.EVENT_CLICKED then
       self.container:add_event_cb(on_internal_click, lv.EVENT_CLICKED, nil)
     end
+    if self.container.add_event_cb and lv.EVENT_PRESSED then
+      self.container:add_event_cb(function() fire("pressed") end, lv.EVENT_PRESSED, nil)
+    end
+    if self.container.add_event_cb and lv.EVENT_RELEASED then
+      self.container:add_event_cb(function() fire("released") end, lv.EVENT_RELEASED, nil)
+    end
+    if self.container.add_event_cb and lv.EVENT_LONG_PRESSED then
+      self.container:add_event_cb(function() fire("long_pressed") end, lv.EVENT_LONG_PRESSED, nil)
+    end
   end
 
   self.draw()
@@ -445,7 +472,10 @@ function Valve.new(parent, state)
 
   function self:destroy()
     self._cb_handles      = {}
-    self._event_listeners = { clicked = {}, angle_changed = {}, toggled = {} }
+    self._event_listeners = {
+      clicked = {}, pressed = {}, released = {}, long_pressed = {},
+      angle_changed = {}, toggled = {}
+    }
     if self.container and self.container.del then
       self.container:del()
     elseif self.container and lv.obj_del then

@@ -304,8 +304,90 @@ local function bind_event_handlers(widget, mod, inst)
     end
 end
 
+local function normalize_event_binding(event_binding)
+    if type(event_binding) ~= "table" then return "sequence", nil end
+    if event_binding[1] ~= nil then return "sequence", event_binding end
+
+    local actions = event_binding.actions
+    local mode = event_binding.executionMode or event_binding.execution_mode or "sequence"
+    if mode ~= "parallel" then mode = "sequence" end
+    if type(actions) ~= "table" then return mode, nil end
+    return mode, actions
+end
+
+local function action_delay_ms(action)
+    if type(action) ~= "table" then return 0 end
+    local delay = action.delayMs or action.delay_ms
+    if delay == nil and type(action.params) == "table" then
+        delay = action.params.delayMs or action.params.delay_ms
+    end
+    delay = tonumber(delay) or 0
+    if delay < 0 then delay = 0 end
+    return delay
+end
+
+local function run_after(delay_ms, fn)
+    if delay_ms <= 0 then
+        fn()
+        return
+    end
+
+    if type(lv.timer_create) ~= "function" then
+        log_warn("event action: lv.timer_create unavailable, running delayed action immediately")
+        fn()
+        return
+    end
+
+    local timer
+    local ok, err = pcall(function()
+        timer = lv.timer_create(function(t)
+            if type(lv.timer_delete) == "function" then
+                pcall(lv.timer_delete, t or timer)
+            end
+            fn()
+        end, delay_ms, nil)
+    end)
+    if not ok or not timer then
+        log_warn("event action: failed to create delay timer: %s", tostring(err))
+        fn()
+    end
+end
+
+local function condition_allows_action(action, self, e)
+    if type(action) ~= "table" or action.enabled == false then return false end
+    local condition = action.condition
+    if type(condition) ~= "string" or condition:match("^%s*$") then return true end
+
+    local loader = load or loadstring
+    if type(loader) ~= "function" then
+        log_warn("event action: no load/loadstring available for condition")
+        return false
+    end
+
+    local chunk_src = "local self, e, action = ...\nreturn (" .. condition .. ")"
+    local chunk_name = string.format("=[event_action.%s.condition]", tostring(action.id or action.type))
+    local fn, err
+    if load then
+        fn, err = load(chunk_src, chunk_name, "t", g_handler_env)
+    else
+        fn, err = loadstring(chunk_src, chunk_name)
+        if fn and type(setfenv) == "function" then setfenv(fn, g_handler_env) end
+    end
+    if not fn then
+        log_warn("event action: condition compile failed: %s", tostring(err))
+        return false
+    end
+
+    local ok, result = pcall(fn, self, e, action)
+    if not ok then
+        log_warn("event action: condition failed: %s", tostring(result))
+        return false
+    end
+    return not not result
+end
+
 local function execute_event_action(action, self, e)
-    if type(action) ~= "table" or action.enabled == false then return end
+    if not condition_allows_action(action, self, e) then return end
     local action_type = action.type
 
     if action_type == "load_screen" then
@@ -367,15 +449,36 @@ local function execute_event_action(action, self, e)
     log_warn("event action: unsupported action type %s", tostring(action_type))
 end
 
+local function execute_event_actions_sequence(actions, self, e, index)
+    index = index or 1
+    local action = actions[index]
+    if action == nil then return end
+    run_after(action_delay_ms(action), function()
+        execute_event_action(action, self, e)
+        execute_event_actions_sequence(actions, self, e, index + 1)
+    end)
+end
+
+local function execute_event_actions_parallel(actions, self, e)
+    for _, action in ipairs(actions) do
+        run_after(action_delay_ms(action), function()
+            execute_event_action(action, self, e)
+        end)
+    end
+end
+
 local function bind_event_actions(widget, inst)
     if type(widget) ~= "table" or type(widget.on) ~= "function" then return end
     if type(inst.events) ~= "table" then return end
 
-    for event_name, actions in pairs(inst.events) do
+    for event_name, event_binding in pairs(inst.events) do
+        local execution_mode, actions = normalize_event_binding(event_binding)
         if type(actions) == "table" and #actions > 0 then
             local ok, err = pcall(widget.on, widget, event_name, function(self, e)
-                for _, action in ipairs(actions) do
-                    execute_event_action(action, self, e)
+                if execution_mode == "parallel" then
+                    execute_event_actions_parallel(actions, self, e)
+                else
+                    execute_event_actions_sequence(actions, self, e, 1)
                 end
             end)
             if not ok then

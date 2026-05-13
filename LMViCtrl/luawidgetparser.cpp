@@ -274,8 +274,43 @@ void LuaWidgetParser::parseEvents(const QString  &metaBlock,
 }
 
 // ---------------------------------------------------------------------------
-// bindings / draw_hints / api / size / tags
+// actions / bindings / draw_hints / api / size / tags
 // ---------------------------------------------------------------------------
+
+QList<ActionDef> LuaWidgetParser::parseActions(const QString &metaBlock)
+{
+    QList<ActionDef> out;
+    const QString block = extractTableField(metaBlock, "actions");
+    if (block.isEmpty()) return out;
+
+    const QString inner = block.mid(1, block.length() - 2);
+    int pos = 0;
+    while (pos < inner.length()) {
+        const int b = inner.indexOf('{', pos);
+        if (b < 0) break;
+        const QString entry = extractBlock(inner, b);
+        if (entry.isEmpty()) break;
+
+        ActionDef d;
+        d.name        = extractStringField(entry, "name");
+        d.label       = extractStringField(entry, "label");
+        d.description = extractStringField(entry, "description");
+        d.kind        = extractStringField(entry, "kind");
+        d.property    = extractStringField(entry, "property");
+        d.method      = extractStringField(entry, "method");
+        d.valueType   = extractStringField(entry, "value_type");
+        d.defaultValue = extractStringField(entry, "default_value");
+        if (d.kind.isEmpty())
+            d.kind = d.property.isEmpty() ? QStringLiteral("call_method") : QStringLiteral("set_property");
+        if (d.method.isEmpty() && d.kind == QLatin1String("call_method"))
+            d.method = d.name;
+        if (d.valueType.isEmpty())
+            d.valueType = QStringLiteral("any");
+        if (!d.name.isEmpty()) out.append(d);
+        pos = b + entry.length();
+    }
+    return out;
+}
 
 QList<BindingDef> LuaWidgetParser::parseBindings(const QString &metaBlock)
 {
@@ -432,6 +467,7 @@ WidgetMeta LuaWidgetParser::parse(const QString &filePath)
 
     // 属性 / 事件 / 绑定 / 提示 / API
     meta.properties      = parsePropertyList(metaBlock, "properties");
+    meta.actions         = parseActions(metaBlock);
     meta.eventProperties = parsePropertyList(metaBlock, "event_properties");
     parseEvents(metaBlock, &meta.events, &meta.eventDefs);
     meta.bindings        = parseBindings(metaBlock);

@@ -32,12 +32,15 @@ private:
     EventDef eventDefForName(const WidgetMeta &meta, const QString &eventName) const;
     QStringList existingEventNames(const WidgetInstance &inst) const;
     QList<EventAction> actionsForEvent(const WidgetInstance &inst, const QString &eventName) const;
+    QString executionModeForEvent(const WidgetInstance &inst, const QString &eventName) const;
     QList<WidgetInstance> currentSceneInstances() const;
     QList<WidgetMeta> currentSceneMetas() const;
     void chooseTriggerAndAddAction();
     void addAction(const QString &eventName);
     void editAction(const QString &eventName, const EventAction &action);
     void deleteAction(const QString &eventName, const QString &actionId);
+    void setEventExecutionMode(const QString &eventName, const QString &mode);
+    void moveAction(const QString &eventName, const QString &actionId, int delta);
 
     QPointer<CanvasScene> m_scene;
     const ProjectData *m_project = nullptr;

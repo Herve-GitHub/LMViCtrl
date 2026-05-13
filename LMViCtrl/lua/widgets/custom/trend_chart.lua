@@ -94,6 +94,12 @@ TrendChart.__widget_meta = {
             params = { { name = "value", type = "number", description = "追加的数据值" } } },
         { name = "clicked", label = "点击",
             description = "趋势图被点击时触发", params = {} },
+        { name = "pressed", label = "按下",
+            description = "手指或鼠标按下趋势图时触发", params = {} },
+        { name = "released", label = "释放",
+            description = "手指或鼠标从趋势图抬起时触发", params = {} },
+        { name = "long_pressed", label = "长按",
+            description = "趋势图被持续按住达到长按阈值时触发", params = {} },
     },
 
     event_properties = {
@@ -103,6 +109,15 @@ TrendChart.__widget_meta = {
             snippet = "" },
         { name = "on_clicked_handler", type = "code", language = "lua",
             event = "clicked", label = "点击处理代码",
+            default = "", multiline = true, lines = 6 },
+        { name = "on_pressed_handler", type = "code", language = "lua",
+            event = "pressed", label = "按下处理代码",
+            default = "", multiline = true, lines = 6 },
+        { name = "on_released_handler", type = "code", language = "lua",
+            event = "released", label = "释放处理代码",
+            default = "", multiline = true, lines = 6 },
+        { name = "on_long_pressed_handler", type = "code", language = "lua",
+            event = "long_pressed", label = "长按处理代码",
             default = "", multiline = true, lines = 6 },
     },
 
@@ -157,7 +172,9 @@ function TrendChart.new(parent, state)
     end
 
     self._cb_handles = {}
-    self._event_listeners = { updated = {}, clicked = {} }
+    self._event_listeners = {
+        updated = {}, clicked = {}, pressed = {}, released = {}, long_pressed = {}
+    }
     self._suppress_event = false
 
     local function fire(event_name, ...)
@@ -298,6 +315,21 @@ function TrendChart.new(parent, state)
             self.chart:add_event_cb(cb, lv.EVENT_CLICKED, nil)
             table.insert(self._cb_handles, { event = "clicked", cb = cb })
         end
+        if self.chart.add_event_cb and lv.EVENT_PRESSED then
+            local cb = function() fire("pressed") end
+            self.chart:add_event_cb(cb, lv.EVENT_PRESSED, nil)
+            table.insert(self._cb_handles, { event = "pressed", cb = cb })
+        end
+        if self.chart.add_event_cb and lv.EVENT_RELEASED then
+            local cb = function() fire("released") end
+            self.chart:add_event_cb(cb, lv.EVENT_RELEASED, nil)
+            table.insert(self._cb_handles, { event = "released", cb = cb })
+        end
+        if self.chart.add_event_cb and lv.EVENT_LONG_PRESSED then
+            local cb = function() fire("long_pressed") end
+            self.chart:add_event_cb(cb, lv.EVENT_LONG_PRESSED, nil)
+            table.insert(self._cb_handles, { event = "long_pressed", cb = cb })
+        end
     end
 
     local function delete_chart()
@@ -399,7 +431,9 @@ function TrendChart.new(parent, state)
 
     function self:destroy()
         self:stop()
-        self._event_listeners = { updated = {}, clicked = {} }
+        self._event_listeners = {
+            updated = {}, clicked = {}, pressed = {}, released = {}, long_pressed = {}
+        }
         delete_chart()
     end
 

@@ -44,6 +44,18 @@ struct EventDef {
     QString description;
 };
 
+// 输入动作定义（用于绑定模式左侧绿色锚点）
+struct ActionDef {
+    QString name;        // 设计器动作名，如 setText/show/hide
+    QString label;
+    QString description;
+    QString kind;        // set_property / call_method
+    QString property;    // kind == set_property 时写入的属性名
+    QString method;      // kind == call_method 时调用的方法名
+    QString valueType;   // 参数类型：string/number/boolean/color/void/any
+    QString defaultValue; // 固定动作值，如 show=true / hide=false
+};
+
 // 数据绑定声明
 struct BindingDef {
     QString name;       // 对应 property 或 event 名
@@ -61,11 +73,14 @@ struct EventAction {
     QString method;      // goto_page/set_property/call 等
     QVariantMap params;  // 动作参数
     QString code;        // type == custom_code 时的 Lua 代码
+    QString condition;   // Lua 表达式；为空表示总是执行
+    int delayMs = 0;     // 执行前延迟，单位 ms
     bool enabled = true;
 };
 
 struct WidgetEventBinding {
     QString eventName;
+    QString executionMode = QStringLiteral("sequence"); // sequence / parallel
     QList<EventAction> actions;
 };
 
@@ -109,6 +124,7 @@ struct WidgetMeta {
 
     // 属性 / 事件
     QList<PropertyMeta>  properties;
+    QList<ActionDef>     actions;         // 输入动作定义
     QStringList          events;          // 兼容字段：仅事件名
     QList<EventDef>      eventDefs;       // 完整事件定义
     QList<PropertyMeta>  eventProperties; // 事件处理代码（编辑器中编辑）
@@ -201,6 +217,7 @@ struct ProjectData {
 Q_DECLARE_METATYPE(PropertyOption)
 Q_DECLARE_METATYPE(PropertyMeta)
 Q_DECLARE_METATYPE(EventDef)
+Q_DECLARE_METATYPE(ActionDef)
 Q_DECLARE_METATYPE(BindingDef)
 Q_DECLARE_METATYPE(EventAction)
 Q_DECLARE_METATYPE(WidgetEventBinding)

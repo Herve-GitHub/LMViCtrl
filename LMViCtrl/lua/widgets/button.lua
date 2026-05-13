@@ -92,6 +92,19 @@ Button.__widget_meta = {
       bindable = true },
   },
 
+  actions = {
+    { name = "setText",    label = "设置文本",   kind = "set_property", property = "label",    value_type = "string",
+      description = "设置按钮显示文本" },
+    { name = "setEnabled", label = "设置启用",   kind = "set_property", property = "enabled",  value_type = "boolean",
+      description = "启用或禁用按钮" },
+    { name = "show",       label = "显示",       kind = "set_property", property = "visible",  value_type = "boolean", default_value = "true",
+      description = "显示按钮" },
+    { name = "hide",       label = "隐藏",       kind = "set_property", property = "visible",  value_type = "boolean", default_value = "false",
+      description = "隐藏按钮" },
+    { name = "setColor",   label = "设置背景色", kind = "set_property", property = "bg_color", value_type = "color",
+      description = "设置按钮背景色" },
+  },
+
   -- ===== 数据绑定声明 =====
   -- 显式列出"可与外部变量(Tag)绑定"的属性及方向
   --   in  : 变量值 -> 控件属性
@@ -108,11 +121,14 @@ Button.__widget_meta = {
     { name = "clicked",        label = "点击",
       description = "按钮被释放时触发（按下后抬起即触发）",
       params = {} },
-    { name = "single_clicked", label = "单击",
-      description = "确认为单击（与双击互斥）后触发，存在轻微延迟",
+    { name = "long_pressed",   label = "长按",
+      description = "按钮被持续按住达到长按阈值时触发，用于触摸屏次要操作",
       params = {} },
-    { name = "double_clicked", label = "双击",
-      description = "在短时间内连续两次点击时触发",
+    { name = "pressed",        label = "按下",
+      description = "手指或鼠标按下按钮瞬间触发",
+      params = {} },
+    { name = "released",       label = "释放",
+      description = "手指或鼠标从按钮抬起时触发",
       params = {} },
   },
 
@@ -123,14 +139,18 @@ Button.__widget_meta = {
       default = "", multiline = true, lines = 6,
       description = "点击按钮时执行的 Lua 代码",
       snippet = "-- self 为按钮实例，可访问 self.props\nprint('clicked')" },
-    { name = "on_single_clicked_handler", type = "code", language = "lua",
-      event = "single_clicked", label = "单击处理代码",
+    { name = "on_long_pressed_handler",   type = "code", language = "lua",
+      event = "long_pressed",   label = "长按处理代码",
       default = "", multiline = true, lines = 6,
-      description = "单击按钮时执行的 Lua 代码" },
-    { name = "on_double_clicked_handler", type = "code", language = "lua",
-      event = "double_clicked", label = "双击处理代码",
+      description = "长按按钮时执行的 Lua 代码" },
+    { name = "on_pressed_handler",        type = "code", language = "lua",
+      event = "pressed",        label = "按下处理代码",
       default = "", multiline = true, lines = 6,
-      description = "双击按钮时执行的 Lua 代码" },
+      description = "按下按钮时执行的 Lua 代码" },
+    { name = "on_released_handler",       type = "code", language = "lua",
+      event = "released",       label = "释放处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "释放按钮时执行的 Lua 代码" },
   },
 
   -- ===== 自定义渲染提示（供 render_mode = "custom" 时 Qt 端通用绘制使用） =====

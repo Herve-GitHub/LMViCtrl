@@ -106,6 +106,15 @@ Checkbox.__widget_meta = {
     { name = "clicked",     label = "点击",
       description = "复选框被释放时触发",
       params = {} },
+    { name = "pressed",     label = "按下",
+      description = "手指或鼠标按下复选框时触发",
+      params = {} },
+    { name = "released",    label = "释放",
+      description = "手指或鼠标从复选框抬起时触发",
+      params = {} },
+    { name = "long_pressed", label = "长按",
+      description = "复选框被持续按住达到长按阈值时触发",
+      params = {} },
     { name = "value_changed", label = "状态改变",
       description = "勾选状态发生变化时触发",
       params = { { name = "checked", type = "boolean", description = "新的勾选状态" } } },
@@ -118,6 +127,18 @@ Checkbox.__widget_meta = {
       default = "", multiline = true, lines = 6,
       description = "点击复选框时执行的 Lua 代码",
       snippet = "-- self 为复选框实例\nprint('clicked')" },
+    { name = "on_pressed_handler",       type = "code", language = "lua",
+      event = "pressed",       label = "按下处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "按下复选框时执行的 Lua 代码" },
+    { name = "on_released_handler",      type = "code", language = "lua",
+      event = "released",      label = "释放处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "释放复选框时执行的 Lua 代码" },
+    { name = "on_long_pressed_handler",  type = "code", language = "lua",
+      event = "long_pressed",  label = "长按处理代码",
+      default = "", multiline = true, lines = 6,
+      description = "长按复选框时执行的 Lua 代码" },
     { name = "on_value_changed_handler", type = "code", language = "lua",
       event = "value_changed", label = "状态改变处理代码",
       default = "", multiline = true, lines = 6,
@@ -314,6 +335,9 @@ function Checkbox.new(parent, state)
 
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     else
       print("[checkbox] unsupported event:", event_name)

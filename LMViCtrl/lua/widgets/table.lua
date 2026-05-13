@@ -93,6 +93,9 @@ Table.__widget_meta = {
     { name = "value_changed", label = "选中变化",
       description = "选中的单元格发生变化时触发", params = {} },
     { name = "clicked", label = "点击", params = {} },
+    { name = "pressed", label = "按下", params = {} },
+    { name = "released", label = "释放", params = {} },
+    { name = "long_pressed", label = "长按", params = {} },
   },
 
   event_properties = {
@@ -101,6 +104,15 @@ Table.__widget_meta = {
       default = "", multiline = true, lines = 6 },
     { name = "on_clicked_handler", type = "code", language = "lua",
       event = "clicked", label = "点击代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_pressed_handler", type = "code", language = "lua",
+      event = "pressed", label = "按下代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_released_handler", type = "code", language = "lua",
+      event = "released", label = "释放代码",
+      default = "", multiline = true, lines = 6 },
+    { name = "on_long_pressed_handler", type = "code", language = "lua",
+      event = "long_pressed", label = "长按代码",
       default = "", multiline = true, lines = 6 },
   },
 
@@ -225,6 +237,9 @@ function Table.new(parent, state)
     end
     local ev_code
     if     event_name == "clicked"       then ev_code = lv.EVENT_CLICKED
+    elseif event_name == "pressed"       then ev_code = lv.EVENT_PRESSED
+    elseif event_name == "released"      then ev_code = lv.EVENT_RELEASED
+    elseif event_name == "long_pressed"  then ev_code = lv.EVENT_LONG_PRESSED
     elseif event_name == "value_changed" then ev_code = lv.EVENT_VALUE_CHANGED
     else print("[table] unsupported event:", event_name); return end
     local cb = safe_cb()
