@@ -22,6 +22,34 @@
 #include <QVBoxLayout>
 
 namespace {
+QString normalizedValueType(const QString &type)
+{
+    const QString normalized = type.trimmed().toLower();
+    if (normalized == QLatin1String("int")
+        || normalized == QLatin1String("integer")
+        || normalized == QLatin1String("float")
+        || normalized == QLatin1String("double")) {
+        return QStringLiteral("number");
+    }
+    if (normalized == QLatin1String("bool"))
+        return QStringLiteral("boolean");
+    return normalized;
+}
+
+QString typeDisplayName(const QString &type)
+{
+    const QString normalized = normalizedValueType(type);
+    if (normalized.isEmpty() || normalized == QLatin1String("any")) return QObject::tr("任意");
+    if (normalized == QLatin1String("event")) return QObject::tr("事件");
+    if (normalized == QLatin1String("void")) return QObject::tr("无参数");
+    if (normalized == QLatin1String("number")) return QObject::tr("数字");
+    if (normalized == QLatin1String("string")) return QObject::tr("文本");
+    if (normalized == QLatin1String("boolean")) return QObject::tr("布尔");
+    if (normalized == QLatin1String("color")) return QObject::tr("颜色");
+    if (normalized == QLatin1String("list")) return QObject::tr("列表");
+    return type;
+}
+
 QString edgeTypeLabel(const QString &type)
 {
     if (type == QLatin1String("event_data")) return QObject::tr("控件事件 -> 数据写入");
@@ -303,7 +331,7 @@ void BindingDetailDock::applyChanges()
 QString BindingDetailDock::endpointTitle(const BindingEndpoint &endpoint) const
 {
     const QString refName = endpoint.refName.isEmpty() ? endpoint.nodeId : endpoint.refName;
-    return QStringLiteral("%1 · %2").arg(refName, endpoint.portName);
+    return QStringLiteral("%1 · %2 [%3]").arg(refName, endpoint.portName, typeDisplayName(endpoint.valueType));
 }
 
 QString BindingDetailDock::edgeTitle(const BindingEdge &edge) const

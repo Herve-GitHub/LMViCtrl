@@ -74,6 +74,11 @@ private:
         QGraphicsItem *item = nullptr;
     };
 
+    struct CompatibilityResult {
+        bool ok = false;
+        QString message;
+    };
+
     void buildUi();
     void reconcileGraphNodes();
     void rebuildScene();
@@ -103,6 +108,7 @@ private:
     void setPortHighlighted(const PortVisual &port, bool compatible, bool hover);
     QString portAt(const QPointF &scenePos) const;
     bool isCompatibleConnection(const PortVisual &source, const PortVisual &target) const;
+    CompatibilityResult connectionCompatibility(const PortVisual &source, const PortVisual &target) const;
     BindingEndpoint endpointFromPort(const PortVisual &port) const;
     QString edgeTypeForPorts(const PortVisual &source, const PortVisual &target) const;
     QString edgeLabelForPorts(const PortVisual &source, const PortVisual &target) const;

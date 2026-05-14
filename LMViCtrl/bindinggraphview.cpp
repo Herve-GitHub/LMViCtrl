@@ -66,16 +66,45 @@ QString dataNodeId(const QString &id)
 
 bool isWildcardValueType(const QString &type)
 {
-    return type.isEmpty()
-        || type == QLatin1String("any")
-        || type == QLatin1String("event")
-        || type == QLatin1String("void");
+    const QString normalized = type.trimmed().toLower();
+    return normalized.isEmpty()
+        || normalized == QLatin1String("any")
+        || normalized == QLatin1String("event")
+        || normalized == QLatin1String("void");
+}
+
+QString normalizedValueType(const QString &type)
+{
+    const QString normalized = type.trimmed().toLower();
+    if (normalized == QLatin1String("int")
+        || normalized == QLatin1String("integer")
+        || normalized == QLatin1String("float")
+        || normalized == QLatin1String("double")) {
+        return QStringLiteral("number");
+    }
+    if (normalized == QLatin1String("bool"))
+        return QStringLiteral("boolean");
+    return normalized;
+}
+
+QString typeDisplayName(const QString &type)
+{
+    const QString normalized = normalizedValueType(type);
+    if (normalized.isEmpty() || normalized == QLatin1String("any")) return QObject::tr("任意");
+    if (normalized == QLatin1String("event")) return QObject::tr("事件");
+    if (normalized == QLatin1String("void")) return QObject::tr("无参数");
+    if (normalized == QLatin1String("number")) return QObject::tr("数字");
+    if (normalized == QLatin1String("string")) return QObject::tr("文本");
+    if (normalized == QLatin1String("boolean")) return QObject::tr("布尔");
+    if (normalized == QLatin1String("color")) return QObject::tr("颜色");
+    if (normalized == QLatin1String("list")) return QObject::tr("列表");
+    return type;
 }
 
 bool valueTypesCompatible(const QString &sourceType, const QString &targetType)
 {
     if (isWildcardValueType(sourceType) || isWildcardValueType(targetType)) return true;
-    return sourceType.compare(targetType, Qt::CaseInsensitive) == 0;
+    return normalizedValueType(sourceType) == normalizedValueType(targetType);
 }
 
 QString normalizeVariableName(const QString &name)
@@ -538,10 +567,9 @@ bool BindingGraphView::quickBindProperty(const QString &instanceId,
     PortVisual target = m_ports.value(targetKey);
     if (!valueType.isEmpty())
         target.valueType = valueType;
-    if (!isCompatibleConnection(source, target)) {
-        emit statusMessageRequested(tr("快速绑定失败：%1 与 %2 类型不兼容")
-            .arg(matchedVariable->name.isEmpty() ? matchedVariable->id : matchedVariable->name,
-                 propertyName));
+    const CompatibilityResult compatibility = connectionCompatibility(source, target);
+    if (!compatibility.ok) {
+        emit statusMessageRequested(tr("快速绑定失败：%1").arg(compatibility.message));
         return false;
     }
 
@@ -645,7 +673,15 @@ void BindingGraphView::updateConnectionDrag(const QPointF &scenePos)
     if (source.item)
         source.scenePos = source.item->mapToScene(source.item->boundingRect().center());
     m_dragPathItem->setPath(connectionPath(source.scenePos, scenePos));
-    updatePortHighlights(portAt(scenePos));
+    const QString hoverKey = portAt(scenePos);
+    updatePortHighlights(hoverKey);
+    if (m_statusLabel) {
+        if (hoverKey.isEmpty() || !m_ports.contains(hoverKey)) {
+            m_statusLabel->setText(tr("拖拽中：%1 输出 %2").arg(source.label, typeDisplayName(source.valueType)));
+        } else {
+            m_statusLabel->setText(connectionCompatibility(source, m_ports.value(hoverKey)).message);
+        }
+    }
 }
 
 void BindingGraphView::finishConnectionDrag(const QPointF &scenePos)
@@ -669,6 +705,7 @@ void BindingGraphView::cancelConnectionDrag()
     }
     m_dragSourceKey.clear();
     resetPortHighlights();
+    updateStatus();
 }
 
 void BindingGraphView::cmdAddEdge(const BindingEdge &edge)
@@ -1029,7 +1066,8 @@ void BindingGraphView::addPort(QGraphicsItem *nodeItem,
                              nodeItem);
     dot->setPen(QPen(color.lighter(130), 1));
     dot->setBrush(color);
-    dot->setToolTip(QStringLiteral("%1.%2").arg(kind, name));
+    dot->setToolTip(QStringLiteral("%1.%2\n%3: %4")
+        .arg(kind, name, tr("类型"), typeDisplayName(valueType)));
 
     auto *text = new QGraphicsTextItem(label, nodeItem);
     text->setDefaultTextColor(QColor(QStringLiteral("#d8d8d8")));
@@ -1155,6 +1193,12 @@ void BindingGraphView::setPortHighlighted(const PortVisual &port, bool compatibl
     auto *ellipse = dynamic_cast<QGraphicsEllipseItem *>(port.item);
     if (!ellipse) return;
 
+    QString tooltip = QStringLiteral("%1.%2\n%3: %4")
+        .arg(port.portKind, port.portName, tr("类型"), typeDisplayName(port.valueType));
+    if (!m_dragSourceKey.isEmpty() && m_ports.contains(m_dragSourceKey) && !port.output)
+        tooltip += QStringLiteral("\n%1").arg(connectionCompatibility(m_ports.value(m_dragSourceKey), port).message);
+    ellipse->setToolTip(tooltip);
+
     if (hover && compatible) {
         ellipse->setPen(QPen(QColor(QStringLiteral("#f1c40f")), 3.0));
         ellipse->setBrush(QColor(QStringLiteral("#f1c40f")));
@@ -1188,20 +1232,60 @@ QString BindingGraphView::portAt(const QPointF &scenePos) const
 
 bool BindingGraphView::isCompatibleConnection(const PortVisual &source, const PortVisual &target) const
 {
-    if (source.key.isEmpty() || target.key.isEmpty()) return false;
-    if (source.key == target.key) return false;
-    if (!source.output || target.output) return false;
+    return connectionCompatibility(source, target).ok;
+}
+
+BindingGraphView::CompatibilityResult BindingGraphView::connectionCompatibility(const PortVisual &source, const PortVisual &target) const
+{
+    CompatibilityResult result;
+    if (source.key.isEmpty() || target.key.isEmpty()) {
+        result.message = tr("端口不存在");
+        return result;
+    }
+    if (source.key == target.key) {
+        result.message = tr("不能连接到同一个端口");
+        return result;
+    }
+    if (!source.output) {
+        result.message = tr("源端口必须是输出端口");
+        return result;
+    }
+    if (target.output) {
+        result.message = tr("目标端口必须是输入端口");
+        return result;
+    }
 
     const bool sourceOk = source.portKind == QLatin1String("event")
         || source.portKind == QLatin1String("data_get");
     const bool targetOk = target.portKind == QLatin1String("action")
         || target.portKind == QLatin1String("data_set")
         || target.portKind == QLatin1String("property");
-    if (!sourceOk || !targetOk) return false;
+    if (!sourceOk || !targetOk) {
+        result.message = tr("端口方向不兼容：%1 -> %2").arg(source.portKind, target.portKind);
+        return result;
+    }
 
-    if (source.portKind == QLatin1String("event"))
-        return true;
-    return valueTypesCompatible(source.valueType, target.valueType);
+    if (target.portKind == QLatin1String("property") && source.portKind != QLatin1String("data_get")) {
+        result.message = tr("属性绑定需要数据输出端口，当前源端口是 %1").arg(source.portKind);
+        return result;
+    }
+
+    if (source.portKind == QLatin1String("event")) {
+        result.ok = true;
+        result.message = tr("兼容：事件可触发目标动作或写入目标");
+        return result;
+    }
+
+    if (valueTypesCompatible(source.valueType, target.valueType)) {
+        result.ok = true;
+        result.message = tr("兼容：%1 -> %2")
+            .arg(typeDisplayName(source.valueType), typeDisplayName(target.valueType));
+        return result;
+    }
+
+    result.message = tr("类型不兼容：源为 %1，目标需要 %2")
+        .arg(typeDisplayName(source.valueType), typeDisplayName(target.valueType));
+    return result;
 }
 
 BindingEndpoint BindingGraphView::endpointFromPort(const PortVisual &port) const
@@ -1280,8 +1364,9 @@ bool BindingGraphView::createEdge(const QString &sourceKey, const QString &targe
 
     const PortVisual source = m_ports.value(sourceKey);
     const PortVisual target = m_ports.value(targetKey);
-    if (!isCompatibleConnection(source, target)) {
-        emit statusMessageRequested(tr("绑定失败：端口类型不兼容"));
+    const CompatibilityResult compatibility = connectionCompatibility(source, target);
+    if (!compatibility.ok) {
+        emit statusMessageRequested(tr("绑定失败：%1").arg(compatibility.message));
         return false;
     }
     if (edgeExists(sourceKey, targetKey)) {
