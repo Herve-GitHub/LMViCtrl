@@ -39,6 +39,7 @@ public:
                            const QString &preferredVariableName = QString());
 
     void commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos);
+    void beginNodeMove(const QString &nodeId);
     void updateEdgesForNode(const QString &nodeId);
     void beginConnectionDrag(const QString &portKey, const QPointF &scenePos);
     void updateConnectionDrag(const QPointF &scenePos);
@@ -138,4 +139,5 @@ private:
     QString m_selectedEdgeId;
     QString m_dragSourceKey;
     QGraphicsPathItem *m_dragPathItem = nullptr;
+    QHash<QString, QPointF> m_nodeMoveStartPositions;
 };

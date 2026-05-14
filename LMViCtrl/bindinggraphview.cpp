@@ -198,8 +198,10 @@ public:
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override
     {
-        m_dragStartPos = pos();
         QGraphicsRectItem::mousePressEvent(event);
+        m_dragStartPos = pos();
+        if (m_owner)
+            m_owner->beginNodeMove(m_nodeId);
     }
 
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
@@ -659,16 +661,91 @@ void BindingGraphView::autoLayout()
 void BindingGraphView::commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos)
 {
     if (!m_undoStack) return;
+
+    if (!m_nodeMoveStartPositions.isEmpty()) {
+        QHash<QString, QPointF> before;
+        QHash<QString, QPointF> after;
+
+        for (auto it = m_nodeMoveStartPositions.constBegin(); it != m_nodeMoveStartPositions.constEnd(); ++it) {
+            QGraphicsItem *item = m_nodeItems.value(it.key(), nullptr);
+            if (!item) continue;
+
+            const QPointF oldRounded(qRound(it.value().x()), qRound(it.value().y()));
+            const QPointF newRounded(qRound(item->pos().x()), qRound(item->pos().y()));
+            before.insert(it.key(), oldRounded);
+            after.insert(it.key(), newRounded);
+        }
+
+        m_nodeMoveStartPositions.clear();
+        if (before == after) return;
+        m_undoStack->push(new SetBindingNodePositionsCommand(this, before, after));
+        return;
+    }
+
     const QPointF before(qRound(oldPos.x()), qRound(oldPos.y()));
     const QPointF after(qRound(newPos.x()), qRound(newPos.y()));
     if (before == after) return;
     m_undoStack->push(new MoveBindingNodeCommand(this, nodeId, before, after));
 }
 
+void BindingGraphView::beginNodeMove(const QString &nodeId)
+{
+    if (!m_scene || !m_nodeMoveStartPositions.isEmpty()) return;
+
+    for (auto it = m_nodeItems.constBegin(); it != m_nodeItems.constEnd(); ++it) {
+        QGraphicsItem *item = it.value();
+        if (item && item->isSelected())
+            m_nodeMoveStartPositions.insert(it.key(), item->pos());
+    }
+
+    if (m_nodeMoveStartPositions.isEmpty()) {
+        if (QGraphicsItem *item = m_nodeItems.value(nodeId, nullptr))
+            m_nodeMoveStartPositions.insert(nodeId, item->pos());
+    }
+}
+
 void BindingGraphView::updateEdgesForNode(const QString &nodeId)
 {
     Q_UNUSED(nodeId)
-    rebuildEdges();
+    if (!m_project || !m_scene) return;
+
+    for (auto it = m_ports.begin(); it != m_ports.end(); ++it) {
+        if (it->item)
+            it->scenePos = it->item->mapToScene(it->item->boundingRect().center());
+    }
+
+    QHash<QString, int> sourceTotals;
+    QHash<QString, int> targetTotals;
+    for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+        const QString sourceKey = portKey(edge.source);
+        const QString targetKey = portKey(edge.target);
+        if (m_ports.contains(sourceKey) && m_ports.contains(targetKey)) {
+            ++sourceTotals[sourceKey];
+            ++targetTotals[targetKey];
+        }
+    }
+
+    QHash<QString, int> sourceIndexes;
+    QHash<QString, int> targetIndexes;
+    for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+        const QString sourceKey = portKey(edge.source);
+        const QString targetKey = portKey(edge.target);
+        const PortVisual source = m_ports.value(sourceKey);
+        const PortVisual target = m_ports.value(targetKey);
+        if (!source.item || !target.item) continue;
+
+        const int sourceIndex = sourceIndexes.value(sourceKey, 0);
+        const int targetIndex = targetIndexes.value(targetKey, 0);
+        ++sourceIndexes[sourceKey];
+        ++targetIndexes[targetKey];
+
+        auto *edgeItem = dynamic_cast<QGraphicsPathItem *>(m_edgeItems.value(edge.id, nullptr));
+        if (!edgeItem) continue;
+
+        const QPointF sourcePoint = portConnectionPoint(source.scenePos, true, sourceIndex, sourceTotals.value(sourceKey, 1));
+        const QPointF targetPoint = portConnectionPoint(target.scenePos, false, targetIndex, targetTotals.value(targetKey, 1));
+        edgeItem->setPath(connectionPath(sourcePoint, targetPoint));
+    }
 }
 
 void BindingGraphView::beginConnectionDrag(const QString &portKey, const QPointF &scenePos)
