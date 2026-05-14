@@ -28,6 +28,11 @@ public:
     void autoLayout();
     bool hasProject() const { return m_project != nullptr; }
     QUndoStack *undoStack() const { return m_undoStack; }
+    bool deleteSelectedEdges();
+    bool deleteEdge(const QString &edgeId);
+    BindingEdge edgeSnapshot(const QString &edgeId) const;
+    bool updateEdge(const BindingEdge &edge);
+    void selectEdge(const QString &edgeId);
 
     void commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos);
     void updateEdgesForNode(const QString &nodeId);
@@ -36,15 +41,19 @@ public:
     void finishConnectionDrag(const QPointF &scenePos);
     void cancelConnectionDrag();
     void cmdAddEdge(const BindingEdge &edge);
+    void cmdInsertEdge(const BindingEdge &edge, int index);
     void cmdRemoveEdge(const QString &edgeId);
+    void cmdUpdateEdge(const BindingEdge &edge);
     void cmdSetNodePosition(const QString &nodeId, const QPointF &pos);
     void cmdSetNodePositions(const QHash<QString, QPointF> &positions);
 
 signals:
     void graphChanged();
     void statusMessageRequested(const QString &message);
+    void selectedEdgeChanged(const QString &edgeId);
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void showEvent(QShowEvent *event) override;
 
 private:
@@ -84,6 +93,7 @@ private:
                  const QColor &color);
     void rebuildEdges();
     void updateStatus();
+    void onSceneSelectionChanged();
     void updatePortHighlights(const QString &hoverKey = QString());
     void resetPortHighlights();
     void setPortHighlighted(const PortVisual &port, bool compatible, bool hover);
@@ -94,6 +104,8 @@ private:
     QString edgeLabelForPorts(const PortVisual &source, const PortVisual &target) const;
     bool edgeExists(const QString &sourceKey, const QString &targetKey) const;
     bool createEdge(const QString &sourceKey, const QString &targetKey);
+    int edgeIndex(const QString &edgeId) const;
+    QString edgeIdForItem(QGraphicsItem *item) const;
     QPainterPath connectionPath(const QPointF &source, const QPointF &target) const;
 
     const WidgetMeta *findWidgetMeta(const QString &widgetId) const;
@@ -113,6 +125,7 @@ private:
     QHash<QString, PortVisual> m_ports;
     QHash<QString, QGraphicsItem *> m_edgeItems;
     QUndoStack *m_undoStack = nullptr;
+    QString m_selectedEdgeId;
     QString m_dragSourceKey;
     QGraphicsPathItem *m_dragPathItem = nullptr;
 };

@@ -6,6 +6,7 @@
 #include "propertypaneldock.h"
 #include "eventpaneldock.h"
 #include "bindinggraphview.h"
+#include "bindingdetaildock.h"
 #include "screentab.h"
 #include "canvasscene.h"
 #include "welcomewidget.h"
@@ -78,10 +79,16 @@ MainWindow::MainWindow(QWidget* parent)
 	connect(m_tabWidget, &QTabWidget::tabCloseRequested,
 		this, &MainWindow::onTabCloseRequested);
 	connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
-		if (m_bindingGraphView && m_tabWidget->currentWidget() == m_bindingGraphView)
+		const bool bindingMode = m_bindingGraphView && m_tabWidget->currentWidget() == m_bindingGraphView;
+		if (bindingMode)
 			m_bindingGraphView->refreshGraph();
 		if (m_propertyPanel)
 			m_propertyPanel->setCurrentScene(currentScene());
+		if (m_bindingDetailPanel) {
+			m_bindingDetailPanel->setVisible(bindingMode);
+			if (bindingMode)
+				m_bindingDetailPanel->raise();
+		}
 		if (m_eventPanel)
 			m_eventPanel->setCurrentScene(currentScene());
 		if (m_projectTree)
@@ -99,6 +106,15 @@ MainWindow::MainWindow(QWidget* parent)
 	// 属性面板（停靠在右侧）
 	m_propertyPanel = new PropertyPanelDock(this);
 	addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
+
+	// 绑定详情面板（绑定模式下使用）
+	m_bindingDetailPanel = new BindingDetailDock(this);
+	m_bindingDetailPanel->setProjectData(&m_project);
+	m_bindingDetailPanel->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+	m_bindingDetailPanel->setGraphView(m_bindingGraphView);
+	addDockWidget(Qt::RightDockWidgetArea, m_bindingDetailPanel);
+	tabifyDockWidget(m_propertyPanel, m_bindingDetailPanel);
+	m_bindingDetailPanel->hide();
 
 	setupLogDock();
 

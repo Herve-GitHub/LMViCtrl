@@ -1,23 +1,30 @@
 #include "bindinggraphview.h"
 
 #include <QBrush>
+#include <QAction>
+#include <QEvent>
 #include <QFrame>
 #include <QGraphicsEllipseItem>
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsTextItem>
 #include <QGraphicsView>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineF>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPainterPathStroker>
 #include <QPen>
 #include <QPushButton>
 #include <QSet>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QStyleOptionGraphicsItem>
 #include <QUndoCommand>
 #include <QUndoStack>
@@ -69,6 +76,32 @@ bool valueTypesCompatible(const QString &sourceType, const QString &targetType)
 {
     if (isWildcardValueType(sourceType) || isWildcardValueType(targetType)) return true;
     return sourceType.compare(targetType, Qt::CaseInsensitive) == 0;
+}
+
+bool endpointsEqual(const BindingEndpoint &lhs, const BindingEndpoint &rhs)
+{
+    return lhs.nodeId == rhs.nodeId
+        && lhs.nodeType == rhs.nodeType
+        && lhs.refId == rhs.refId
+        && lhs.refName == rhs.refName
+        && lhs.portKind == rhs.portKind
+        && lhs.portName == rhs.portName
+        && lhs.valueType == rhs.valueType;
+}
+
+bool edgesEqual(const BindingEdge &lhs, const BindingEdge &rhs)
+{
+    return lhs.id == rhs.id
+        && lhs.type == rhs.type
+        && endpointsEqual(lhs.source, rhs.source)
+        && endpointsEqual(lhs.target, rhs.target)
+        && lhs.label == rhs.label
+        && lhs.executionMode == rhs.executionMode
+        && lhs.order == rhs.order
+        && lhs.condition == rhs.condition
+        && lhs.delayMs == rhs.delayMs
+        && lhs.enabled == rhs.enabled
+        && lhs.params == rhs.params;
 }
 
 class BindingNodeItem : public QGraphicsRectItem
@@ -188,6 +221,63 @@ private:
     bool m_output = false;
 };
 
+class EdgeItem : public QGraphicsPathItem
+{
+public:
+    EdgeItem(BindingGraphView *owner,
+             const QString &edgeId,
+             const QPainterPath &path,
+             QGraphicsItem *parent = nullptr)
+        : QGraphicsPathItem(path, parent)
+        , m_owner(owner)
+        , m_edgeId(edgeId)
+    {
+        setFlags(QGraphicsItem::ItemIsSelectable);
+        setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
+        setAcceptHoverEvents(true);
+    }
+
+    QString edgeId() const { return m_edgeId; }
+
+protected:
+    QPainterPath shape() const override
+    {
+        QPainterPathStroker stroker;
+        stroker.setWidth(12.0);
+        stroker.setCapStyle(Qt::RoundCap);
+        stroker.setJoinStyle(Qt::RoundJoin);
+        return stroker.createStroke(path());
+    }
+
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override
+    {
+        if (isSelected()) {
+            QPen highlight(QColor(QStringLiteral("#f1c40f")), pen().widthF() + 4.0);
+            highlight.setStyle(Qt::SolidLine);
+            highlight.setCapStyle(Qt::RoundCap);
+            painter->setPen(highlight);
+            painter->setBrush(Qt::NoBrush);
+            painter->drawPath(path());
+        }
+        QGraphicsPathItem::paint(painter, option, widget);
+    }
+
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent *event) override
+    {
+        setSelected(true);
+        QMenu menu;
+        QAction *deleteAction = menu.addAction(QObject::tr("删除连线"));
+        QAction *chosen = menu.exec(event->screenPos());
+        if (chosen == deleteAction && m_owner)
+            m_owner->deleteEdge(m_edgeId);
+        event->accept();
+    }
+
+private:
+    BindingGraphView *m_owner = nullptr;
+    QString m_edgeId;
+};
+
 class AddBindingEdgeCommand : public QUndoCommand
 {
 public:
@@ -197,12 +287,50 @@ public:
         , m_edge(edge)
     {}
 
-    void redo() override { if (m_view) m_view->cmdAddEdge(m_edge); }
+    void redo() override { if (m_view) m_view->cmdInsertEdge(m_edge, -1); }
     void undo() override { if (m_view) m_view->cmdRemoveEdge(m_edge.id); }
 
 private:
     BindingGraphView *m_view = nullptr;
     BindingEdge m_edge;
+};
+
+class RemoveBindingEdgeCommand : public QUndoCommand
+{
+public:
+    RemoveBindingEdgeCommand(BindingGraphView *view, const BindingEdge &edge, int index)
+        : QUndoCommand(QObject::tr("删除绑定 %1").arg(edge.label))
+        , m_view(view)
+        , m_edge(edge)
+        , m_index(index)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdRemoveEdge(m_edge.id); }
+    void undo() override { if (m_view) m_view->cmdInsertEdge(m_edge, m_index); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingEdge m_edge;
+    int m_index = -1;
+};
+
+class UpdateBindingEdgeCommand : public QUndoCommand
+{
+public:
+    UpdateBindingEdgeCommand(BindingGraphView *view, const BindingEdge &before, const BindingEdge &after)
+        : QUndoCommand(QObject::tr("编辑绑定 %1").arg(after.label))
+        , m_view(view)
+        , m_before(before)
+        , m_after(after)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdUpdateEdge(m_after); }
+    void undo() override { if (m_view) m_view->cmdUpdateEdge(m_before); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingEdge m_before;
+    BindingEdge m_after;
 };
 
 class MoveBindingNodeCommand : public QUndoCommand
@@ -270,6 +398,75 @@ void BindingGraphView::setWidgetMetas(const QList<WidgetMeta> &metas)
 {
     m_metas = metas;
     refreshGraph();
+}
+
+bool BindingGraphView::deleteSelectedEdges()
+{
+    if (!m_project || !m_scene || !m_undoStack) return false;
+
+    QList<QString> edgeIds;
+    for (QGraphicsItem *item : m_scene->selectedItems()) {
+        const QString edgeId = edgeIdForItem(item);
+        if (!edgeId.isEmpty() && !edgeIds.contains(edgeId))
+            edgeIds.append(edgeId);
+    }
+    if (edgeIds.isEmpty()) return false;
+
+    if (edgeIds.size() == 1)
+        return deleteEdge(edgeIds.constFirst());
+
+    m_undoStack->beginMacro(tr("删除 %1 条绑定").arg(edgeIds.size()));
+    for (const QString &edgeId : std::as_const(edgeIds))
+        deleteEdge(edgeId);
+    m_undoStack->endMacro();
+    return true;
+}
+
+bool BindingGraphView::deleteEdge(const QString &edgeId)
+{
+    if (!m_project || !m_undoStack) return false;
+    const int index = edgeIndex(edgeId);
+    if (index < 0) return false;
+    const BindingEdge edge = m_project->bindingGraph.edges.at(index);
+    m_undoStack->push(new RemoveBindingEdgeCommand(this, edge, index));
+    emit statusMessageRequested(tr("已删除绑定：%1").arg(edge.label));
+    return true;
+}
+
+BindingEdge BindingGraphView::edgeSnapshot(const QString &edgeId) const
+{
+    const int index = edgeIndex(edgeId);
+    if (!m_project || index < 0) return BindingEdge{};
+    return m_project->bindingGraph.edges.at(index);
+}
+
+bool BindingGraphView::updateEdge(const BindingEdge &edge)
+{
+    if (!m_project || !m_undoStack || edge.id.isEmpty()) return false;
+    const int index = edgeIndex(edge.id);
+    if (index < 0) return false;
+    const BindingEdge before = m_project->bindingGraph.edges.at(index);
+    if (edgesEqual(before, edge)) return false;
+    m_undoStack->push(new UpdateBindingEdgeCommand(this, before, edge));
+    emit statusMessageRequested(tr("已更新绑定：%1").arg(edge.label));
+    return true;
+}
+
+void BindingGraphView::selectEdge(const QString &edgeId)
+{
+    if (!m_scene) return;
+    m_scene->clearSelection();
+    if (QGraphicsItem *item = m_edgeItems.value(edgeId, nullptr)) {
+        item->setSelected(true);
+        m_selectedEdgeId = edgeId;
+        emit selectedEdgeChanged(edgeId);
+    } else if (!edgeId.isEmpty()) {
+        m_selectedEdgeId = edgeId;
+        emit selectedEdgeChanged(edgeId);
+    } else if (!m_selectedEdgeId.isEmpty()) {
+        m_selectedEdgeId.clear();
+        emit selectedEdgeChanged(QString());
+    }
 }
 
 void BindingGraphView::refreshGraph()
@@ -374,12 +571,20 @@ void BindingGraphView::cancelConnectionDrag()
 
 void BindingGraphView::cmdAddEdge(const BindingEdge &edge)
 {
+    cmdInsertEdge(edge, -1);
+}
+
+void BindingGraphView::cmdInsertEdge(const BindingEdge &edge, int index)
+{
     if (!m_project || edge.id.isEmpty()) return;
     for (const BindingEdge &existing : std::as_const(m_project->bindingGraph.edges)) {
         if (existing.id == edge.id)
             return;
     }
-    m_project->bindingGraph.edges.append(edge);
+    const int insertIndex = index < 0
+        ? m_project->bindingGraph.edges.size()
+        : qBound(0, index, m_project->bindingGraph.edges.size());
+    m_project->bindingGraph.edges.insert(insertIndex, edge);
     rebuildEdges();
     updateStatus();
     emit graphChanged();
@@ -394,9 +599,26 @@ void BindingGraphView::cmdRemoveEdge(const QString &edgeId)
             break;
         }
     }
+    if (m_selectedEdgeId == edgeId) {
+        m_selectedEdgeId.clear();
+        emit selectedEdgeChanged(QString());
+    }
     rebuildEdges();
     updateStatus();
     emit graphChanged();
+}
+
+void BindingGraphView::cmdUpdateEdge(const BindingEdge &edge)
+{
+    if (!m_project || edge.id.isEmpty()) return;
+    const int index = edgeIndex(edge.id);
+    if (index < 0) return;
+    m_project->bindingGraph.edges[index] = edge;
+    m_selectedEdgeId = edge.id;
+    rebuildEdges();
+    updateStatus();
+    emit graphChanged();
+    emit selectedEdgeChanged(edge.id);
 }
 
 void BindingGraphView::cmdSetNodePosition(const QString &nodeId, const QPointF &pos)
@@ -433,6 +655,20 @@ void BindingGraphView::cmdSetNodePositions(const QHash<QString, QPointF> &positi
     rebuildEdges();
     updateStatus();
     emit graphChanged();
+}
+
+bool BindingGraphView::eventFilter(QObject *watched, QEvent *event)
+{
+    if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::KeyPress) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Delete || keyEvent->key() == Qt::Key_Backspace) {
+            if (deleteSelectedEdges()) {
+                event->accept();
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void BindingGraphView::showEvent(QShowEvent *event)
@@ -479,11 +715,14 @@ void BindingGraphView::buildUi()
     m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     m_view->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    m_view->installEventFilter(this);
+    m_view->viewport()->installEventFilter(this);
     root->addWidget(m_view, 1);
 
     connect(refreshButton, &QPushButton::clicked, this, &BindingGraphView::refreshGraph);
     connect(layoutButton, &QPushButton::clicked, this, &BindingGraphView::autoLayout);
     connect(fitButton, &QPushButton::clicked, this, &BindingGraphView::fitToView);
+    connect(m_scene, &QGraphicsScene::selectionChanged, this, &BindingGraphView::onSceneSelectionChanged);
 }
 
 void BindingGraphView::reconcileGraphNodes()
@@ -711,6 +950,8 @@ void BindingGraphView::addPort(QGraphicsItem *nodeItem,
 
 void BindingGraphView::rebuildEdges()
 {
+    const QString edgeToRestore = m_selectedEdgeId;
+    QSignalBlocker sceneBlocker(m_scene);
     for (QGraphicsItem *item : std::as_const(m_edgeItems)) {
         if (item) {
             m_scene->removeItem(item);
@@ -730,7 +971,7 @@ void BindingGraphView::rebuildEdges()
         const PortVisual target = m_ports.value(portKey(edge.target));
         if (!source.item || !target.item) continue;
 
-        auto *item = new QGraphicsPathItem(connectionPath(source.scenePos, target.scenePos));
+        auto *item = new EdgeItem(this, edge.id, connectionPath(source.scenePos, target.scenePos));
         QPen pen(colorForEdgeType(edge.type), edge.enabled ? 2.4 : 1.6);
         if (edge.type == QLatin1String("event_data")) pen.setStyle(Qt::DashLine);
         if (edge.type == QLatin1String("data_action")) pen.setStyle(Qt::DotLine);
@@ -744,6 +985,12 @@ void BindingGraphView::rebuildEdges()
         m_scene->addItem(item);
         m_edgeItems.insert(edge.id, item);
     }
+
+    m_selectedEdgeId = edgeToRestore;
+    if (!m_selectedEdgeId.isEmpty()) {
+        if (QGraphicsItem *selected = m_edgeItems.value(m_selectedEdgeId, nullptr))
+            selected->setSelected(true);
+    }
 }
 
 void BindingGraphView::updateStatus()
@@ -756,6 +1003,21 @@ void BindingGraphView::updateStatus()
     m_statusLabel->setText(tr("节点 %1 · 连线 %2")
         .arg(m_project->bindingGraph.nodes.size())
         .arg(m_project->bindingGraph.edges.size()));
+}
+
+void BindingGraphView::onSceneSelectionChanged()
+{
+    QString selectedEdgeId;
+    if (m_scene) {
+        for (QGraphicsItem *item : m_scene->selectedItems()) {
+            selectedEdgeId = edgeIdForItem(item);
+            if (!selectedEdgeId.isEmpty())
+                break;
+        }
+    }
+    if (m_selectedEdgeId == selectedEdgeId) return;
+    m_selectedEdgeId = selectedEdgeId;
+    emit selectedEdgeChanged(m_selectedEdgeId);
 }
 
 void BindingGraphView::updatePortHighlights(const QString &hoverKey)
@@ -885,6 +1147,28 @@ bool BindingGraphView::edgeExists(const QString &sourceKey, const QString &targe
             return true;
     }
     return false;
+}
+
+int BindingGraphView::edgeIndex(const QString &edgeId) const
+{
+    if (!m_project) return -1;
+    for (int i = 0; i < m_project->bindingGraph.edges.size(); ++i) {
+        if (m_project->bindingGraph.edges.at(i).id == edgeId)
+            return i;
+    }
+    return -1;
+}
+
+QString BindingGraphView::edgeIdForItem(QGraphicsItem *item) const
+{
+    if (!item) return QString();
+    if (auto *edgeItem = dynamic_cast<EdgeItem *>(item))
+        return edgeItem->edgeId();
+    for (auto it = m_edgeItems.constBegin(); it != m_edgeItems.constEnd(); ++it) {
+        if (it.value() == item)
+            return it.key();
+    }
+    return QString();
 }
 
 bool BindingGraphView::createEdge(const QString &sourceKey, const QString &targetKey)

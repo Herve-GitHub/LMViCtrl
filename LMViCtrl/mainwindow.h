@@ -8,6 +8,7 @@
 class WidgetToolbox;
 class CanvasScene;
 class CanvasView;
+class BindingDetailDock;
 class BindingGraphView;
 class ScreenTab;
 class ScreenManagerDock;
@@ -284,6 +285,7 @@ private:
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
+    BindingDetailDock *m_bindingDetailPanel = nullptr;
     EventPanelDock    *m_eventPanel       = nullptr;
     QDockWidget       *m_logDock          = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;

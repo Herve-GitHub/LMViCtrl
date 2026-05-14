@@ -23,6 +23,7 @@ SOURCES += \
     projectmanager.cpp \
     eventactiondialog.cpp \
     bindinggraphview.cpp \
+    bindingdetaildock.cpp \
     eventpaneldock.cpp \
     eventtriggerdialog.cpp \
     projecttreedock.cpp \
@@ -46,6 +47,7 @@ HEADERS += \
     projectmanager.h \
     eventactiondialog.h \
     bindinggraphview.h \
+    bindingdetaildock.h \
     eventpaneldock.h \
     eventtriggerdialog.h \
     projecttreedock.h \

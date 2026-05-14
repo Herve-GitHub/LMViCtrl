@@ -16,6 +16,7 @@
 #include "projecttreedock.h"
 #include "eventpaneldock.h"
 #include "bindinggraphview.h"
+#include "bindingdetaildock.h"
 #include "screentab.h"
 #include "screenmanagerdock.h"
 #include "welcomewidget.h"
@@ -409,6 +410,13 @@ void MainWindow::openBindingGraphTab()
     if (!m_tabWidget || !m_bindingGraphView) return;
     m_bindingGraphView->setProjectData(&m_project);
     m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+    if (m_bindingDetailPanel) {
+        m_bindingDetailPanel->setProjectData(&m_project);
+        m_bindingDetailPanel->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+        m_bindingDetailPanel->setGraphView(m_bindingGraphView);
+        m_bindingDetailPanel->show();
+        m_bindingDetailPanel->raise();
+    }
     registerUndoStack(m_bindingGraphView->undoStack());
 
     const int existing = m_tabWidget->indexOf(m_bindingGraphView);
@@ -428,6 +436,11 @@ void MainWindow::refreshBindingGraphTab()
     if (!m_bindingGraphView) return;
     m_bindingGraphView->setProjectData(m_projectOpen ? &m_project : nullptr);
     m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+    if (m_bindingDetailPanel) {
+        m_bindingDetailPanel->setProjectData(m_projectOpen ? &m_project : nullptr);
+        m_bindingDetailPanel->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+        m_bindingDetailPanel->setGraphView(m_bindingGraphView);
+    }
     m_bindingGraphView->refreshGraph();
 }
 
@@ -529,6 +542,10 @@ void MainWindow::refreshTabWidgetMetas()
                                                     : QList<WidgetMeta>{};
     for (ScreenTab *tab : std::as_const(m_openTabs))
         tab->scene()->setWidgetMetas(metas);
+    if (m_bindingGraphView)
+        m_bindingGraphView->setWidgetMetas(metas);
+    if (m_bindingDetailPanel)
+        m_bindingDetailPanel->setWidgetMetas(metas);
 }
 
 ScreenTab *MainWindow::currentScreenTab() const
@@ -1024,7 +1041,15 @@ void MainWindow::onPaste()
     }
 }
 
-void MainWindow::onDelete() { if (auto *s = currentScene()) s->deleteSelected(); }
+void MainWindow::onDelete()
+{
+    if (m_bindingGraphView && m_tabWidget && m_tabWidget->currentWidget() == m_bindingGraphView) {
+        m_bindingGraphView->deleteSelectedEdges();
+        return;
+    }
+    if (auto *s = currentScene())
+        s->deleteSelected();
+}
 
 void MainWindow::onSelectAll()
 {
