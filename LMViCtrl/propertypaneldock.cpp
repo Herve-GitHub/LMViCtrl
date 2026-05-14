@@ -6,11 +6,14 @@
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHash>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
@@ -202,6 +205,7 @@ void PropertyPanelDock::refreshGeometryEditors(const WidgetInstance &inst)
 void PropertyPanelDock::clearForms()
 {
     m_geometryEditors.clear();
+    m_bindableEditors.clear();
 
     auto clearForm = [](QFormLayout *form) {
         if (!form) return;
@@ -366,6 +370,24 @@ void PropertyPanelDock::buildPanel(const WidgetInstance &inst, const WidgetMeta 
         if (pm.bindable) labelText += QStringLiteral(" \u26A1"); // 绑定标记
         auto *labelW = new QLabel(labelText);
         if (!pm.description.isEmpty()) labelW->setToolTip(pm.description);
+        if (pm.bindable) {
+            editor->installEventFilter(this);
+            m_bindableEditors.insert(editor, pm);
+            auto *row = new QWidget;
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 0, 0, 0);
+            rowLayout->setSpacing(6);
+            auto *bindButton = new QPushButton(tr("绑定"), row);
+            bindButton->setToolTip(tr("快速绑定到同名数据变量，或使用当前值中的 $变量名"));
+            rowLayout->addWidget(editor, 1);
+            rowLayout->addWidget(bindButton);
+            connect(bindButton, &QPushButton::clicked, this, [this, pm, editor]() {
+                requestQuickBind(pm, editor);
+            });
+            form->addRow(labelW, row);
+            return;
+        }
+
         form->addRow(labelW, editor);
     };
 
@@ -533,4 +555,45 @@ QWidget *PropertyPanelDock::makeEditor(const PropertyMeta &pm, const QVariant &v
         pushValue(le->text());
     });
     return le;
+}
+
+bool PropertyPanelDock::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonDblClick && m_bindableEditors.contains(watched)) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::LeftButton) {
+            if (auto *editor = qobject_cast<QWidget *>(watched)) {
+                requestQuickBind(m_bindableEditors.value(watched), editor);
+                event->accept();
+                return true;
+            }
+        }
+    }
+    return QDockWidget::eventFilter(watched, event);
+}
+
+QString PropertyPanelDock::editorText(QWidget *editor) const
+{
+    if (!editor) return QString();
+    if (auto *lineEdit = qobject_cast<QLineEdit *>(editor))
+        return lineEdit->text();
+    if (auto *plainText = qobject_cast<QPlainTextEdit *>(editor))
+        return plainText->toPlainText();
+    if (auto *combo = qobject_cast<QComboBox *>(editor))
+        return combo->currentData().toString();
+    if (auto *spin = qobject_cast<QSpinBox *>(editor))
+        return QString::number(spin->value());
+    if (auto *doubleSpin = qobject_cast<QDoubleSpinBox *>(editor))
+        return QString::number(doubleSpin->value());
+    if (auto *check = qobject_cast<QCheckBox *>(editor))
+        return check->isChecked() ? QStringLiteral("true") : QStringLiteral("false");
+    if (auto *button = qobject_cast<QPushButton *>(editor))
+        return button->text();
+    return QString();
+}
+
+void PropertyPanelDock::requestQuickBind(const PropertyMeta &pm, QWidget *editor)
+{
+    if (!m_scene || m_currentInstanceId.isEmpty() || pm.name.isEmpty()) return;
+    emit quickBindPropertyRequested(m_currentInstanceId, pm.name, pm.type, editorText(editor).trimmed());
 }

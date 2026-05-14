@@ -33,6 +33,10 @@ public:
     BindingEdge edgeSnapshot(const QString &edgeId) const;
     bool updateEdge(const BindingEdge &edge);
     void selectEdge(const QString &edgeId);
+    bool quickBindProperty(const QString &instanceId,
+                           const QString &propertyName,
+                           const QString &valueType,
+                           const QString &preferredVariableName = QString());
 
     void commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos);
     void updateEdgesForNode(const QString &nodeId);

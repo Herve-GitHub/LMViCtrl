@@ -106,6 +106,15 @@ MainWindow::MainWindow(QWidget* parent)
 	// 属性面板（停靠在右侧）
 	m_propertyPanel = new PropertyPanelDock(this);
 	addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
+	connect(m_propertyPanel, &PropertyPanelDock::quickBindPropertyRequested,
+		this, [this](const QString &instanceId,
+			const QString &propertyName,
+			const QString &valueType,
+			const QString &preferredVariableName) {
+			if (!m_projectOpen || !m_bindingGraphView) return;
+			openBindingGraphTab();
+			m_bindingGraphView->quickBindProperty(instanceId, propertyName, valueType, preferredVariableName);
+		});
 
 	// 绑定详情面板（绑定模式下使用）
 	m_bindingDetailPanel = new BindingDetailDock(this);

@@ -78,6 +78,29 @@ bool valueTypesCompatible(const QString &sourceType, const QString &targetType)
     return sourceType.compare(targetType, Qt::CaseInsensitive) == 0;
 }
 
+QString normalizeVariableName(const QString &name)
+{
+    QString result = name.trimmed();
+    if (result.startsWith(QLatin1Char('$')))
+        result.remove(0, 1);
+    return result;
+}
+
+QString extractVariableName(const QString &text)
+{
+    const QString trimmed = text.trimmed();
+    const int dollar = trimmed.indexOf(QLatin1Char('$'));
+    if (dollar < 0) return trimmed;
+    int end = dollar + 1;
+    while (end < trimmed.size()) {
+        const QChar ch = trimmed.at(end);
+        if (!(ch.isLetterOrNumber() || ch == QLatin1Char('_')))
+            break;
+        ++end;
+    }
+    return trimmed.mid(dollar, end - dollar);
+}
+
 bool endpointsEqual(const BindingEndpoint &lhs, const BindingEndpoint &rhs)
 {
     return lhs.nodeId == rhs.nodeId
@@ -467,6 +490,85 @@ void BindingGraphView::selectEdge(const QString &edgeId)
         m_selectedEdgeId.clear();
         emit selectedEdgeChanged(QString());
     }
+}
+
+bool BindingGraphView::quickBindProperty(const QString &instanceId,
+                                         const QString &propertyName,
+                                         const QString &valueType,
+                                         const QString &preferredVariableName)
+{
+    if (!m_project || instanceId.isEmpty() || propertyName.isEmpty()) return false;
+
+    refreshGraph();
+
+    QStringList candidates;
+    const QString preferred = extractVariableName(preferredVariableName);
+    if (!preferred.isEmpty())
+        candidates << preferred;
+    candidates << QStringLiteral("$%1").arg(propertyName) << propertyName;
+
+    const DataVariable *matchedVariable = nullptr;
+    for (const QString &candidate : std::as_const(candidates)) {
+        const QString normalizedCandidate = normalizeVariableName(candidate);
+        for (const DataVariable &variable : std::as_const(m_project->dataVariables)) {
+            const QString normalizedName = normalizeVariableName(variable.name);
+            const QString normalizedId = normalizeVariableName(variable.id);
+            if (normalizedCandidate.compare(normalizedName, Qt::CaseInsensitive) == 0
+                || normalizedCandidate.compare(normalizedId, Qt::CaseInsensitive) == 0) {
+                matchedVariable = &variable;
+                break;
+            }
+        }
+        if (matchedVariable) break;
+    }
+
+    if (!matchedVariable) {
+        emit statusMessageRequested(tr("快速绑定失败：未找到与 %1 匹配的数据变量").arg(propertyName));
+        return false;
+    }
+
+    const QString sourceKey = portKey(dataNodeId(matchedVariable->id), QStringLiteral("data_get"), QStringLiteral("onChange"));
+    const QString targetKey = portKey(widgetNodeId(instanceId), QStringLiteral("property"), propertyName);
+    if (!m_ports.contains(sourceKey) || !m_ports.contains(targetKey)) {
+        emit statusMessageRequested(tr("快速绑定失败：未找到可绑定端口"));
+        return false;
+    }
+
+    const PortVisual source = m_ports.value(sourceKey);
+    PortVisual target = m_ports.value(targetKey);
+    if (!valueType.isEmpty())
+        target.valueType = valueType;
+    if (!isCompatibleConnection(source, target)) {
+        emit statusMessageRequested(tr("快速绑定失败：%1 与 %2 类型不兼容")
+            .arg(matchedVariable->name.isEmpty() ? matchedVariable->id : matchedVariable->name,
+                 propertyName));
+        return false;
+    }
+
+    if (edgeExists(sourceKey, targetKey)) {
+        for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+            if (portKey(edge.source) == sourceKey && portKey(edge.target) == targetKey) {
+                selectEdge(edge.id);
+                break;
+            }
+        }
+        emit statusMessageRequested(tr("属性绑定已存在"));
+        return true;
+    }
+
+    const bool created = createEdge(sourceKey, targetKey);
+    if (created) {
+        for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+            if (portKey(edge.source) == sourceKey && portKey(edge.target) == targetKey) {
+                selectEdge(edge.id);
+                break;
+            }
+        }
+        emit statusMessageRequested(tr("已快速绑定属性：%1 -> %2")
+            .arg(matchedVariable->name.isEmpty() ? matchedVariable->id : matchedVariable->name,
+                 propertyName));
+    }
+    return created;
 }
 
 void BindingGraphView::refreshGraph()

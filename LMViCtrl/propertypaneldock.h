@@ -7,6 +7,7 @@
 class CanvasScene;
 class QFormLayout;
 class QGroupBox;
+class QEvent;
 class QScrollArea;
 class QWidget;
 
@@ -22,6 +23,15 @@ public:
     // 切换当前关注的画布场景；nullptr 表示无场景（清空面板）
     void setCurrentScene(CanvasScene *scene);
 
+signals:
+    void quickBindPropertyRequested(const QString &instanceId,
+                                    const QString &propertyName,
+                                    const QString &valueType,
+                                    const QString &preferredVariableName);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
     void onSceneSelectionChanged();
     void onInstanceChangedFromScene(const QString &instanceId);
@@ -34,6 +44,8 @@ private:
     void buildCanvasPanel();
     void buildPanel(const WidgetInstance &inst, const WidgetMeta &meta);
     QWidget *makeEditor(const PropertyMeta &pm, const QVariant &value);
+    QString editorText(QWidget *editor) const;
+    void requestQuickBind(const PropertyMeta &pm, QWidget *editor);
     // 仅刷新 x/y/width/height 编辑器的当前值（不重建面板）
     void refreshGeometryEditors(const WidgetInstance &inst);
 
@@ -50,6 +62,7 @@ private:
 
     // 实时回填使用：name -> editor widget（只缓存 x/y/width/height）
     QHash<QString, QPointer<QWidget>> m_geometryEditors;
+    QHash<QObject *, PropertyMeta> m_bindableEditors;
 
     // 当本面板正在向场景推送属性变化时，避免回环触发面板重建（导致编辑器丢失焦点）
     bool m_pushingValue = false;
