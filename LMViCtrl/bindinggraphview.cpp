@@ -19,6 +19,8 @@
 #include <QSet>
 #include <QShowEvent>
 #include <QStyleOptionGraphicsItem>
+#include <QUndoCommand>
+#include <QUndoStack>
 #include <QVBoxLayout>
 #include <QUuid>
 
@@ -87,12 +89,28 @@ public:
     }
 
 protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        m_dragStartPos = pos();
+        QGraphicsRectItem::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override
+    {
+        QGraphicsRectItem::mouseReleaseEvent(event);
+        if (!m_owner) return;
+        const QPointF newPos = pos();
+        if (qRound(m_dragStartPos.x()) == qRound(newPos.x())
+            && qRound(m_dragStartPos.y()) == qRound(newPos.y())) {
+            return;
+        }
+        m_owner->commitNodeMove(m_nodeId, m_dragStartPos, newPos);
+    }
+
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
     {
-        if (change == ItemPositionHasChanged && m_owner) {
-            m_owner->persistNodePosition(m_nodeId, pos());
+        if (change == ItemPositionHasChanged && m_owner)
             m_owner->updateEdgesForNode(m_nodeId);
-        }
         return QGraphicsRectItem::itemChange(change, value);
     }
 
@@ -111,6 +129,7 @@ protected:
 private:
     BindingGraphView *m_owner = nullptr;
     QString m_nodeId;
+    QPointF m_dragStartPos;
 };
 
 class PortItem : public QGraphicsEllipseItem
@@ -168,16 +187,81 @@ private:
     QString m_portKey;
     bool m_output = false;
 };
+
+class AddBindingEdgeCommand : public QUndoCommand
+{
+public:
+    AddBindingEdgeCommand(BindingGraphView *view, const BindingEdge &edge)
+        : QUndoCommand(QObject::tr("创建绑定 %1").arg(edge.label))
+        , m_view(view)
+        , m_edge(edge)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdAddEdge(m_edge); }
+    void undo() override { if (m_view) m_view->cmdRemoveEdge(m_edge.id); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingEdge m_edge;
+};
+
+class MoveBindingNodeCommand : public QUndoCommand
+{
+public:
+    MoveBindingNodeCommand(BindingGraphView *view,
+                           const QString &nodeId,
+                           const QPointF &before,
+                           const QPointF &after)
+        : QUndoCommand(QObject::tr("移动绑定节点"))
+        , m_view(view)
+        , m_nodeId(nodeId)
+        , m_before(before)
+        , m_after(after)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdSetNodePosition(m_nodeId, m_after); }
+    void undo() override { if (m_view) m_view->cmdSetNodePosition(m_nodeId, m_before); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    QString m_nodeId;
+    QPointF m_before;
+    QPointF m_after;
+};
+
+class SetBindingNodePositionsCommand : public QUndoCommand
+{
+public:
+    SetBindingNodePositionsCommand(BindingGraphView *view,
+                                   const QHash<QString, QPointF> &before,
+                                   const QHash<QString, QPointF> &after)
+        : QUndoCommand(QObject::tr("重新布局绑定图"))
+        , m_view(view)
+        , m_before(before)
+        , m_after(after)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdSetNodePositions(m_after); }
+    void undo() override { if (m_view) m_view->cmdSetNodePositions(m_before); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    QHash<QString, QPointF> m_before;
+    QHash<QString, QPointF> m_after;
+};
 }
 
 BindingGraphView::BindingGraphView(QWidget *parent)
     : QWidget(parent)
 {
+    m_undoStack = new QUndoStack(this);
     buildUi();
 }
 
 void BindingGraphView::setProjectData(ProjectData *project)
 {
+    if (m_project != project && m_undoStack)
+        m_undoStack->clear();
     m_project = project;
     refreshGraph();
 }
@@ -207,29 +291,29 @@ void BindingGraphView::fitToView()
 
 void BindingGraphView::autoLayout()
 {
-    if (!m_project) return;
+    if (!m_project || !m_undoStack) return;
+    QHash<QString, QPointF> before;
+    QHash<QString, QPointF> after;
     int widgetIndex = 0;
     int dataIndex = 0;
-    for (BindingNode &node : m_project->bindingGraph.nodes) {
+    for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes)) {
+        before.insert(node.id, QPointF(node.x, node.y));
         const QPointF pos = defaultNodePosition(node.type == QLatin1String("data") ? dataIndex++ : widgetIndex++, node.type);
-        node.x = qRound(pos.x());
-        node.y = qRound(pos.y());
+        after.insert(node.id, pos);
     }
-    refreshGraph();
-    emit graphChanged();
+
+    if (before == after) return;
+    m_undoStack->push(new SetBindingNodePositionsCommand(this, before, after));
     emit statusMessageRequested(tr("绑定图已重新布局"));
 }
 
-void BindingGraphView::persistNodePosition(const QString &nodeId, const QPointF &pos)
+void BindingGraphView::commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos)
 {
-    BindingNode *node = findNode(nodeId);
-    if (!node) return;
-    const int x = qRound(pos.x());
-    const int y = qRound(pos.y());
-    if (node->x == x && node->y == y) return;
-    node->x = x;
-    node->y = y;
-    emit graphChanged();
+    if (!m_undoStack) return;
+    const QPointF before(qRound(oldPos.x()), qRound(oldPos.y()));
+    const QPointF after(qRound(newPos.x()), qRound(newPos.y()));
+    if (before == after) return;
+    m_undoStack->push(new MoveBindingNodeCommand(this, nodeId, before, after));
 }
 
 void BindingGraphView::updateEdgesForNode(const QString &nodeId)
@@ -286,6 +370,69 @@ void BindingGraphView::cancelConnectionDrag()
     }
     m_dragSourceKey.clear();
     resetPortHighlights();
+}
+
+void BindingGraphView::cmdAddEdge(const BindingEdge &edge)
+{
+    if (!m_project || edge.id.isEmpty()) return;
+    for (const BindingEdge &existing : std::as_const(m_project->bindingGraph.edges)) {
+        if (existing.id == edge.id)
+            return;
+    }
+    m_project->bindingGraph.edges.append(edge);
+    rebuildEdges();
+    updateStatus();
+    emit graphChanged();
+}
+
+void BindingGraphView::cmdRemoveEdge(const QString &edgeId)
+{
+    if (!m_project || edgeId.isEmpty()) return;
+    for (int i = 0; i < m_project->bindingGraph.edges.size(); ++i) {
+        if (m_project->bindingGraph.edges.at(i).id == edgeId) {
+            m_project->bindingGraph.edges.removeAt(i);
+            break;
+        }
+    }
+    rebuildEdges();
+    updateStatus();
+    emit graphChanged();
+}
+
+void BindingGraphView::cmdSetNodePosition(const QString &nodeId, const QPointF &pos)
+{
+    BindingNode *node = findNode(nodeId);
+    if (!node) return;
+    const QPointF rounded(qRound(pos.x()), qRound(pos.y()));
+    node->x = qRound(rounded.x());
+    node->y = qRound(rounded.y());
+
+    if (QGraphicsItem *item = m_nodeItems.value(nodeId, nullptr)) {
+        if (item->pos() != rounded)
+            item->setPos(rounded);
+    }
+    rebuildEdges();
+    updateStatus();
+    emit graphChanged();
+}
+
+void BindingGraphView::cmdSetNodePositions(const QHash<QString, QPointF> &positions)
+{
+    if (!m_project) return;
+    for (auto it = positions.constBegin(); it != positions.constEnd(); ++it) {
+        if (BindingNode *node = findNode(it.key())) {
+            node->x = qRound(it.value().x());
+            node->y = qRound(it.value().y());
+        }
+        if (QGraphicsItem *item = m_nodeItems.value(it.key(), nullptr)) {
+            const QPointF rounded(qRound(it.value().x()), qRound(it.value().y()));
+            if (item->pos() != rounded)
+                item->setPos(rounded);
+        }
+    }
+    rebuildEdges();
+    updateStatus();
+    emit graphChanged();
 }
 
 void BindingGraphView::showEvent(QShowEvent *event)
@@ -769,8 +916,10 @@ bool BindingGraphView::createEdge(const QString &sourceKey, const QString &targe
             edge.order = qMax(edge.order, existing.order + 1);
     }
     edge.enabled = true;
-    m_project->bindingGraph.edges.append(edge);
-    emit graphChanged();
+    if (m_undoStack)
+        m_undoStack->push(new AddBindingEdgeCommand(this, edge));
+    else
+        cmdAddEdge(edge);
     emit statusMessageRequested(tr("已创建绑定：%1").arg(edge.label));
     return true;
 }

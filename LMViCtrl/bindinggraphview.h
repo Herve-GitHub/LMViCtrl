@@ -12,6 +12,7 @@ class QGraphicsScene;
 class QGraphicsView;
 class QLabel;
 class QPainterPath;
+class QUndoStack;
 
 class BindingGraphView : public QWidget
 {
@@ -26,13 +27,18 @@ public:
     void fitToView();
     void autoLayout();
     bool hasProject() const { return m_project != nullptr; }
+    QUndoStack *undoStack() const { return m_undoStack; }
 
-    void persistNodePosition(const QString &nodeId, const QPointF &pos);
+    void commitNodeMove(const QString &nodeId, const QPointF &oldPos, const QPointF &newPos);
     void updateEdgesForNode(const QString &nodeId);
     void beginConnectionDrag(const QString &portKey, const QPointF &scenePos);
     void updateConnectionDrag(const QPointF &scenePos);
     void finishConnectionDrag(const QPointF &scenePos);
     void cancelConnectionDrag();
+    void cmdAddEdge(const BindingEdge &edge);
+    void cmdRemoveEdge(const QString &edgeId);
+    void cmdSetNodePosition(const QString &nodeId, const QPointF &pos);
+    void cmdSetNodePositions(const QHash<QString, QPointF> &positions);
 
 signals:
     void graphChanged();
@@ -106,6 +112,7 @@ private:
     QHash<QString, QGraphicsItem *> m_nodeItems;
     QHash<QString, PortVisual> m_ports;
     QHash<QString, QGraphicsItem *> m_edgeItems;
+    QUndoStack *m_undoStack = nullptr;
     QString m_dragSourceKey;
     QGraphicsPathItem *m_dragPathItem = nullptr;
 };

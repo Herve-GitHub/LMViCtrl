@@ -409,6 +409,7 @@ void MainWindow::openBindingGraphTab()
     if (!m_tabWidget || !m_bindingGraphView) return;
     m_bindingGraphView->setProjectData(&m_project);
     m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+    registerUndoStack(m_bindingGraphView->undoStack());
 
     const int existing = m_tabWidget->indexOf(m_bindingGraphView);
     if (existing >= 0) {
@@ -2097,6 +2098,8 @@ void MainWindow::resetUndoChains(bool keepProjectStackRegistered)
 {
     // 断开所有已跟踪的 stack，防止 MainWindow 析构时 destroyed 回调访问已释放的成员
     for (auto it = m_stackLastIndex.keyBegin(); it != m_stackLastIndex.keyEnd(); ++it) {
+        if (*it)
+            (*it)->clear();
         QObject::disconnect(*it, nullptr, this, nullptr);
     }
 
