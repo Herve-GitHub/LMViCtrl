@@ -15,7 +15,6 @@ class ScreenManagerDock;
 class ProjectTreeDock;
 class WelcomeWidget;
 class PropertyPanelDock;
-class EventPanelDock;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -71,6 +70,7 @@ private:
 private slots:
     // ===== 文件 =====
     void onNewProject();
+    void onNewBindingPreviewSample();
     void onOpenProject();
     void onCloseProject();
     void onSave();
@@ -259,7 +259,7 @@ private slots:
     void onScreensChanged(const QList<ScreenData> &screens);
     void onTabCloseRequested(int index);
     void onOpenRecentProject(const QString &path);
-    void onDataVariableAddRequested(const QString &name, const QString &type);
+    void onDataVariableAddRequested(const QString &name, const QString &type, const QVariant &initialValue);
     void onDataVariableRemoveRequested(const QString &id);
     // 来自 ScreenManagerDock 的新增/删除请求（走 Undo 命令）
     void onScreenAddRequested(const QString &name);
@@ -286,7 +286,6 @@ private:
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
     BindingDetailDock *m_bindingDetailPanel = nullptr;
-    EventPanelDock    *m_eventPanel       = nullptr;
     QDockWidget       *m_logDock          = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;

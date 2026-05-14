@@ -1089,8 +1089,6 @@ void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
             selectedCanvasItems.append(ci);
     }
     const bool hasSelection = !selectedCanvasItems.isEmpty();
-    const bool canOpenEvents = selectedCanvasItems.size() == 1
-        && !selectedCanvasItems.first()->instance().isGroup;
 
     QMenu menu;
     QAction *copyAction = menu.addAction(tr("复制"));
@@ -1102,8 +1100,6 @@ void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
     QAction *sendBackwardAction = menu.addAction(tr("下移一层"));
     QAction *bringToFrontAction = menu.addAction(tr("置于顶层"));
     QAction *sendToBackAction = menu.addAction(tr("置于底层"));
-    menu.addSeparator();
-    QAction *eventAction = menu.addAction(tr("event"));
 
     copyAction->setEnabled(hasSelection);
     cutAction->setEnabled(hasSelection);
@@ -1112,7 +1108,6 @@ void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
     sendBackwardAction->setEnabled(hasSelection);
     bringToFrontAction->setEnabled(hasSelection);
     sendToBackAction->setEnabled(hasSelection);
-    eventAction->setEnabled(canOpenEvents);
 
     QAction *chosen = menu.exec(event->screenPos());
     if (!chosen) return;
@@ -1125,9 +1120,6 @@ void CanvasScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
     else if (chosen == sendBackwardAction) emit sendBackwardRequested();
     else if (chosen == bringToFrontAction) emit bringToFrontRequested();
     else if (chosen == sendToBackAction) emit sendToBackRequested();
-    else if (chosen == eventAction && canOpenEvents) {
-        emit eventPanelRequested(selectedCanvasItems.first()->instance().instanceId);
-    }
     event->accept();
 }
 

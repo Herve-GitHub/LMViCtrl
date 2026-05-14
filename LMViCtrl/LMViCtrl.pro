@@ -21,11 +21,8 @@ SOURCES += \
     mainwindow_actions.cpp \
     luawidgetparser.cpp \
     projectmanager.cpp \
-    eventactiondialog.cpp \
     bindinggraphview.cpp \
     bindingdetaildock.cpp \
-    eventpaneldock.cpp \
-    eventtriggerdialog.cpp \
     projecttreedock.cpp \
     widgettoolbox.cpp \
     canvasitem.cpp \
@@ -45,11 +42,8 @@ HEADERS += \
     widgemeta.h \
     luawidgetparser.h \
     projectmanager.h \
-    eventactiondialog.h \
     bindinggraphview.h \
     bindingdetaildock.h \
-    eventpaneldock.h \
-    eventtriggerdialog.h \
     projecttreedock.h \
     widgettoolbox.h \
     canvasitem.h \

@@ -28,6 +28,7 @@ local M = {}
 -- 全局命名的控件实例表：可在事件代码中通过 widgets.<Name> 访问
 -- 例如：widgets.Button_1:set_property("label", "Hi")
 M.widgets = {}
+M.widgetRefs = {}
 M.dataStore = nil
 M.bindingGraph = nil
 _G.widgets = M.widgets
@@ -579,6 +580,7 @@ local function create_data_store(definitions)
         variables = {},
         values = {},
         aliases = {},
+        listeners = {},
     }
 
     local function find_variable(ref)
@@ -649,11 +651,7 @@ local function create_data_store(definitions)
     end
 
     function store:emit(variable, event_name, old_value, new_value)
-        if type(variable) ~= "table" or type(variable.events) ~= "table" then return end
-        local binding = variable.events[event_name]
-        if not binding then return end
-        local execution_mode, actions = normalize_event_binding(binding)
-        if type(actions) ~= "table" or #actions == 0 then return end
+        if type(variable) ~= "table" then return end
         local event = {
             name = event_name,
             variable = variable,
@@ -661,11 +659,35 @@ local function create_data_store(definitions)
             oldValue = old_value,
             value = new_value,
         }
+
+        local listeners = store.listeners[variable.name]
+        if listeners and type(listeners[event_name]) == "table" then
+            for _, callback in ipairs(listeners[event_name]) do
+                local ok, err = pcall(callback, variable, event)
+                if not ok then log_warn("binding graph: data listener failed: %s", tostring(err)) end
+            end
+        end
+
+        if type(variable.events) ~= "table" then return end
+        local binding = variable.events[event_name]
+        if not binding then return end
+        local execution_mode, actions = normalize_event_binding(binding)
+        if type(actions) ~= "table" or #actions == 0 then return end
         if execution_mode == "parallel" then
             execute_event_actions_parallel(actions, variable, event)
         else
             execute_event_actions_sequence(actions, variable, event, 1)
         end
+    end
+
+    function store:on(ref, event_name, callback)
+        local variable = find_variable(ref)
+        if not variable then return false, "variable not found" end
+        event_name = event_name or "onChange"
+        store.listeners[variable.name] = store.listeners[variable.name] or {}
+        store.listeners[variable.name][event_name] = store.listeners[variable.name][event_name] or {}
+        table.insert(store.listeners[variable.name][event_name], callback)
+        return true
     end
 
     function store:apply(ref, operation, params)
@@ -685,6 +707,7 @@ local function create_data_store(definitions)
         elseif operation == "reset" then
             return set_value(variable, variable.defaultValue)
         elseif operation == "toggle" then
+		    print(not to_boolean(variable.value))
             return set_value(variable, not to_boolean(variable.value))
         elseif operation == "set_true" then
             return set_value(variable, true)
@@ -743,6 +766,115 @@ local function create_data_store(definitions)
     return store
 end
 
+local function endpoint_ref(endpoint)
+    if type(endpoint) ~= "table" then return nil end
+    if endpoint.refName and endpoint.refName ~= "" then return endpoint.refName end
+    if endpoint.refId and endpoint.refId ~= "" then return endpoint.refId end
+    return nil
+end
+
+local function widget_ref(endpoint)
+    local ref = endpoint_ref(endpoint)
+    return ref and M.widgetRefs[ref] or nil
+end
+
+local function find_action_def(widget_entry, action_name)
+    local meta = widget_entry and widget_entry.mod and widget_entry.mod.__widget_meta
+    if type(meta) ~= "table" or type(meta.actions) ~= "table" then return nil end
+    for _, action in ipairs(meta.actions) do
+        if action.name == action_name then return action end
+    end
+    return nil
+end
+
+local function binding_event_value(self, e)
+    if type(e) == "table" and e.value ~= nil then return e.value end
+    return read_widget_event_value(self, e)
+end
+
+local function binding_edge_value(edge, self, e, action_def)
+    local params = edge.params or {}
+    if params.value ~= nil then return resolve_action_value(params.value) end
+    if action_def and action_def.default_value ~= nil then return resolve_action_value(action_def.default_value) end
+    if action_def and action_def.defaultValue ~= nil then return resolve_action_value(action_def.defaultValue) end
+    return binding_event_value(self, e)
+end
+
+local function execute_binding_edge(edge, self, e)
+    if type(edge) ~= "table" or edge.enabled == false then return end
+    if not condition_allows_action(edge, self, e) then return end
+
+    local target = edge.target or {}
+    if target.portKind == "data_set" then
+        if not g_data_store then return end
+        local ok, err = g_data_store:apply(endpoint_ref(target), target.portName or "set", {
+            value = binding_edge_value(edge, self, e),
+            index = edge.params and edge.params.index,
+            pattern = edge.params and edge.params.pattern,
+        }, self, e)
+        if not ok then log_warn("binding graph: data target failed: %s", tostring(err)) end
+        return
+    end
+
+    local entry = widget_ref(target)
+    local widget = entry and entry.widget
+    if not widget then
+        log_warn("binding graph: target widget not found: %s", tostring(endpoint_ref(target)))
+        return
+    end
+
+    if target.portKind == "property" then
+        if type(widget.set_property) == "function" then
+            widget:set_property(target.portName, binding_edge_value(edge, self, e))
+        end
+        return
+    end
+
+    if target.portKind == "action" then
+        local action_def = find_action_def(entry, target.portName)
+        local kind = action_def and action_def.kind
+        if kind == "set_property" and action_def.property and type(widget.set_property) == "function" then
+            widget:set_property(action_def.property, binding_edge_value(edge, self, e, action_def))
+        elseif kind == "call_method" and action_def.method and type(widget[action_def.method]) == "function" then
+            widget[action_def.method](widget)
+        elseif type(widget[target.portName]) == "function" then
+            widget[target.portName](widget, binding_edge_value(edge, self, e, action_def))
+        elseif type(widget.set_property) == "function" then
+            widget:set_property(target.portName, binding_edge_value(edge, self, e, action_def))
+        end
+    end
+end
+
+local function run_binding_edge(edge, self, e)
+    run_after(action_delay_ms(edge), function()
+        execute_binding_edge(edge, self, e)
+    end)
+end
+
+local function bind_binding_graph(graph)
+    if type(graph) ~= "table" or type(graph.edges) ~= "table" then return end
+    for _, edge in ipairs(graph.edges) do
+        if type(edge) == "table" and edge.enabled ~= false then
+            local source = edge.source or {}
+            if source.portKind == "event" then
+                local entry = widget_ref(source)
+                local widget = entry and entry.widget
+                if widget and type(widget.on) == "function" then
+                    local ok, err = pcall(widget.on, widget, source.portName, function(self, e)
+                        run_binding_edge(edge, self, e)
+                    end)
+                    if not ok then log_warn("binding graph: bind widget event failed: %s", tostring(err)) end
+                end
+            elseif source.portKind == "data_get" and g_data_store and type(g_data_store.on) == "function" then
+                local ok, err = g_data_store:on(endpoint_ref(source), source.portName or "onChange", function(variable, e)
+                    run_binding_edge(edge, variable, e)
+                end)
+                if not ok then log_warn("binding graph: bind data event failed: %s", tostring(err)) end
+            end
+        end
+    end
+end
+
 local function bind_event_actions(widget, inst)
     if type(widget) ~= "table" or type(widget.on) ~= "function" then return end
     if type(inst.events) ~= "table" then return end
@@ -791,6 +923,10 @@ local function build_widget(parent, inst)
             log_warn("widget name conflict: %s (overwriting)", nm)
         end
         M.widgets[nm] = ret
+        M.widgetRefs[nm] = { widget = ret, mod = mod, inst = inst }
+    end
+    if type(inst.instanceId) == "string" and inst.instanceId ~= "" then
+        M.widgetRefs[inst.instanceId] = { widget = ret, mod = mod, inst = inst }
     end
 
     bind_event_handlers(ret, mod, inst)
@@ -895,6 +1031,7 @@ function M.run(project)
 
     -- 重置 widgets 注册表（保留同一张表的引用，便于已持有该表的代码继续生效）
     for k in pairs(M.widgets) do M.widgets[k] = nil end
+    for k in pairs(M.widgetRefs) do M.widgetRefs[k] = nil end
     if type(project.screens) ~= "table" or #project.screens == 0 then
         log_warn("run: no screens to render")
         return
@@ -929,6 +1066,7 @@ function M.run(project)
 
     _G.PageManager = create_page_manager(pages)
     _G.PageManager.goto_page(1)
+    bind_binding_graph(M.bindingGraph)
 
     if ok_data_client and data_client and type(data_client.start) == "function" then
         local cfg = project.dataClient or project.data_client

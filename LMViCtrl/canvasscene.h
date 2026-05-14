@@ -112,7 +112,6 @@ signals:
     void sendToBackRequested();
     void bringForwardRequested();
     void sendBackwardRequested();
-    void eventPanelRequested(const QString &instanceId);
 
     // 画布上拖动/缩放过程中的实时几何变化（只含 x/y/width/height，
     // 属性面板可仅刷新占位编辑器而不重建）

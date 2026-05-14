@@ -822,6 +822,7 @@ static const luaL_Reg lv_obj_methods[] = {
     {"remove_flag", l_obj_remove_flag},
     {"has_flag", l_obj_has_flag},
     {"add_state", l_obj_add_state},
+    {"clear_state", l_obj_remove_state},
     {"remove_state", l_obj_remove_state},
     {"has_state", l_obj_has_state},
     {"set_flex_flow", l_obj_set_flex_flow},

@@ -4,7 +4,6 @@
 #include "projecttreedock.h"
 #include "screenmanagerdock.h"
 #include "propertypaneldock.h"
-#include "eventpaneldock.h"
 #include "bindinggraphview.h"
 #include "bindingdetaildock.h"
 #include "screentab.h"
@@ -89,8 +88,6 @@ MainWindow::MainWindow(QWidget* parent)
 			if (bindingMode)
 				m_bindingDetailPanel->raise();
 		}
-		if (m_eventPanel)
-			m_eventPanel->setCurrentScene(currentScene());
 		if (m_projectTree)
 			m_projectTree->setCurrentScene(currentScene(), currentScreenName());
 		});
@@ -106,15 +103,6 @@ MainWindow::MainWindow(QWidget* parent)
 	// 属性面板（停靠在右侧）
 	m_propertyPanel = new PropertyPanelDock(this);
 	addDockWidget(Qt::RightDockWidgetArea, m_propertyPanel);
-	connect(m_propertyPanel, &PropertyPanelDock::quickBindPropertyRequested,
-		this, [this](const QString &instanceId,
-			const QString &propertyName,
-			const QString &valueType,
-			const QString &preferredVariableName) {
-			if (!m_projectOpen || !m_bindingGraphView) return;
-			openBindingGraphTab();
-			m_bindingGraphView->quickBindProperty(instanceId, propertyName, valueType, preferredVariableName);
-		});
 
 	// 绑定详情面板（绑定模式下使用）
 	m_bindingDetailPanel = new BindingDetailDock(this);
@@ -126,13 +114,6 @@ MainWindow::MainWindow(QWidget* parent)
 	m_bindingDetailPanel->hide();
 
 	setupLogDock();
-
-	// 事件面板（停靠在底部，与日志同区）
-	m_eventPanel = new EventPanelDock(this);
-	m_eventPanel->setProjectData(&m_project);
-	addDockWidget(Qt::BottomDockWidgetArea, m_eventPanel);
-	splitDockWidget(m_logDock, m_eventPanel, Qt::Horizontal);
-	resizeDocks({ m_logDock, m_eventPanel }, { 300, 700 }, Qt::Horizontal);
 
 	// 欢迎页
 	m_welcomeWidget = new WelcomeWidget;
@@ -277,6 +258,8 @@ void MainWindow::setupFileMenu()
 
 	m_newProjectAction = addAction(fileMenu, tr("新建工程"), QKeySequence::New);
 	connect(m_newProjectAction, &QAction::triggered, this, &MainWindow::onNewProject);
+	connect(addAction(fileMenu, tr("新建端到端样例工程")),
+		&QAction::triggered, this, &MainWindow::onNewBindingPreviewSample);
 	m_openProjectAction = addAction(fileMenu, tr("打开工程"), QKeySequence::Open);
 	connect(m_openProjectAction, &QAction::triggered, this, &MainWindow::onOpenProject);
 	m_closeProjectAction = addAction(fileMenu, tr("关闭工程"));
@@ -444,7 +427,7 @@ void MainWindow::setupRunMenu()
 {
 	QMenu* runMenu = menuBar()->addMenu(tr("运行(&R)"));
 
-	m_startRunAction = addAction(runMenu, tr("启动运行"), QKeySequence(Qt::Key_F5));
+	m_startRunAction = addAction(runMenu, tr("预览运行"), QKeySequence(Qt::Key_F5));
 	connect(m_startRunAction, &QAction::triggered, this, &MainWindow::onStartRun);
 	m_stopRunAction = addAction(runMenu, tr("停止运行"), QKeySequence(Qt::Key_F6));
 	connect(m_stopRunAction, &QAction::triggered, this, &MainWindow::onStopRun);

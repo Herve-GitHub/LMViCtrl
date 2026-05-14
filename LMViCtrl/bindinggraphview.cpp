@@ -29,6 +29,7 @@
 #include <QUndoCommand>
 #include <QUndoStack>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QUuid>
 
 namespace {
@@ -38,6 +39,27 @@ constexpr qreal kPortRowHeight = 22.0;
 constexpr qreal kPortRadius = 5.0;
 constexpr qreal kNodePadding = 10.0;
 constexpr qreal kPortHitRadius = 14.0;
+constexpr qreal kPortEdgePadding = 2.0;
+constexpr qreal kMultiEdgePortSpread = 5.0;
+constexpr qreal kMaxMultiEdgePortOffset = 12.0;
+constexpr qreal kMinZoom = 0.25;
+constexpr qreal kMaxZoom = 3.0;
+constexpr qreal kZoomStep = 1.15;
+
+qreal multiEdgeOffset(int index, int total)
+{
+    if (total <= 1) return 0.0;
+    const qreal centeredIndex = index - (total - 1) / 2.0;
+    return qBound(-kMaxMultiEdgePortOffset,
+                  centeredIndex * kMultiEdgePortSpread,
+                  kMaxMultiEdgePortOffset);
+}
+
+QPointF portConnectionPoint(const QPointF &center, bool output, int index = 0, int total = 1)
+{
+    const qreal direction = output ? 1.0 : -1.0;
+    return center + QPointF(direction * (kPortRadius + kPortEdgePadding), multiEdgeOffset(index, total));
+}
 
 QColor colorForNodeType(const QString &type)
 {
@@ -657,7 +679,8 @@ void BindingGraphView::beginConnectionDrag(const QString &portKey, const QPointF
 
     cancelConnectionDrag();
     m_dragSourceKey = portKey;
-    m_dragPathItem = new QGraphicsPathItem(connectionPath(scenePos, scenePos));
+    const QPointF startPoint = portConnectionPoint(scenePos, true);
+    m_dragPathItem = new QGraphicsPathItem(connectionPath(startPoint, startPoint));
     QPen pen(source.color.lighter(125), 2.0, Qt::DashLine);
     pen.setCapStyle(Qt::RoundCap);
     m_dragPathItem->setPen(pen);
@@ -672,7 +695,7 @@ void BindingGraphView::updateConnectionDrag(const QPointF &scenePos)
     PortVisual source = m_ports.value(m_dragSourceKey);
     if (source.item)
         source.scenePos = source.item->mapToScene(source.item->boundingRect().center());
-    m_dragPathItem->setPath(connectionPath(source.scenePos, scenePos));
+    m_dragPathItem->setPath(connectionPath(portConnectionPoint(source.scenePos, true), scenePos));
     const QString hoverKey = portAt(scenePos);
     updatePortHighlights(hoverKey);
     if (m_statusLabel) {
@@ -798,6 +821,30 @@ void BindingGraphView::cmdSetNodePositions(const QHash<QString, QPointF> &positi
 
 bool BindingGraphView::eventFilter(QObject *watched, QEvent *event)
 {
+    if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::Wheel) {
+        auto *wheelEvent = static_cast<QWheelEvent *>(event);
+        if (wheelEvent->modifiers().testFlag(Qt::ControlModifier)) {
+            const int delta = wheelEvent->angleDelta().y();
+            if (delta == 0) {
+                event->accept();
+                return true;
+            }
+
+            const qreal currentZoom = m_view->transform().m11();
+            const qreal requestedFactor = delta > 0 ? kZoomStep : (1.0 / kZoomStep);
+            const qreal targetZoom = qBound(kMinZoom, currentZoom * requestedFactor, kMaxZoom);
+            if (!qFuzzyCompare(currentZoom, targetZoom)) {
+                const qreal appliedFactor = targetZoom / currentZoom;
+                m_view->scale(appliedFactor, appliedFactor);
+                if (m_statusLabel)
+                    m_statusLabel->setText(tr("缩放 %1%").arg(qRound(targetZoom * 100.0)));
+            }
+
+            event->accept();
+            return true;
+        }
+    }
+
     if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::KeyPress) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Delete || keyEvent->key() == Qt::Key_Backspace) {
@@ -1106,12 +1153,35 @@ void BindingGraphView::rebuildEdges()
             it->scenePos = it->item->mapToScene(it->item->boundingRect().center());
     }
 
+    QHash<QString, int> sourceTotals;
+    QHash<QString, int> targetTotals;
     for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
-        const PortVisual source = m_ports.value(portKey(edge.source));
-        const PortVisual target = m_ports.value(portKey(edge.target));
+        const QString sourceKey = portKey(edge.source);
+        const QString targetKey = portKey(edge.target);
+        if (m_ports.contains(sourceKey) && m_ports.contains(targetKey)) {
+            ++sourceTotals[sourceKey];
+            ++targetTotals[targetKey];
+        }
+    }
+
+    QHash<QString, int> sourceIndexes;
+    QHash<QString, int> targetIndexes;
+
+    for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+        const QString sourceKey = portKey(edge.source);
+        const QString targetKey = portKey(edge.target);
+        const PortVisual source = m_ports.value(sourceKey);
+        const PortVisual target = m_ports.value(targetKey);
         if (!source.item || !target.item) continue;
 
-        auto *item = new EdgeItem(this, edge.id, connectionPath(source.scenePos, target.scenePos));
+        const int sourceIndex = sourceIndexes.value(sourceKey, 0);
+        const int targetIndex = targetIndexes.value(targetKey, 0);
+        ++sourceIndexes[sourceKey];
+        ++targetIndexes[targetKey];
+        const QPointF sourcePoint = portConnectionPoint(source.scenePos, true, sourceIndex, sourceTotals.value(sourceKey, 1));
+        const QPointF targetPoint = portConnectionPoint(target.scenePos, false, targetIndex, targetTotals.value(targetKey, 1));
+
+        auto *item = new EdgeItem(this, edge.id, connectionPath(sourcePoint, targetPoint));
         QPen pen(colorForEdgeType(edge.type), edge.enabled ? 2.4 : 1.6);
         if (edge.type == QLatin1String("event_data")) pen.setStyle(Qt::DashLine);
         if (edge.type == QLatin1String("data_action")) pen.setStyle(Qt::DotLine);

@@ -14,7 +14,6 @@
 #include "projectpropertiesdialog.h"
 #include "propertypaneldock.h"
 #include "projecttreedock.h"
-#include "eventpaneldock.h"
 #include "bindinggraphview.h"
 #include "bindingdetaildock.h"
 #include "screentab.h"
@@ -481,18 +480,6 @@ void MainWindow::openScreenTab(const QString &screenId)
         connect(scene, &CanvasScene::sendToBackRequested, this, &MainWindow::onSendToBack);
         connect(scene, &CanvasScene::bringForwardRequested, this, &MainWindow::onBringForward);
         connect(scene, &CanvasScene::sendBackwardRequested, this, &MainWindow::onSendBackward);
-        connect(scene, &CanvasScene::eventPanelRequested, this,
-                [this, scene](const QString &instanceId) {
-            if (!m_eventPanel) return;
-            m_eventPanel->setCurrentScene(scene);
-            if (CanvasItem *item = scene->findItem(instanceId)) {
-                scene->clearSelection();
-                item->setSelected(true);
-            }
-            m_eventPanel->setVisible(true);
-            m_eventPanel->raise();
-            appendLog(tr("打开事件窗口"));
-        });
     }
 
     const QString tabTitle = QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name);
@@ -502,8 +489,6 @@ void MainWindow::openScreenTab(const QString &screenId)
 
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
-    if (m_eventPanel)
-        m_eventPanel->setCurrentScene(tab->scene());
     if (m_projectTree)
         m_projectTree->setCurrentScene(tab->scene(), sd->name);
 }
@@ -628,8 +613,6 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
     for (ScreenTab *tab : std::as_const(m_openTabs))
         tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
 
-    if (m_eventPanel)
-        m_eventPanel->setProjectData(&m_project);
     if (m_projectTree)
         m_projectTree->setCurrentScene(currentScene(), currentScreenName());
 }
@@ -670,13 +653,7 @@ void MainWindow::setProjectOpen(bool open)
     }
     if(m_propertyPanel)
         m_propertyPanel->setVisible(open);
-    if (m_eventPanel) {
-        m_eventPanel->setProjectData(&m_project);
-        m_eventPanel->setVisible(open);
-        if (!open) m_eventPanel->setCurrentScene(nullptr);
-    }
     resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
-    resizeDocks({ m_logDock, m_eventPanel }, { 300, 700 }, Qt::Horizontal);
     // 若切回欢迎页，刷新最近工程列表
     if (!open && m_welcomeWidget)
         m_welcomeWidget->setRecentProjects(m_recentProjects);
@@ -810,6 +787,190 @@ void MainWindow::onNewProject()
     }
 
     setProjectOpen(true);
+}
+
+void MainWindow::onNewBindingPreviewSample()
+{
+    if (m_projectOpen && !maybeSaveCurrent()) return;
+
+    const QString parentDir = QFileDialog::getExistingDirectory(
+        this, tr("选择样例保存目录"));
+    if (parentDir.isEmpty()) return;
+
+    const QString baseName = QStringLiteral("BindingPreviewSample");
+    QDir parent(parentDir);
+    QString projectName = baseName;
+    int suffix = 1;
+    while (parent.exists(projectName))
+        projectName = QStringLiteral("%1_%2").arg(baseName).arg(++suffix);
+    if (!parent.mkdir(projectName)) {
+        QMessageBox::warning(this, tr("创建样例失败"),
+                             tr("无法创建工程目录：%1").arg(parent.filePath(projectName)));
+        return;
+    }
+
+    resetProject();
+    m_project.name = projectName;
+    m_project.description = tr("图形化绑定系统端到端预览样例：按钮事件写入数据变量，变量变化驱动标签文本。");
+    m_project.target.width = 480;
+    m_project.target.height = 320;
+    m_project.target.platform = QStringLiteral("windows");
+
+    ScreenData &screen = m_project.screens.first();
+    screen.name = QStringLiteral("BindingDemo");
+    screen.bgColor = QStringLiteral("#202020");
+    screen.widgets.clear();
+
+    WidgetInstance button;
+    button.instanceId = QStringLiteral("btn_increment");
+    button.widgetId = QStringLiteral("lv_button_basic");
+    button.name = QStringLiteral("Button_Update");
+    button.x = 36;
+    button.y = 48;
+    button.width = 160;
+    button.height = 52;
+    button.zOrder = 1;
+    button.properties.insert(QStringLiteral("label"), tr("点击更新"));
+    button.properties.insert(QStringLiteral("bg_color"), QStringLiteral("#007acc"));
+    button.properties.insert(QStringLiteral("color"), QStringLiteral("#ffffff"));
+    button.properties.insert(QStringLiteral("enabled"), true);
+    button.properties.insert(QStringLiteral("visible"), true);
+
+    WidgetInstance directLabel;
+    directLabel.instanceId = QStringLiteral("lbl_direct");
+    directLabel.widgetId = QStringLiteral("lv_label_basic");
+    directLabel.name = QStringLiteral("Label_Direct");
+    directLabel.x = 230;
+    directLabel.y = 48;
+    directLabel.width = 210;
+    directLabel.height = 42;
+    directLabel.zOrder = 2;
+    directLabel.properties.insert(QStringLiteral("text"), tr("等待直接动作"));
+    directLabel.properties.insert(QStringLiteral("color"), QStringLiteral("#ffffff"));
+    directLabel.properties.insert(QStringLiteral("font_size"), 16);
+    directLabel.properties.insert(QStringLiteral("visible"), true);
+
+    WidgetInstance variableLabel;
+    variableLabel.instanceId = QStringLiteral("lbl_message");
+    variableLabel.widgetId = QStringLiteral("lv_label_basic");
+    variableLabel.name = QStringLiteral("Label_Message");
+    variableLabel.x = 36;
+    variableLabel.y = 140;
+    variableLabel.width = 404;
+    variableLabel.height = 48;
+    variableLabel.zOrder = 3;
+    variableLabel.properties.insert(QStringLiteral("text"), tr("等待变量绑定"));
+    variableLabel.properties.insert(QStringLiteral("color"), QStringLiteral("#9cdcfe"));
+    variableLabel.properties.insert(QStringLiteral("font_size"), 18);
+    variableLabel.properties.insert(QStringLiteral("visible"), true);
+
+    screen.widgets = { button, directLabel, variableLabel };
+
+    DataVariable message;
+    message.id = QStringLiteral("message");
+    message.name = QStringLiteral("$message");
+    message.type = QStringLiteral("string");
+    message.value = tr("等待变量绑定");
+    message.defaultValue = message.value;
+    message.description = tr("按钮点击后写入，并通过 BindingGraph 更新 Label_Message.text");
+    m_project.dataVariables = { message };
+
+    auto widgetNode = [](const WidgetInstance &instance, int x, int y) {
+        BindingNode node;
+        node.id = QStringLiteral("widget:%1").arg(instance.instanceId);
+        node.type = QStringLiteral("widget");
+        node.refId = instance.instanceId;
+        node.refName = instance.name;
+        node.title = instance.name;
+        node.x = x;
+        node.y = y;
+        return node;
+    };
+    auto dataNode = [](const DataVariable &variable, int x, int y) {
+        BindingNode node;
+        node.id = QStringLiteral("data:%1").arg(variable.id);
+        node.type = QStringLiteral("data");
+        node.refId = variable.id;
+        node.refName = variable.name;
+        node.title = variable.name;
+        node.x = x;
+        node.y = y;
+        return node;
+    };
+    auto endpoint = [](const BindingNode &node,
+                       const QString &kind,
+                       const QString &name,
+                       const QString &valueType) {
+        BindingEndpoint endpoint;
+        endpoint.nodeId = node.id;
+        endpoint.nodeType = node.type;
+        endpoint.refId = node.refId;
+        endpoint.refName = node.refName;
+        endpoint.portKind = kind;
+        endpoint.portName = name;
+        endpoint.valueType = valueType;
+        return endpoint;
+    };
+
+    const BindingNode buttonNode = widgetNode(button, 40, 80);
+    const BindingNode directNode = widgetNode(directLabel, 420, 40);
+    const BindingNode messageNode = widgetNode(variableLabel, 420, 250);
+    const BindingNode variableNode = dataNode(message, 230, 230);
+    m_project.bindingGraph.nodes = { buttonNode, directNode, variableNode, messageNode };
+
+    BindingEdge directEdge;
+    directEdge.id = QStringLiteral("edge_button_direct_label");
+    directEdge.type = QStringLiteral("event_action");
+    directEdge.source = endpoint(buttonNode, QStringLiteral("event"), QStringLiteral("clicked"), QStringLiteral("event"));
+    directEdge.target = endpoint(directNode, QStringLiteral("action"), QStringLiteral("setText"), QStringLiteral("string"));
+    directEdge.label = tr("按钮点击 -> 直接设置标签");
+    directEdge.order = 1;
+    directEdge.params.insert(QStringLiteral("value"), tr("直接动作：按钮已点击"));
+
+    BindingEdge dataWriteEdge;
+    dataWriteEdge.id = QStringLiteral("edge_button_set_message");
+    dataWriteEdge.type = QStringLiteral("event_data");
+    dataWriteEdge.source = directEdge.source;
+    dataWriteEdge.target = endpoint(variableNode, QStringLiteral("data_set"), QStringLiteral("set"), QStringLiteral("string"));
+    dataWriteEdge.label = tr("按钮点击 -> 写入 $message");
+    dataWriteEdge.order = 2;
+    dataWriteEdge.params.insert(QStringLiteral("value"), tr("数据变量：按钮已点击"));
+
+    BindingEdge propertyEdge;
+    propertyEdge.id = QStringLiteral("edge_message_to_label");
+    propertyEdge.type = QStringLiteral("property_binding");
+    propertyEdge.source = endpoint(variableNode, QStringLiteral("data_get"), QStringLiteral("onChange"), QStringLiteral("string"));
+    propertyEdge.target = endpoint(messageNode, QStringLiteral("property"), QStringLiteral("text"), QStringLiteral("string"));
+    propertyEdge.label = tr("$message -> Label_Message.text");
+    propertyEdge.order = 3;
+
+    m_project.bindingGraph.edges = { directEdge, dataWriteEdge, propertyEdge };
+
+    const QString projectDir = parent.filePath(projectName);
+    m_projectFilePath = projectDir + QLatin1Char('/') + ProjectManager::projectJsonFileName(projectName);
+    m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    QString err;
+    if (!ProjectManager::saveToFile(m_project, m_projectFilePath, &err)) {
+        QMessageBox::warning(this, tr("创建样例失败"), tr("保存工程失败：%1").arg(err));
+        return;
+    }
+    QString depErr;
+    if (!ProjectManager::deployRuntime(projectDir, false, &depErr)) {
+        QMessageBox::warning(this, tr("创建样例失败"), tr("部署运行时失败：%1").arg(depErr));
+        return;
+    }
+    const QString luaPath = projectDir + QLatin1Char('/') + ProjectManager::projectLuaFileName(projectName);
+    if (!ProjectManager::compileFileToLua(m_projectFilePath, luaPath, &err)) {
+        QMessageBox::warning(this, tr("创建样例失败"), tr("编译 Lua 失败：%1").arg(err));
+        return;
+    }
+
+    addRecentProject(m_projectFilePath);
+    applyProjectToTabs();
+    setProjectOpen(true);
+    openBindingGraphTab();
+    appendLog(tr("端到端样例已创建：%1。按 F5 可预览运行。").arg(m_projectFilePath));
 }
 
 void MainWindow::onOpenProject()
@@ -1928,7 +2089,7 @@ void MainWindow::onScreenDeleteRequested(const QString &screenId)
     m_projectUndoStack->push(new RemoveScreenCommand(this, screenId));
 }
 
-void MainWindow::onDataVariableAddRequested(const QString &name, const QString &type)
+void MainWindow::onDataVariableAddRequested(const QString &name, const QString &type, const QVariant &initialValue)
 {
     if (!m_projectUndoStack) return;
 
@@ -1946,7 +2107,7 @@ void MainWindow::onDataVariableAddRequested(const QString &name, const QString &
     variable.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     variable.name = candidate;
     variable.type = type.isEmpty() ? QStringLiteral("number") : type;
-    variable.value = defaultValueForDataVariableType(variable.type);
+    variable.value = initialValue.isValid() ? initialValue : defaultValueForDataVariableType(variable.type);
     variable.defaultValue = variable.value;
     variable.description = tr("项目级数据变量");
 
@@ -2082,8 +2243,6 @@ bool MainWindow::activateUndoStackPage(QUndoStack *stack)
         m_tabWidget->setCurrentWidget(tab);
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
-    if (m_eventPanel)
-        m_eventPanel->setCurrentScene(tab->scene());
     return true;
 }
 

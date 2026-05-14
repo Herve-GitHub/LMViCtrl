@@ -211,7 +211,16 @@ void ProjectTreeDock::requestAddDataVariable()
                                                types, 0, false, &ok);
     if (!ok || type.isEmpty()) return;
 
-    emit addDataVariableRequested(name, type);
+    QVariant initialValue;
+    if (type == QLatin1String("boolean")) {
+        const QStringList values { QStringLiteral("false"), QStringLiteral("true") };
+        const QString value = QInputDialog::getItem(this, tr("初始值"), tr("值"),
+                                                    values, 0, false, &ok);
+        if (!ok || value.isEmpty()) return;
+        initialValue = (value == QLatin1String("true"));
+    }
+
+    emit addDataVariableRequested(name, type, initialValue);
 }
 
 void ProjectTreeDock::requestRemoveDataVariable(QTreeWidgetItem *item)

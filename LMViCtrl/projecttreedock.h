@@ -3,6 +3,7 @@
 #include <QDockWidget>
 #include <QPoint>
 #include <QPointer>
+#include <QVariant>
 #include <QString>
 
 #include "widgemeta.h"
@@ -24,7 +25,7 @@ public:
     void setProjectData(const ProjectData *project);
 
 signals:
-    void addDataVariableRequested(const QString &name, const QString &type);
+    void addDataVariableRequested(const QString &name, const QString &type, const QVariant &initialValue);
     void removeDataVariableRequested(const QString &id);
 
 private slots:
