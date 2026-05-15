@@ -2,66 +2,65 @@
 
 local M = {
     values = {},
-    bindings = {},
-    subscribed = {},
+    bindings = {},   -- 数据点 → 控件列表
 }
 
+-- 绑定：数据点 → 控件
 function M.bind(point_id, widget_name, prop)
     if not point_id or not widget_name then return end
     prop = prop or "label"
 
     M.bindings[point_id] = M.bindings[point_id] or {}
     local list = M.bindings[point_id]
+
+    -- 避免重复绑定
     for _, item in ipairs(list) do
-        if item.widget == widget_name then return end
+        if item.widget == widget_name then
+            return
+        end
     end
-    table.insert(list, { widget = widget_name, prop = prop })
+
+    table.insert(list, {
+        widget = widget_name,
+        prop = prop
+    })
 end
 
--- 🔥 修复1：安全取控件（从runtime而非_G）
--- 🔥 终极安全获取控件（全局 widgets 表，永不失败）
-local function get_widget(name)
-    if not name then return nil end
-    -- 直接用全局唯一的 widgets 表，不走 runtime 间接获取
-    return _G.widgets and _G.widgets[name]
-end
-
--- 🔥 修复2：线程安全更新（LVGL要求主线程执行）
+-- 更新一个数据点，并自动刷新控件
 function M.update_value(point_id, value, status)
-    if not point_id or value == nil then return end
+    if not point_id then return end
+
+    -- 保存值
     M.values[point_id] = value
 
+    -- 自动刷新绑定的控件
     local list = M.bindings[point_id]
     if not list then return end
 
-    -- 异步抛到LVGL主线程执行，杜绝线程冲突
-    lv.async_call(function()
-        for _, item in ipairs(list) do
-            local w = get_widget(item.widget)
-            if w and type(w.set_property) == "function" then
-                w:set_property(item.prop, tostring(value))
-            end
+    for _, item in ipairs(list) do
+        local w = _G.widgets and _G.widgets[item.widget]
+        if w and w.set_property then
+            w:set_property(item.prop, tostring(value))
         end
-    end)
-end
-
--- 修复3：每个点位只订阅一次
-function M.read(...)
-    local args = {...}
-    local batch = {}
-    for _, point_id in ipairs(args) do
-        if point_id and not M.subscribed[point_id] then
-            M.subscribed[point_id] = true
-            table.insert(batch, point_id)
-        end
-    end
-    if #batch > 0 and lv.read then
-        lv.read(table.unpack(batch))
     end
 end
 
+-- 获取当前值
 function M.get_value(point_id)
     return M.values[point_id]
+end
+
+-- 批量订阅（只发订阅，不管理连接）
+function M.read(...)
+    if lv.read then
+        return lv.read(...)
+    end
+end
+
+function M.read_multiple(ids)
+    if lv.read_multiple then
+        return lv.read_multiple(ids)
+    end
 end
 
 return M

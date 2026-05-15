@@ -356,7 +356,8 @@ QString ProjectManager::compileToLua(const ProjectData &p)
 
 
     s << "lvgl.start_network_service (100)\n";
-    s << "lvgl.connect (\"ws://192.168.0.85:8085/ws/\", 3000)\n";
+   //s << "lvgl.connect (\"ws://192.168.0.85:8085/ws/\", 3000)\n";
+   s  << "lvgl.connect(\"ws://" << p.dataClient.server << ":8085/ws/\", 3000)\n";
 
     s << "project.name        = " << luaQuote(p.name)        << "\n";
     s << "project.description = " << luaQuote(p.description) << "\n";
@@ -376,7 +377,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
       << "size = " << p.font.size
       << " }\n\n";
 
-        s << "project.dataClient = { "
+     /*  s << "project.dataClient = { "
             << "enabled = " << (p.dataClient.enabled ? "true" : "false") << ", "
             << "server = " << luaQuote(p.dataClient.server) << ", "
             << "websocketPath = " << luaQuote(p.dataClient.websocketPath.isEmpty()
@@ -385,7 +386,7 @@ QString ProjectManager::compileToLua(const ProjectData &p)
             << "token = " << luaQuote(p.dataClient.token) << ", "
             << "timeoutMs = " << (p.dataClient.timeoutMs > 0 ? p.dataClient.timeoutMs : 5000)
             << " }\n\n";
-
+*/ 
     s << "project.screens = {\n";
     for (const ScreenData &scr : p.screens) {
         s << "  {\n";

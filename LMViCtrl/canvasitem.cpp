@@ -364,7 +364,7 @@ void CanvasItem::paint(QPainter *p,
             painted = true;
         }
     }
-#if 0
+#if 1
     //为了分析绘制相关问题分析，暂时关闭 LVGL 离屏渲染，优先使用 drawHints 绘制（如果有的话），再没有才用预览图
     if (!painted && !m_meta.drawHints.isEmpty()) {
         painted = m_drawHints.paintWithDrawHints(p, body, m_inst, m_meta);
