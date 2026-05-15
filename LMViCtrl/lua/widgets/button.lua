@@ -114,6 +114,9 @@ Button.__widget_meta = {
     { name = "double_clicked", label = "双击",
       description = "在短时间内连续两次点击时触发",
       params = {} },
+      { name = "value_changed", label = "值变化",
+      description = "读取数据点后的值变化",
+      params = {} },
   },
 
   -- ===== 事件处理代码（编辑器中用代码编辑器编辑） =====
@@ -257,6 +260,8 @@ function Button.new(parent, state)
     apply_radius()
     apply_border()
     apply_visible()
+
+   
   end
   self.draw()
 

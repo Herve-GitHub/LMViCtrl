@@ -114,6 +114,9 @@ Label.__widget_meta = {
     { name = "clicked", label = "点击",
       description = "标签被点击时触发（需开启可点击标志）",
       params = {} },
+       { name = "value_changed", label = "值变化",
+      description = "读取数据点后的值变化",
+      params = {} },
   },
 
   -- ===== 事件处理代码 =====
