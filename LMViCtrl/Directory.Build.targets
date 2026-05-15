@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This file is loaded by MSBuild AFTER designer.vcxproj is imported.
+  It overrides the QmOutputFile set by Qt VS Tools so that lrelease
+  always writes .qm files to the rcc directory next to the .qrc file,
+  regardless of what Qt VS Tools regenerates in designer.vcxproj.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup>
+    <QtTranslation>
+      <QmOutputFile>$(MSBuildProjectDirectory)\..\build\msvc\x86_64\debug\LMViCtrl\rcc\%(Filename).qm</QmOutputFile>
+    </QtTranslation>
+  </ItemDefinitionGroup>
+</Project>

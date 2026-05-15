@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>图形化控件事件绑定系统_原型设计.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="图形化控件事件绑定系统--原型设计文档">图形化控件事件绑定系统 — 原型设计文档</h1>
+<blockquote>
+<p>版本：v1.0 · 2026年5月12日</p>
+</blockquote>
+<hr>
+<h2 id="一设计目标">一、设计目标</h2>
+<p>用户可以通过<strong>拖拽连线</strong>的方式，将控件的事件（Event）与目标控件的动作（Action）或数据变量绑定，无需手写代码，实现直观的交互设计。</p>
+<p>核心原则：</p>
+<ul>
+<li><strong>零代码优先</strong> — 常见场景（显示/隐藏、文本赋值、数值联动）完全拖拽完成</li>
+<li><strong>渐进式复杂度</strong> — 简单场景一步完成，高级场景（条件、序列、脚本）在详情面板扩展</li>
+<li><strong>可逆操作</strong> — 所有连线操作支持 Ctrl+Z 撤销</li>
+<li><strong>类型安全提示</strong> — 锚点拖拽时实时灰显不兼容目标，防止无效绑定</li>
+</ul>
+<hr>
+<h2 id="二整体界面布局">二、整体界面布局</h2>
+<pre class="hljs"><code><div>┌──────────────────────────────────────────────────────────────────────────────────┐
+│  [设计模式]  [▶ 绑定模式]  [⬡ 预览]                    [撤销] [重做] [保存]      │
+├────────────┬─────────────────────────────────────────────┬───────────────────────┤
+│            │                                             │                       │
+│  控件树    │              主画布（绑定模式）              │   绑定详情面板        │
+│            │                                             │                       │
+│ ▼ Screen1  │  ┌─────────────────┐  ┌─────────────────┐  │  点击连线后展开       │
+│   ■ Btn1   │  │    ■ Button1    │  │    ▲ Label1     │  │  · 触发事件配置       │
+│   ▲ Lbl1   │  │─────────────── │  │─────────────────│  │  · 动作序列列表       │
+│   ◆ Slider │  │ onClick     ●━━┿━━┿━● setText        │  │  · 参数/条件/延迟     │
+│            │  │ onLongPress ●  │  │  ● show/hide     │  │                       │
+│ ▼ 数据变量  │  └─────────────────┘  └─────────────────┘  │                       │
+│   ⬟ $speed │                                             │                       │
+│   ⬟ $count │  ┌─────────────────┐  ┌─────────────────┐  │                       │
+│   ⬟ $text  │  │   ◆ Slider1     │  │   ⬟ $speed      │  │                       │
+│            │  │─────────────────│  │─────────────────│  │                       │
+│            │  │ onChange    ●━━━┿━━┿━● set(value)    │  │                       │
+│            │  └─────────────────┘  └─────────────────┘  │                       │
+│            │                                             │                       │
+└────────────┴─────────────────────────────────────────────┴───────────────────────┘
+</div></code></pre>
+<hr>
+<h2 id="三控件三要素模型">三、控件三要素模型</h2>
+<p>每个节点统一抽象为三类参数，形成标准化接口。</p>
+<pre class="hljs"><code><div>┌─────────────────────────────────────────────────────────┐
+│                     控件节点通用结构                     │
+├────────────────┬────────────────┬───────────────────────┤
+│   输入动作      │     属性        │      输出事件          │
+│  (Actions In)  │  (Properties)  │    (Events Out)        │
+│                │                │                        │
+│  ● 绿色锚点    │  ◈ 可直接编辑  │    ● 蓝色锚点          │
+│  从左侧接入    │  也可连线绑定   │    从右侧发出          │
+└────────────────┴────────────────┴───────────────────────┘
+         ▲                                    │
+    被动接受其他节点驱动                    主动向外触发
+
+Button（按钮）■ 深蓝:
+┌──────────────────────────────────────────────────────────┐
+│  输入动作              属性                输出事件       │
+│  ● setText             ◈ text=&quot;OK&quot;         onClick    ●  │
+│  ● setEnabled          ◈ enabled=true      onLongPress●  │
+│  ● show / hide         ◈ visible=true      onPress    ●  │
+│  ● setColor            ◈ bgColor=#4A90     onRelease  ●  │
+└──────────────────────────────────────────────────────────┘
+
+Label（标签）▲ 绿色:
+┌──────────────────────────────────────────────────────────┐
+│  输入动作              属性                输出事件       │
+│  ● setText             ◈ text=&quot;Hello&quot;      onClick    ●  │
+│  ● setColor            ◈ color=#333        (展示控件,    │
+│  ● setFontSize         ◈ fontSize=16        输出较少)     │
+│  ● show / hide         ◈ visible=true                    │
+└──────────────────────────────────────────────────────────┘
+
+Slider（滑块）◆ 橙色:
+┌──────────────────────────────────────────────────────────┐
+│  输入动作              属性                输出事件       │
+│  ● setValue            ◈ value=50          onChange   ●  │
+│  ● setMin              ◈ min=0             onRelease  ●  │
+│  ● setMax              ◈ max=100           onReachMin ●  │
+│  ● setEnabled          ◈ step=1            onReachMax ●  │
+└──────────────────────────────────────────────────────────┘
+
+TextInput（输入框）◆ 橙色:
+┌──────────────────────────────────────────────────────────┐
+│  输入动作              属性                输出事件       │
+│  ● setText             ◈ text=&quot;&quot;           onChange   ●  │
+│  ● setEnabled          ◈ placeholder=&quot;&quot;    onSubmit   ●  │
+│  ● clear               ◈ enabled=true      onFocus    ●  │
+│  ● focus               ◈ visible=true      onBlur     ●  │
+└──────────────────────────────────────────────────────────┘
+
+DataNode（数据节点）⬟ 紫色:
+┌──────────────────────────────────────────────────────────┐
+│  输入动作 SET          属性                输出事件 GET   │
+│  ● set(value)          ◈ type=Number       onChange   ●  │
+│  ● increment           ◈ value=50          onAboveLimit● │
+│  ● decrement           ◈ min=0             onBelowLimit● │
+│  ● reset               ◈ max=200           onEquals   ●  │
+│  ● toggle              ◈ limit=180                       │
+└──────────────────────────────────────────────────────────┘
+</div></code></pre>
+<hr>
+<h2 id="四节点类型与颜色编码">四、节点类型与颜色编码</h2>
+<pre class="hljs"><code><div>节点类型（边框颜色）:
+  ■ 深蓝 #2D6BE4  交互控件   Button / Switch / Checkbox
+  ▲ 绿色 #27AE60  展示控件   Label / Image / Chart
+  ◆ 橙色 #E67E22  复合控件   TextInput / Slider
+  ⬟ 紫色 #8E44AD  数据节点   Number / String / Boolean / List
+
+锚点颜色:
+  ● 蓝色  输出事件锚点  右侧，主动发出
+  ● 绿色  输入动作锚点  左侧，被动接收
+  ● 橙色  数据写入 SET
+  ● 紫色  数据读取 GET
+  ● 灰色  属性绑定 #95A5A6
+
+连线颜色:
+  ━━━━  蓝色实线    控件事件 → 控件动作
+  ┄┄┄┄  橙色虚线    控件事件 → 变量写入
+  ····  紫色点线    变量读取 → 控件动作
+  ════  灰色双箭头  属性双向绑定
+</div></code></pre>
+<hr>
+<h2 id="五数据节点类型">五、数据节点类型</h2>
+<pre class="hljs"><code><div>  ┌─ ⬟ Number ──────────┐  ┌─ ⬟ String ──────────┐
+  │  SET: set            │  │  SET: set            │
+  │       increment      │  │       append         │
+  │       decrement      │  │       format / clear │
+  │       reset          │  │  GET: onChange       │
+  │  GET: onChange       │  └─────────────────────┘
+  │       onAboveLimit   │
+  │       onBelowLimit   │  ┌─ ⬟ Boolean ──────────┐
+  └─────────────────────┘  │  SET: set_true        │
+                            │       set_false       │
+  ┌─ ⬟ List ────────────┐  │       toggle         │
+  │  SET: push           │  │  GET: onChange       │
+  │       pop            │  │       onTrue         │
+  │       setItem(index) │  │       onFalse        │
+  │  GET: onChange       │  └─────────────────────┘
+  │       onEmpty        │
+  └─────────────────────┘
+</div></code></pre>
+<hr>
+<h2 id="六拖拽连线操作流程">六、拖拽连线操作流程</h2>
+<pre class="hljs"><code><div>  鼠标悬停源控件
+       │
+       ▼
+  右侧蓝色事件锚点浮现
+       │
+       ▼
+  按住锚点拖拽，蓝色引导线跟随鼠标
+       │
+       ▼
+  靠近目标节点
+       ├── 兼容 ──▶ 目标动作锚点高亮绿色
+       └── 不兼容 ─▶ 目标锚点灰色屏蔽
+       │
+       ▼（兼容路径）
+  释放鼠标 → 弹出动作选择菜单
+       │
+       ├── 确认 ──▶ 连线创建成功，画布显示编号徽章
+       └── 取消 ──▶ 取消连线
+       │
+       ▼（连线创建后）
+  点击已有连线
+       │
+       ▼
+  右侧展开绑定详情面板（可编辑序列/参数/条件/延迟）
+</div></code></pre>
+<hr>
+<h2 id="七一对多绑定--动作序列模型">七、一对多绑定 — 动作序列模型</h2>
+<h3 id="71-核心设计">7.1 核心设计</h3>
+<p>每个事件锚点对应一个<strong>有序动作队列</strong>，而非简单分叉线。画布上收束为一根主线加编号徽章，编辑时展开完整序列面板。</p>
+<pre class="hljs"><code><div>  画布收起状态（浏览时整洁）:
+
+  ┌─ ■ Button1 ──────────────────────┐
+  │                                   │
+  │            onClick ●━━━(3)━━━━▶  │   ← 小徽章显示动作数
+  │         onLongPress ●             │     悬停 tooltip 预览列表
+  └───────────────────────────────────┘
+
+  画布展开状态（点击徽章后）:
+
+  ┌─ ■ Button1 ─────────┐
+  │      onClick ●━━━━━━━┿━━━━━━━┬──────────────────────────┐
+  └─────────────────────┘        │  动作序列                 │
+                                  │  ① ━━▶ Label1.setText    │
+                                  │  ② ━━▶ $count.increment  │
+                                  │  ③ ━━▶ Image1.show       │
+                                  │  [+ 拖入新目标]          │
+                                  └──────────────────────────┘
+</div></code></pre>
+<h3 id="72-动作序列执行流程">7.2 动作序列执行流程</h3>
+<pre class="hljs"><code><div>  顺序模式:
+
+  ⚡ Button1.onClick 触发
+       │
+       ▼
+  ① Label1.setText       参数: &quot;已点击 &quot; + $count   条件: 无      延迟: 0ms
+       │
+       ▼
+  ② $count.increment     参数: +1                   条件: 无      延迟: 0ms
+       │
+       ▼
+  ③ Image1.show          参数: —                    条件: $count&gt;3  延迟: 200ms
+
+
+  并行模式:
+
+  ⚡ 并行触发
+       ├──▶ ① Label1.setText
+       ├──▶ ② $count.increment
+       └──▶ ③ Image1.show
+</div></code></pre>
+<h3 id="73-动作序列能力对比">7.3 动作序列能力对比</h3>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th style="text-align:center">原分叉方案</th>
+<th style="text-align:center">动作序列方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>执行顺序控制</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅ 拖动编号调序</td>
+</tr>
+<tr>
+<td>单条动作独立禁用</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr>
+<td>单条动作独立条件</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr>
+<td>单条动作独立延迟</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr>
+<td>顺序 / 并行切换</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr>
+<td>画布可读性</td>
+<td style="text-align:center">线条杂乱</td>
+<td style="text-align:center">✅ 收束为徽章</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="八典型绑定示意">八、典型绑定示意</h2>
+<h3 id="81-控件--控件">8.1 控件 → 控件</h3>
+<pre class="hljs"><code><div>  ┌─ ■ Button1 ──────┐                ┌─ ▲ Label1 ──────┐
+  │   onClick      ●━━┿━━━━蓝色实线━━━━┿━● setText       │
+  └──────────────────┘                └─────────────────┘
+</div></code></pre>
+<h3 id="82-控件--数据--控件数据驱动">8.2 控件 → 数据 → 控件（数据驱动）</h3>
+<pre class="hljs"><code><div>  ┌─ ■ Button1 ──────┐   橙色虚线    ┌─ ⬟ $count ──────┐   紫色点线    ┌─ ▲ Label1 ──────┐
+  │   onClick      ●━━┿━━━━━━━━━━━━━━┿━● increment      │              │                  │
+  └──────────────────┘               │  onChange      ●━┿━━━━━━━━━━━━━━┿━● setText        │
+                                     └──────────────────┘               └──────────────────┘
+</div></code></pre>
+<h3 id="83-slider-联动-label属性双向绑定">8.3 Slider 联动 Label（属性双向绑定）</h3>
+<pre class="hljs"><code><div>  ┌─ ◆ Slider1 ──────┐   橙色虚线    ┌─ ⬟ $speed ──────┐   灰色双箭头  ┌─ ▲ Label1 ──────┐
+  │   onChange     ●━━┿━━━━━━━━━━━━━━┿━● set(value)     │◈════════════━┿━◈ text 属性      │
+  └──────────────────┘               └──────────────────┘               └──────────────────┘
+</div></code></pre>
+<h3 id="84-完整交互链路示例">8.4 完整交互链路示例</h3>
+<pre class="hljs"><code><div>  ┌─ ■ Button1 ─────┐
+  │   onClick     ●━━┿━━━━━━┬─── ① increment ─────▶ ┌─ ⬟ $count ──┐
+  └─────────────────┘       │                        │  onChange ●━━┿━━━┐
+                             └─── ② format ────────▶ ┌─ ⬟ $text ───┐   │
+                                                      │  onChange ●━┿━┐  │
+                                                      └─────────────┘  │  │
+                                                                        ▼  ▼
+                                                              ┌─ ▲ Label1 ──────┐
+                                                              │  ● setText      │
+                                                              └─────────────────┘
+                                                    $count onAboveLimit(&gt;5)
+                                                              │
+                                                              ▼
+                                                    ┌─ ▲ Image1 ───────┐
+                                                    │  ● show          │
+                                                    └──────────────────┘
+</div></code></pre>
+<hr>
+<h2 id="九触摸屏事件规范">九、触摸屏事件规范</h2>
+<p>触摸屏环境<strong>不应使用双击事件</strong>，原因：</p>
+<ul>
+<li><strong>响应延迟</strong> — 系统等待第二次点击判断，导致单击有约 300ms 延迟</li>
+<li><strong>操作不可靠</strong> — 手指间隔难以精确控制，误触率高</li>
+<li><strong>无统一语义</strong> — 触摸屏 UX 规范中双击无约定俗成含义</li>
+</ul>
+<pre class="hljs"><code><div>  触摸屏标准事件集:
+
+  ✅ onClick          单点触发
+  ✅ onLongPress      长按（替代双击，承担次要操作语义）
+  ✅ onPress          按下瞬间
+  ✅ onRelease        手指抬起
+  ✅ onSwipeLeft      向左滑动
+  ✅ onSwipeRight     向右滑动
+  ✅ onSwipeUp        向上滑动
+  ✅ onSwipeDown      向下滑动
+  ❌ onDoubleClick    移除，改用 onLongPress
+</div></code></pre>
+<hr>
+<h2 id="十绑定详情面板结构">十、绑定详情面板结构</h2>
+<pre class="hljs"><code><div>┌──────────────────────────────────────────────────────────┐
+│  事件: Button1 · onClick                           [×]   │
+├──────────────────────────────────────────────────────────┤
+│  区块①  触发事件                                         │
+│  控件: [Button1        ▼]   事件: [onClick     ▼]       │
+├──────────────────────────────────────────────────────────┤
+│  区块②  动作序列  （拖动 ⠿ 调整顺序）                   │
+│                                                          │
+│  ⠿ ① ┌──────────────────────────────────────────────┐  │
+│      │ 目标: Label1   动作: setText                  │  │
+│      │ 参数: ● 固定值 / ○ 变量 / ○ 表达式           │  │
+│      │ 条件: 无                延迟: 0ms    [⏸][🗑️]│  │
+│      └──────────────────────────────────────────────┘  │
+│                                                          │
+│  ⠿ ② ┌──────────────────────────────────────────────┐  │
+│      │ 目标: $count   动作: increment                │  │
+│      │ 参数: +1                                      │  │
+│      │ 条件: 无                延迟: 0ms    [⏸][🗑️]│  │
+│      └──────────────────────────────────────────────┘  │
+│                                                          │
+│  ⠿ ③ ┌──────────────────────────────────────────────┐  │
+│      │ 目标: Image1   动作: show                     │  │
+│      │ 参数: —                                       │  │
+│      │ 条件: $count&gt;3          延迟: 200ms  [⏸][🗑️]│  │
+│      └──────────────────────────────────────────────┘  │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│  区块③  执行模式: ● 顺序执行  ○ 并行执行               │
+├──────────────────────────────────────────────────────────┤
+│  [+ 添加动作]                    [🗑️ 删除整个绑定]     │
+└──────────────────────────────────────────────────────────┘
+</div></code></pre>
+<hr>
+<h2 id="十一快捷操作汇总">十一、快捷操作汇总</h2>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新建绑定</td>
+<td>拖拽事件锚点到目标控件</td>
+</tr>
+<tr>
+<td>快速绑定同名变量</td>
+<td>双击控件属性中的变量名自动连线</td>
+</tr>
+<tr>
+<td>删除连线</td>
+<td>点击连线 → <code>Delete</code> 或右键删除</td>
+</tr>
+<tr>
+<td>复制绑定</td>
+<td>右键连线 → 复制绑定 → 点击目标控件</td>
+</tr>
+<tr>
+<td>调整动作顺序</td>
+<td>详情面板内拖动 ⠿ 手柄</td>
+</tr>
+<tr>
+<td>禁用单条动作</td>
+<td>详情面板 → ⏸ 按钮</td>
+</tr>
+<tr>
+<td>高亮全部连线</td>
+<td>右键控件树节点 → 高亮全部连线</td>
+</tr>
+<tr>
+<td>折叠 / 展开节点</td>
+<td>点击节点标题栏</td>
+</tr>
+<tr>
+<td>框选多个节点</td>
+<td>鼠标拖拽空白区域</td>
+</tr>
+<tr>
+<td>撤销 / 重做</td>
+<td><code>Ctrl+Z</code> / <code>Ctrl+Y</code></td>
+</tr>
+<tr>
+<td>切换绑定视图</td>
+<td>工具栏 <strong>[绑定模式]</strong> 按钮</td>
+</tr>
+<tr>
+<td>预览运行效果</td>
+<td>工具栏 <strong>[▶ 预览]</strong> 按钮</td>
+</tr>
+</tbody>
+</table>
+
+</body>
+</html>

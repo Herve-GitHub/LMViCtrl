@@ -1,0 +1,90 @@
+﻿/**
+ * @file lvgl_lua_bindings.h
+ * @brief LVGL Lua bindings for VduEditor
+ */
+//公共头文件
+#ifndef LVGL_LUA_BINDINGS_H
+#define LVGL_LUA_BINDINGS_H
+
+#include <stdint.h>
+
+// Platform-specific DLL export/import macros
+#if defined(_MSC_VER)
+    #ifndef LVGLLUABINDING_EXPORTS
+        #define LVGLLUABINDING_API __declspec(dllimport)
+    #else
+        #define LVGLLUABINDING_API __declspec(dllexport)
+    #endif
+#elif defined(__GNUC__) && defined(LVGLLUABINDING_EXPORTS) && !defined(_WIN32)
+    #define LVGLLUABINDING_API __attribute__((visibility("default")))
+#else
+    #define LVGLLUABINDING_API
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "lua/lua.h"
+#include "lua/lauxlib.h"
+#include "lua/lualib.h"
+#include "lvgl/lvgl.h"
+
+/**
+ * @brief Register all LVGL functions to Lua state
+ * @param L Lua state
+ */
+LVGLLUABINDING_API void lvgl_lua_register(lua_State* L);
+LVGLLUABINDING_API void set_current_ttf_font(lv_font_t* font);
+LVGLLUABINDING_API lv_font_t* get_current_ttf_font(void);
+
+/**
+ * @brief 启动 LVGL 仿真：创建 SDL 窗口/输入，注册 Lua 绑定并运行指定脚本
+ *
+ * @param lua_script_path  设计器生成的 Lua 入口脚本路径（必填）
+ * @param hor_res          仿真窗口宽度（<=0 时使用默认 800）
+ * @param ver_res          仿真窗口高度（<=0 时使用默认 480）
+ * @param window_title     仿真窗口标题（NULL 时使用 SDL 默认）
+ * @return 0 成功，其它值为错误码（在 LV_SDL_DIRECT_EXIT==1 时通常不会返回）
+ */
+LVGLLUABINDING_API int lvgl_simulator_run(const char * lua_script_path,
+                                          int hor_res, int ver_res,
+                                          const char * window_title);
+
+/**
+ * @brief 启动 Linux ARM HMI：创建 DRM/KMS 显示、evdev 输入，注册 Lua 绑定并运行指定脚本。
+ *
+ * @param lua_script_path  设计器生成的 Lua 入口脚本路径（必填）
+ * @param drm_path         DRM 设备路径（NULL 或空字符串时使用 /dev/dri/card0）
+ * @param connector_id     DRM connector id（-1 时自动选择）
+ * @param pointer_path     触摸/鼠标 evdev 路径（NULL 或空字符串时不创建）
+ * @param keypad_path      键盘/按键 evdev 路径（NULL 或空字符串时不创建）
+ * @return 0 成功，其它值为错误码（正常运行时通常不会返回）
+ */
+LVGLLUABINDING_API int lvgl_hmi_run(const char * lua_script_path,
+                                    const char * drm_path,
+                                    int64_t connector_id,
+                                    const char * pointer_path,
+                                    const char * keypad_path);
+
+/**
+ * @brief Render a Lua widget module with a real offscreen LVGL display.
+ *
+ * The output buffer uses Qt/QImage::Format_ARGB32 byte order on little-endian
+ * platforms: B, G, R, A per pixel.
+ */
+LVGLLUABINDING_API int lvgl_lua_render_widget_to_argb32(const char * lua_widget_path,
+                                                        const char * state_json,
+                                                        const char * font_path,
+                                                        int font_size,
+                                                        int width,
+                                                        int height,
+                                                        unsigned char * out_argb32,
+                                                        int out_stride,
+                                                        char * error_buf,
+                                                        int error_buf_size);
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LVGL_LUA_BINDINGS_H */
