@@ -35,6 +35,8 @@
 namespace {
 constexpr qreal kNodeWidth = 240.0;
 constexpr qreal kHeaderHeight = 34.0;
+constexpr qreal kKindLabelTop = 8.0;
+constexpr qreal kFirstPortTop = 42.0;
 constexpr qreal kPortRowHeight = 22.0;
 constexpr qreal kPortRadius = 5.0;
 constexpr qreal kNodePadding = 10.0;
@@ -1078,7 +1080,7 @@ void BindingGraphView::rebuildScene()
 
         auto *kind = new QGraphicsTextItem(isData ? tr("数据变量") : tr("控件节点"), nodeItem);
         kind->setDefaultTextColor(QColor(QStringLiteral("#a8a8a8")));
-        kind->setPos(12, kHeaderHeight + 4);
+        kind->setPos(12, kHeaderHeight + kKindLabelTop);
 
         int leftRow = 0;
         int rightRow = 0;
@@ -1092,7 +1094,7 @@ void BindingGraphView::rebuildScene()
         }
 
         const int rows = qMax(leftRow, rightRow);
-        const qreal height = qMax<qreal>(122.0, kHeaderHeight + 28.0 + rows * kPortRowHeight + kNodePadding);
+        const qreal height = qMax<qreal>(122.0, kHeaderHeight + kFirstPortTop + rows * kPortRowHeight + kNodePadding);
         nodeItem->setRect(0, 0, kNodeWidth, height);
     }
 
@@ -1182,7 +1184,7 @@ void BindingGraphView::addPort(QGraphicsItem *nodeItem,
                                int row,
                                const QColor &color)
 {
-    const qreal y = kHeaderHeight + 28.0 + row * kPortRowHeight;
+    const qreal y = kHeaderHeight + kFirstPortTop + row * kPortRowHeight;
     const qreal x = output ? kNodeWidth - 14.0 : 14.0;
     const QString key = portKey(nodeId, kind, name);
     auto *dot = new PortItem(this, key, output,

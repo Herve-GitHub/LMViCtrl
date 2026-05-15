@@ -13,7 +13,6 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
-#include <QFont>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
@@ -29,9 +28,6 @@ MainWindow::MainWindow(QWidget* parent)
 	, ui(new Ui::MainWindow)
 {
 	ui->setupUi(this);
-	QFont font(QStringLiteral("SimHei"), 10);
-	font.setStyleHint(QFont::SansSerif);
-	qApp->setFont(font);
 	applyDarkTheme();
 	setupMenus();
 	setupToolBars();

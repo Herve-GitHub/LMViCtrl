@@ -212,7 +212,16 @@ void ProjectTreeDock::requestAddDataVariable()
     if (!ok || type.isEmpty()) return;
 
     QVariant initialValue;
-    if (type == QLatin1String("boolean")) {
+    if (type == QLatin1String("number")) {
+        initialValue = QInputDialog::getDouble(this, tr("初始值"), tr("值"),
+                                               0.0, -1000000000000.0, 1000000000000.0,
+                                               6, &ok);
+        if (!ok) return;
+    } else if (type == QLatin1String("string")) {
+        initialValue = QInputDialog::getText(this, tr("初始值"), tr("值"),
+                                             QLineEdit::Normal, QString(), &ok);
+        if (!ok) return;
+    } else if (type == QLatin1String("boolean")) {
         const QStringList values { QStringLiteral("false"), QStringLiteral("true") };
         const QString value = QInputDialog::getItem(this, tr("初始值"), tr("值"),
                                                     values, 0, false, &ok);
