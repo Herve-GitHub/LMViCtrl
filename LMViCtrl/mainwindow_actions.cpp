@@ -353,6 +353,7 @@ void MainWindow::resetProject()
     m_project.screens.append(s);
 
     m_projectFilePath.clear();
+    m_lastActiveScreenId.clear();
 
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
@@ -381,6 +382,7 @@ void MainWindow::applyProjectToTabs()
     resetUndoChains();
     m_widgetClipboard.clear();
     m_widgetPasteCount = 0;
+    m_lastActiveScreenId.clear();
 
     // 为旧工程/缺失 name 的实例补一个唯一名
     ensureInstanceNamesAssigned();
@@ -426,12 +428,22 @@ void MainWindow::openBindingGraphTab()
     if (existing >= 0) {
         m_tabWidget->setCurrentIndex(existing);
         m_bindingGraphView->refreshGraph();
+        refreshProjectTreeContext();
+        if (m_projectTree) {
+            m_projectTree->show();
+            m_projectTree->raise();
+        }
         return;
     }
 
     m_tabWidget->addTab(m_bindingGraphView, tr("绑定模式"));
     m_tabWidget->setCurrentWidget(m_bindingGraphView);
     m_bindingGraphView->refreshGraph();
+    refreshProjectTreeContext();
+    if (m_projectTree) {
+        m_projectTree->show();
+        m_projectTree->raise();
+    }
 }
 
 void MainWindow::openBindingGraphDock(bool floating)
@@ -471,6 +483,11 @@ void MainWindow::openBindingGraphDock(bool floating)
         m_bindingDetailPanel->raise();
     }
     m_bindingGraphView->refreshGraph();
+    refreshProjectTreeContext();
+    if (m_projectTree) {
+        m_projectTree->show();
+        m_projectTree->raise();
+    }
 }
 
 void MainWindow::refreshBindingGraphTab()
@@ -529,11 +546,11 @@ void MainWindow::openScreenTab(const QString &screenId)
     m_tabWidget->addTab(tab, tabTitle);
     m_tabWidget->setCurrentWidget(tab);
     m_openTabs.insert(screenId, tab);
+    m_lastActiveScreenId = screenId;
 
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
-    if (m_projectTree)
-        m_projectTree->setCurrentScreen(tab->scene(), sd->id, sd->name);
+    refreshProjectTreeContext();
 }
 
 void MainWindow::closeScreenTab(const QString &screenId)
@@ -561,6 +578,14 @@ void MainWindow::closeScreenTab(const QString &screenId)
     const int idx = m_tabWidget->indexOf(tab);
     if (idx >= 0) m_tabWidget->removeTab(idx);
     m_openTabs.remove(screenId);
+    if (m_lastActiveScreenId == screenId) {
+        m_lastActiveScreenId.clear();
+        if (ScreenTab *current = currentScreenTab())
+            m_lastActiveScreenId = current->screenId();
+        else if (!m_openTabs.isEmpty())
+            m_lastActiveScreenId = m_openTabs.constBegin().key();
+    }
+    refreshProjectTreeContext();
     tab->deleteLater();
 }
 
@@ -582,6 +607,15 @@ ScreenTab *MainWindow::currentScreenTab() const
     return qobject_cast<ScreenTab *>(m_tabWidget->currentWidget());
 }
 
+ScreenTab *MainWindow::projectTreeScreenTab() const
+{
+    if (ScreenTab *tab = currentScreenTab())
+        return tab;
+    if (!m_lastActiveScreenId.isEmpty())
+        return m_openTabs.value(m_lastActiveScreenId, nullptr);
+    return nullptr;
+}
+
 CanvasScene *MainWindow::currentScene() const
 {
     ScreenTab *tab = currentScreenTab();
@@ -592,12 +626,28 @@ QString MainWindow::currentScreenName() const
 {
     ScreenTab *tab = currentScreenTab();
     if (!tab) return QString();
-    const QString id = tab->screenId();
+    return screenNameForId(tab->screenId());
+}
+
+QString MainWindow::screenNameForId(const QString &screenId) const
+{
     for (const ScreenData &screen : m_project.screens) {
-        if (screen.id == id)
+        if (screen.id == screenId)
             return screen.name;
     }
     return QString();
+}
+
+void MainWindow::refreshProjectTreeContext()
+{
+    if (!m_projectTree) return;
+
+    if (ScreenTab *tab = projectTreeScreenTab()) {
+        m_projectTree->setCurrentScreen(tab->scene(), tab->screenId(), screenNameForId(tab->screenId()));
+        return;
+    }
+
+    m_projectTree->setCurrentScreen(nullptr, QString(), QString());
 }
 
 QString MainWindow::currentScreenId() const
@@ -662,8 +712,7 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
     for (ScreenTab *tab : std::as_const(m_openTabs))
         tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
 
-    if (m_projectTree)
-        m_projectTree->setCurrentScreen(currentScene(), currentScreenId(), currentScreenName());
+    refreshProjectTreeContext();
 }
 
 void MainWindow::onTabCloseRequested(int index)
@@ -700,7 +749,10 @@ void MainWindow::setProjectOpen(bool open)
         m_widgetToolbox->setVisible(open);
     if (m_projectTree) {
         m_projectTree->setVisible(open);
-        if (!open) m_projectTree->setCurrentScene(nullptr);
+        if (!open) {
+            m_lastActiveScreenId.clear();
+            m_projectTree->setCurrentScene(nullptr);
+        }
     }
     if(m_propertyPanel)
         m_propertyPanel->setVisible(open);
@@ -1457,8 +1509,7 @@ void MainWindow::onScreenProperties()
             QStringLiteral("%1. %2").arg(sd->order + 1).arg(sd->name));
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
-    if (m_projectTree)
-        m_projectTree->setCurrentScreen(tab->scene(), sd->id, sd->name);
+    refreshProjectTreeContext();
 }
 
 void MainWindow::onTagDictionary() {}

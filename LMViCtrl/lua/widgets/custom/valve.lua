@@ -71,6 +71,17 @@ Valve.__widget_meta = {
       bindable = true },
   },
 
+  actions = {
+    { name = "setAngle", label = "设置角度", kind = "set_property", property = "angle", value_type = "number",
+      description = "设置阀门当前角度" },
+    { name = "open",     label = "开启",     kind = "call_method",  method = "open",     value_type = "void",
+      description = "将阀门切换到开启角度" },
+    { name = "close",    label = "关闭",     kind = "call_method",  method = "close",    value_type = "void",
+      description = "将阀门切换到关闭角度" },
+    { name = "toggle",   label = "切换开关", kind = "call_method",  method = "toggle",   value_type = "void",
+      description = "在开启和关闭状态之间切换阀门" },
+  },
+
   bindings = {
     { name = "angle",        target = "value",   direction = "inout" },
     { name = "handle_color", target = "color",   direction = "in"    },

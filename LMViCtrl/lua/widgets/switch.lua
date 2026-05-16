@@ -167,9 +167,20 @@ function Switch.new(parent, state)
 
   -- 事件回调缓存（供 destroy 清理）
   self._cb_handles = {}
+  self._event_listeners = {}
 
   -- 内部状态切换抑制标志（避免 set_property 与事件回调相互递归）
   self._suppress_event = false
+
+  local function to_boolean(value)
+    if type(value) == "boolean" then return value end
+    if type(value) == "number" then return value ~= 0 end
+    if type(value) == "string" then
+      local v = value:lower()
+      return v == "true" or v == "1" or v == "yes" or v == "on"
+    end
+    return not not value
+  end
 
   -- ---------------- 样式应用（集中管理） ----------------
   local function PART_MAIN()      return lv.PART_MAIN      or 0x00000  end
@@ -280,8 +291,19 @@ function Switch.new(parent, state)
   end
   self.draw()
 
+  local function fire_event(event_name, event)
+    local list = self._event_listeners[event_name]
+    if not list then return end
+    for _, callback in ipairs(list) do
+      local ok, err = pcall(callback, self, event)
+      if not ok then print("[switch] callback error:", err) end
+    end
+  end
+
   -- ---------------- 事件订阅 ----------------
   function self:on(event_name, callback)
+    if type(callback) ~= "function" then return end
+
     local function make_safe_cb()
       return function(e)
         if not self.props.enabled then return end
@@ -308,6 +330,9 @@ function Switch.new(parent, state)
       return
     end
 
+    self._event_listeners[event_name] = self._event_listeners[event_name] or {}
+    table.insert(self._event_listeners[event_name], callback)
+
     local cb = make_safe_cb()
     if self.sw.add_event_cb then
       self.sw:add_event_cb(cb, ev_code, nil)
@@ -323,6 +348,8 @@ function Switch.new(parent, state)
   end
 
   function self:set_property(name, value)
+    local old_checked = self.props.checked
+    if name == "checked" then value = to_boolean(value) end
     self.props[name] = value
 
     if name == "off_bg_color" then
@@ -346,6 +373,9 @@ function Switch.new(parent, state)
       self._suppress_event = true
       apply_checked_state()
       self._suppress_event = false
+      if old_checked ~= self.props.checked then
+        fire_event("value_changed", { name = "value_changed", value = self.props.checked })
+      end
     elseif name == "enabled" then
       apply_enabled_state()
     elseif name == "visible" then
@@ -374,6 +404,7 @@ function Switch.new(parent, state)
   -- ---------------- 销毁 ----------------
   function self:destroy()
     self._cb_handles = {}
+    self._event_listeners = {}
     if self.sw and self.sw.del then
       self.sw:del()
     elseif self.sw and lv.obj_del then

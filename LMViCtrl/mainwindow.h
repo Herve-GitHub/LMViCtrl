@@ -338,6 +338,7 @@ private:
     ProjectData      m_project;
     QString          m_projectFilePath;
     bool             m_projectOpen = false;
+    QString          m_lastActiveScreenId;
     QStringList      m_recentProjects;
     QList<WidgetInstance> m_widgetClipboard;
     int              m_widgetPasteCount = 0;
@@ -361,9 +362,12 @@ private:
     void applyProjectToTabs();          // 工程加载后打开所有图页
     void refreshTabWidgetMetas();       // 把 widgetMetas 注入所有打开的 tab
     ScreenTab *currentScreenTab() const;
+    ScreenTab *projectTreeScreenTab() const;
     CanvasScene *currentScene() const;  // 当前活动图页的 scene（可为 nullptr）
     QString currentScreenId() const;
     QString currentScreenName() const;
+    QString screenNameForId(const QString &screenId) const;
+    void refreshProjectTreeContext();
 
     // 最近工程
     void loadRecentProjects();

@@ -74,6 +74,8 @@ MainWindow::MainWindow(QWidget* parent)
 	connect(m_tabWidget, &QTabWidget::tabCloseRequested,
 		this, &MainWindow::onTabCloseRequested);
 	connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+		if (ScreenTab *tab = currentScreenTab())
+			m_lastActiveScreenId = tab->screenId();
 		const bool bindingMode = m_bindingGraphView
 			&& (m_tabWidget->currentWidget() == m_bindingGraphView
 				|| (m_bindingGraphDock && m_bindingGraphDock->isVisible()));
@@ -86,8 +88,11 @@ MainWindow::MainWindow(QWidget* parent)
 			if (bindingMode)
 				m_bindingDetailPanel->raise();
 		}
-		if (m_projectTree)
-			m_projectTree->setCurrentScreen(currentScene(), currentScreenId(), currentScreenName());
+		refreshProjectTreeContext();
+		if (bindingMode && m_projectTree) {
+			m_projectTree->show();
+			m_projectTree->raise();
+		}
 		});
 
 	m_bindingGraphView = new BindingGraphView(this);
