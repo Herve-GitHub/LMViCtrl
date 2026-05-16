@@ -1414,7 +1414,6 @@ void BindingGraphView::rebuildScene()
     }
     const int gridRows = qMax(kGridMinRows, maxRow + 2);
     const int gridColumns = qMax(kGridMinColumns, maxColumn + 3);
-    drawGrid(rowHeights, gridRows, gridColumns);
     const QRectF lastCell = gridCellRect(gridRows - 1, gridColumns - 1, rowHeights);
     m_scene->setSceneRect(QRectF(0, 0, lastCell.right() + 32.0, lastCell.bottom() + 32.0));
 

@@ -707,7 +707,6 @@ local function create_data_store(definitions)
         elseif operation == "reset" then
             return set_value(variable, variable.defaultValue)
         elseif operation == "toggle" then
-		    print(not to_boolean(variable.value))
             return set_value(variable, not to_boolean(variable.value))
         elseif operation == "set_true" then
             return set_value(variable, true)
@@ -800,6 +799,16 @@ local function binding_edge_value(edge, self, e, action_def)
     return binding_event_value(self, e)
 end
 
+local function set_widget_property(widget, property_name, value, options)
+    if type(widget) ~= "table" or type(widget.set_property) ~= "function" then return false end
+    local ok, err = pcall(widget.set_property, widget, property_name, value, options)
+    if not ok then
+        log_warn("binding graph: set property %s failed: %s", tostring(property_name), tostring(err))
+        return false
+    end
+    return true
+end
+
 local function execute_binding_edge(edge, self, e)
     if type(edge) ~= "table" or edge.enabled == false then return end
     if not condition_allows_action(edge, self, e) then return end
@@ -824,18 +833,20 @@ local function execute_binding_edge(edge, self, e)
     end
 
     if target.portKind == "property" then
-        if type(widget.set_property) == "function" then
-            widget:set_property(target.portName, binding_edge_value(edge, self, e))
-        end
+        set_widget_property(widget, target.portName, binding_edge_value(edge, self, e), {
+            source = "binding_graph",
+        })
         return
     end
 
     if target.portKind == "action" then
         local action_def = find_action_def(entry, target.portName)
         local kind = action_def and action_def.kind
-        if kind == "set_property" and action_def.property and type(widget.set_property) == "function" then
-            widget:set_property(action_def.property, binding_edge_value(edge, self, e, action_def))
-        elseif kind == "call_method" and action_def.method and type(widget[action_def.method]) == "function" then
+        if action_def and kind == "set_property" and action_def.property then
+            set_widget_property(widget, action_def.property, binding_edge_value(edge, self, e, action_def), {
+                source = "binding_graph_action",
+            })
+        elseif action_def and kind == "call_method" and action_def.method and type(widget[action_def.method]) == "function" then
             widget[action_def.method](widget)
         elseif type(widget[target.portName]) == "function" then
             widget[target.portName](widget, binding_edge_value(edge, self, e, action_def))
@@ -870,6 +881,34 @@ local function bind_binding_graph(graph)
                     run_binding_edge(edge, variable, e)
                 end)
                 if not ok then log_warn("binding graph: bind data event failed: %s", tostring(err)) end
+            end
+        end
+    end
+end
+
+local function is_initial_property_event(event_name)
+    event_name = event_name or "onChange"
+    return event_name == "" or event_name == "onChange" or event_name == "change"
+end
+
+local function sync_initial_property_bindings(graph)
+    if type(graph) ~= "table" or type(graph.edges) ~= "table" or not g_data_store then return end
+    for _, edge in ipairs(graph.edges) do
+        if type(edge) == "table" and edge.enabled ~= false then
+            local source = edge.source or {}
+            local target = edge.target or {}
+            if source.portKind == "data_get"
+                and target.portKind == "property"
+                and is_initial_property_event(source.portName) then
+                local entry = widget_ref(target)
+                local widget = entry and entry.widget
+                local value = g_data_store:get(endpoint_ref(source))
+                if widget and value ~= nil then
+                    set_widget_property(widget, target.portName, value, {
+                        silent = true,
+                        source = "initial_binding",
+                    })
+                end
             end
         end
     end
@@ -1066,6 +1105,7 @@ function M.run(project)
 
     _G.PageManager = create_page_manager(pages)
     _G.PageManager.goto_page(1)
+    sync_initial_property_bindings(M.bindingGraph)
     bind_binding_graph(M.bindingGraph)
 
     if ok_data_client and data_client and type(data_client.start) == "function" then

@@ -348,7 +348,6 @@ function Switch.new(parent, state)
   end
 
   function self:set_property(name, value)
-    local old_checked = self.props.checked
     if name == "checked" then value = to_boolean(value) end
     self.props[name] = value
 
@@ -370,12 +369,10 @@ function Switch.new(parent, state)
         apply_radius() -- 圆角依赖 height
       end
     elseif name == "checked" then
+      -- 外部属性绑定只同步状态，value_changed 由 LVGL 交互事件触发。
       self._suppress_event = true
       apply_checked_state()
       self._suppress_event = false
-      if old_checked ~= self.props.checked then
-        fire_event("value_changed", { name = "value_changed", value = self.props.checked })
-      end
     elseif name == "enabled" then
       apply_enabled_state()
     elseif name == "visible" then
