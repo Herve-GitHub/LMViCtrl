@@ -3,6 +3,7 @@
 #include "bindinggraphview.h"
 
 #include <algorithm>
+#include <functional>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QAbstractItemView>
@@ -19,6 +20,7 @@
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStringList>
 #include <QVBoxLayout>
 
 namespace {
@@ -96,6 +98,8 @@ void BindingDetailDock::setGraphView(BindingGraphView *view)
     if (m_graphView) {
         connect(m_graphView.data(), &BindingGraphView::selectedEdgeChanged,
                 this, &BindingDetailDock::setCurrentEdge);
+        connect(m_graphView.data(), &BindingGraphView::selectedNodeChanged,
+                this, &BindingDetailDock::setCurrentNode);
         connect(m_graphView.data(), &BindingGraphView::graphChanged,
                 this, &BindingDetailDock::refreshPanel);
     }
@@ -106,22 +110,47 @@ void BindingDetailDock::setCurrentEdge(const QString &edgeId)
 {
     if (m_currentEdgeId == edgeId) return;
     m_currentEdgeId = edgeId;
+    if (!edgeId.isEmpty())
+        m_currentNodeId.clear();
+    refreshPanel();
+}
+
+void BindingDetailDock::setCurrentNode(const QString &nodeId)
+{
+    if (m_currentNodeId == nodeId) return;
+    m_currentNodeId = nodeId;
+    if (!nodeId.isEmpty())
+        m_currentEdgeId.clear();
     refreshPanel();
 }
 
 void BindingDetailDock::refreshPanel()
 {
-    if (!m_project || !m_graphView || m_currentEdgeId.isEmpty()) {
+    if (!m_project || !m_graphView) {
         buildEmptyPanel();
         return;
     }
-    const BindingEdge edge = m_graphView->edgeSnapshot(m_currentEdgeId);
-    if (edge.id.isEmpty()) {
-        m_currentEdgeId.clear();
-        buildEmptyPanel();
+    if (!m_currentEdgeId.isEmpty()) {
+        const BindingEdge edge = m_graphView->edgeSnapshot(m_currentEdgeId);
+        if (edge.id.isEmpty()) {
+            m_currentEdgeId.clear();
+            buildEmptyPanel();
+            return;
+        }
+        buildEdgePanel(edge);
         return;
     }
-    buildEdgePanel(edge);
+    if (!m_currentNodeId.isEmpty()) {
+        const BindingNode node = m_graphView->nodeSnapshot(m_currentNodeId);
+        if (node.id.isEmpty()) {
+            m_currentNodeId.clear();
+            buildEmptyPanel();
+            return;
+        }
+        buildNodePanel(node);
+        return;
+    }
+    buildEmptyPanel();
 }
 
 void BindingDetailDock::buildUi()
@@ -243,7 +272,7 @@ void BindingDetailDock::clearForms()
 void BindingDetailDock::buildEmptyPanel()
 {
     clearForms();
-    m_titleLabel->setText(tr("请选择一条绑定连线"));
+    m_titleLabel->setText(tr("请选择一个节点或一条绑定连线"));
     m_summaryBox->setEnabled(false);
     m_sequenceBox->setEnabled(false);
     m_editBox->setEnabled(false);
@@ -304,6 +333,171 @@ void BindingDetailDock::buildSequenceList(const BindingEdge &edge)
     }
 }
 
+void BindingDetailDock::buildNodePanel(const BindingNode &node)
+{
+    clearForms();
+    m_loading = true;
+    m_summaryBox->setEnabled(true);
+    m_sequenceBox->setEnabled(true);
+    m_editBox->setEnabled(false);
+    m_applyButton->setEnabled(false);
+    m_deleteButton->setEnabled(false);
+    m_clearButton->setEnabled(true);
+
+    const QString name = nodeTitle(node.id);
+    m_titleLabel->setText(tr("%1 的动作序列").arg(name));
+    m_sourceEdit->setText(name);
+    m_typeEdit->setText(tr("节点动作序列"));
+    buildNodeActionSequences(node);
+    int chainCount = 0;
+    for (int i = 0; i < m_sequenceList->count(); ++i) {
+        if (!m_sequenceList->item(i)->data(Qt::UserRole).toString().isEmpty())
+            ++chainCount;
+    }
+    m_targetEdit->setText(tr("%1 条逻辑链").arg(chainCount));
+    m_loading = false;
+}
+
+void BindingDetailDock::buildNodeActionSequences(const BindingNode &node)
+{
+    m_sequenceList->clear();
+    if (!m_project) return;
+
+    auto findGraphNode = [this](const QString &nodeId) -> const BindingNode * {
+        if (!m_project) return nullptr;
+        for (const BindingNode &candidate : std::as_const(m_project->bindingGraph.nodes)) {
+            if (candidate.id == nodeId)
+                return &candidate;
+        }
+        return nullptr;
+    };
+    auto gridRow = [&](const QString &nodeId) -> int {
+        const BindingNode *candidate = findGraphNode(nodeId);
+        return candidate ? candidate->visualState.value(QStringLiteral("gridRow"), -1).toInt() : -1;
+    };
+    auto gridColumn = [&](const QString &nodeId) -> int {
+        const BindingNode *candidate = findGraphNode(nodeId);
+        return candidate ? candidate->visualState.value(QStringLiteral("gridCol"), -1).toInt() : -1;
+    };
+    auto eventText = [this](const QString &name) -> QString {
+        if (name == QLatin1String("clicked")) return tr("点击");
+        if (name == QLatin1String("pressed")) return tr("按下");
+        if (name == QLatin1String("released")) return tr("松开");
+        if (name == QLatin1String("long_pressed")) return tr("长按");
+        return name.isEmpty() ? tr("默认事件") : name;
+    };
+    auto appendEndpoint = [this](QStringList *parts, const BindingEdge &edge) {
+        if (!parts) return;
+        const QString action = edge.target.portName.trimmed();
+        const QString lowerAction = action.toLower();
+        const bool showAction = !action.isEmpty()
+            && lowerAction != QLatin1String("value")
+            && lowerAction != QLatin1String("input")
+            && lowerAction != QLatin1String("output")
+            && lowerAction != QLatin1String("data")
+            && edge.target.portKind != QLatin1String("event");
+        if (showAction && (parts->isEmpty() || parts->last() != action))
+            parts->append(action);
+
+        const QString target = nodeTitle(edge.target.nodeId);
+        if (!target.isEmpty() && (parts->isEmpty() || parts->last() != target))
+            parts->append(target);
+    };
+    auto sortEdges = [&](QList<BindingEdge> *edges) {
+        std::sort(edges->begin(), edges->end(), [&](const BindingEdge &lhs, const BindingEdge &rhs) {
+            const int lhsRow = gridRow(lhs.target.nodeId);
+            const int rhsRow = gridRow(rhs.target.nodeId);
+            if (lhsRow != rhsRow) return lhsRow < rhsRow;
+            const int lhsColumn = gridColumn(lhs.target.nodeId);
+            const int rhsColumn = gridColumn(rhs.target.nodeId);
+            if (lhsColumn != rhsColumn) return lhsColumn < rhsColumn;
+            if (lhs.order != rhs.order) return lhs.order < rhs.order;
+            return lhs.label < rhs.label;
+        });
+    };
+    auto outgoingEdges = [&](const QString &sourceNodeId, int branchRow, const QStringList &visited) {
+        QList<BindingEdge> result;
+        for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+            if (edge.source.nodeId != sourceNodeId || edge.target.nodeId.isEmpty())
+                continue;
+            if (visited.contains(edge.target.nodeId))
+                continue;
+            if (branchRow >= 0 && gridRow(edge.target.nodeId) != branchRow)
+                continue;
+            result.append(edge);
+        }
+        sortEdges(&result);
+        return result;
+    };
+
+    QList<BindingEdge> firstEdges;
+    for (const BindingEdge &edge : std::as_const(m_project->bindingGraph.edges)) {
+        if (edge.source.nodeId == node.id && !edge.target.nodeId.isEmpty())
+            firstEdges.append(edge);
+    }
+    sortEdges(&firstEdges);
+
+    if (firstEdges.isEmpty()) {
+        auto *item = new QListWidgetItem(tr("暂无从 %1 触发的动作序列").arg(nodeTitle(node.id)), m_sequenceList);
+        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+        return;
+    }
+
+    int logicIndex = 1;
+    std::function<void(const QString &, int, QStringList, QStringList, const QString &, const QString &, bool)> appendChains;
+    appendChains = [&](const QString &currentNodeId,
+                       int branchRow,
+                       QStringList parts,
+                       QStringList visited,
+                       const QString &eventName,
+                       const QString &firstEdgeId,
+                       bool enabled) {
+        const QList<BindingEdge> nextEdges = outgoingEdges(currentNodeId, branchRow, visited);
+        if (nextEdges.isEmpty()) {
+            QString text = tr("%1：逻辑 %2：%3")
+                .arg(eventName)
+                .arg(logicIndex++)
+                .arg(parts.join(QStringLiteral(" -> ")));
+            if (!enabled)
+                text.append(tr("  [包含禁用绑定]"));
+            auto *item = new QListWidgetItem(text, m_sequenceList);
+            item->setData(Qt::UserRole, firstEdgeId);
+            return;
+        }
+
+        for (const BindingEdge &edge : nextEdges) {
+            QStringList nextParts = parts;
+            QStringList nextVisited = visited;
+            appendEndpoint(&nextParts, edge);
+            nextVisited.append(edge.target.nodeId);
+            appendChains(edge.target.nodeId,
+                         branchRow,
+                         nextParts,
+                         nextVisited,
+                         eventName,
+                         firstEdgeId,
+                         enabled && edge.enabled);
+        }
+    };
+
+    for (const BindingEdge &edge : std::as_const(firstEdges)) {
+        QStringList parts;
+        parts.append(nodeTitle(node.id));
+        appendEndpoint(&parts, edge);
+
+        QStringList visited;
+        visited.append(node.id);
+        visited.append(edge.target.nodeId);
+        appendChains(edge.target.nodeId,
+                     gridRow(edge.target.nodeId),
+                     parts,
+                     visited,
+                     eventText(edge.source.portName),
+                     edge.id,
+                     edge.enabled);
+    }
+}
+
 void BindingDetailDock::applyChanges()
 {
     if (m_loading || !m_graphView || m_currentEdgeId.isEmpty()) return;
@@ -332,6 +526,19 @@ QString BindingDetailDock::endpointTitle(const BindingEndpoint &endpoint) const
 {
     const QString refName = endpoint.refName.isEmpty() ? endpoint.nodeId : endpoint.refName;
     return QStringLiteral("%1 · %2 [%3]").arg(refName, endpoint.portName, typeDisplayName(endpoint.valueType));
+}
+
+QString BindingDetailDock::nodeTitle(const QString &nodeId) const
+{
+    if (!m_project) return nodeId;
+    for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes)) {
+        if (node.id != nodeId)
+            continue;
+        if (!node.title.isEmpty()) return node.title;
+        if (!node.refName.isEmpty()) return node.refName;
+        break;
+    }
+    return nodeId;
 }
 
 QString BindingDetailDock::edgeTitle(const BindingEdge &edge) const

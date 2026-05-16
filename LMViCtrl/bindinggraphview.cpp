@@ -1,7 +1,11 @@
 #include "bindinggraphview.h"
 
+#include <algorithm>
 #include <QBrush>
 #include <QAction>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFrame>
 #include <QGraphicsEllipseItem>
@@ -17,11 +21,14 @@
 #include <QLabel>
 #include <QLineF>
 #include <QMenu>
+#include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPen>
-#include <QPushButton>
+#include <QPoint>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSet>
 #include <QShowEvent>
 #include <QSignalBlocker>
@@ -30,16 +37,18 @@
 #include <QUndoStack>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QtMath>
 #include <QUuid>
 
 namespace {
 constexpr qreal kNodeWidth = 240.0;
 constexpr qreal kHeaderHeight = 34.0;
-constexpr qreal kKindLabelTop = 8.0;
 constexpr qreal kFirstPortTop = 42.0;
+constexpr qreal kSectionLabelHeight = 24.0;
 constexpr qreal kPortRowHeight = 22.0;
 constexpr qreal kPortRadius = 5.0;
 constexpr qreal kNodePadding = 10.0;
+constexpr qreal kNodeHalfWidth = kNodeWidth / 2.0;
 constexpr qreal kPortHitRadius = 14.0;
 constexpr qreal kPortEdgePadding = 2.0;
 constexpr qreal kMultiEdgePortSpread = 5.0;
@@ -47,6 +56,15 @@ constexpr qreal kMaxMultiEdgePortOffset = 12.0;
 constexpr qreal kMinZoom = 0.25;
 constexpr qreal kMaxZoom = 3.0;
 constexpr qreal kZoomStep = 1.15;
+constexpr qreal kGridOriginX = 16.0;
+constexpr qreal kGridOriginY = 16.0;
+constexpr qreal kGridColumnWidth = 320.0;
+constexpr qreal kGridMinRowHeight = 230.0;
+constexpr qreal kGridNodeMarginX = 22.0;
+constexpr qreal kGridNodeMarginY = 18.0;
+constexpr int kGridMinColumns = 6;
+constexpr int kGridMinRows = 3;
+constexpr const char *kBindingGraphNodeMime = "application/x-lm-victrl-binding-node";
 
 qreal multiEdgeOffset(int index, int total)
 {
@@ -63,11 +81,89 @@ QPointF portConnectionPoint(const QPointF &center, bool output, int index = 0, i
     return center + QPointF(direction * (kPortRadius + kPortEdgePadding), multiEdgeOffset(index, total));
 }
 
+bool containsAnyToken(const QString &text, const QStringList &tokens)
+{
+    const QString normalized = text.toLower();
+    for (const QString &token : tokens) {
+        if (normalized.contains(token.toLower()))
+            return true;
+    }
+    return false;
+}
+
+QString widgetClassText(const WidgetMeta *meta, const QString &fallback)
+{
+    if (!meta)
+        return fallback;
+    return QStringLiteral("%1 %2 %3 %4 %5")
+        .arg(meta->id, meta->name, meta->type, meta->category, meta->tags.join(QLatin1Char(' ')));
+}
+
+QColor colorForWidgetNode(const WidgetMeta *meta, const QString &fallback)
+{
+    const QString text = widgetClassText(meta, fallback);
+
+    if (containsAnyToken(text, { QStringLiteral("label"), QStringLiteral("image"), QStringLiteral("img"), QStringLiteral("chart"), QStringLiteral("展示") }))
+        return QColor(QStringLiteral("#27AE60"));
+    if (containsAnyToken(text, { QStringLiteral("textinput"), QStringLiteral("text_input"), QStringLiteral("textarea"), QStringLiteral("text_area"), QStringLiteral("slider"), QStringLiteral("复合") }))
+        return QColor(QStringLiteral("#E67E22"));
+    if (containsAnyToken(text, { QStringLiteral("button"), QStringLiteral("switch"), QStringLiteral("checkbox"), QStringLiteral("基础对象"), QStringLiteral("交互控件") }))
+        return QColor(QStringLiteral("#2D6BE4"));
+    return QColor(QStringLiteral("#008b8b"));
+}
+
 QColor colorForNodeType(const QString &type)
 {
-    if (type == QLatin1String("data")) return QColor(QStringLiteral("#8e44ad"));
+    if (type == QLatin1String("data")) return QColor(QStringLiteral("#8E44AD"));
     if (type == QLatin1String("screen")) return QColor(QStringLiteral("#607d8b"));
-    return QColor(QStringLiteral("#2d6be4"));
+    return QColor(QStringLiteral("#008b8b"));
+}
+
+int bindablePropertyCount(const WidgetMeta *meta)
+{
+    if (!meta) return 0;
+    int count = 0;
+    for (const PropertyMeta &property : meta->properties) {
+        if (property.bindable)
+            ++count;
+    }
+    return count;
+}
+
+QStringList dataSettersForType(const QString &type)
+{
+    if (type == QLatin1String("boolean"))
+        return { QStringLiteral("set_true"), QStringLiteral("set_false"), QStringLiteral("toggle") };
+    if (type == QLatin1String("list"))
+        return { QStringLiteral("push"), QStringLiteral("pop"), QStringLiteral("set_item"), QStringLiteral("clear") };
+    if (type == QLatin1String("string"))
+        return { QStringLiteral("set"), QStringLiteral("append"), QStringLiteral("format"), QStringLiteral("clear") };
+    return { QStringLiteral("set"), QStringLiteral("increment"), QStringLiteral("decrement"), QStringLiteral("reset") };
+}
+
+QStringList dataEventsForType(const QString &type)
+{
+    QStringList events { QStringLiteral("onChange") };
+    if (type == QLatin1String("number"))
+        events << QStringLiteral("onAboveLimit") << QStringLiteral("onBelowLimit") << QStringLiteral("onEquals");
+    else if (type == QLatin1String("boolean"))
+        events << QStringLiteral("onTrue") << QStringLiteral("onFalse");
+    else if (type == QLatin1String("list"))
+        events << QStringLiteral("onEmpty");
+    return events;
+}
+
+void addSectionLabel(QGraphicsItem *parent, const QString &text, qreal x, qreal y, qreal width)
+{
+    auto *label = new QGraphicsTextItem(text, parent);
+    label->setDefaultTextColor(QColor(QStringLiteral("#b9c0c8")));
+    label->setTextWidth(width - 16.0);
+    label->setPos(x + 8.0, y + 4.0);
+}
+
+qreal portCenterY(int row)
+{
+    return kHeaderHeight + kFirstPortTop + row * kPortRowHeight;
 }
 
 QColor colorForEdgeType(const QString &type)
@@ -191,11 +287,12 @@ public:
         , m_owner(owner)
         , m_nodeId(nodeId)
     {
-        setFlags(QGraphicsItem::ItemIsMovable
-                 | QGraphicsItem::ItemIsSelectable
+        setFlags(QGraphicsItem::ItemIsSelectable
                  | QGraphicsItem::ItemSendsGeometryChanges);
         setAcceptHoverEvents(true);
     }
+
+    QString nodeId() const { return m_nodeId; }
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override
@@ -231,10 +328,24 @@ protected:
         copy.state &= ~QStyle::State_Selected;
         QGraphicsRectItem::paint(painter, &copy, widget);
         if (isSelected()) {
-            painter->setPen(QPen(QColor(QStringLiteral("#ffffff")), 1.5, Qt::DashLine));
+            painter->setPen(QPen(QColor(QStringLiteral("#4AA3FF")), 3.0));
+            painter->setBrush(QColor(74, 163, 255, 44));
+            painter->drawRoundedRect(rect().adjusted(1.5, 1.5, -1.5, -1.5), 6, 6);
+            painter->setPen(QPen(QColor(QStringLiteral("#ffffff")), 1.2, Qt::DashLine));
             painter->setBrush(Qt::NoBrush);
-            painter->drawRoundedRect(rect().adjusted(2, 2, -2, -2), 6, 6);
+            painter->drawRoundedRect(rect().adjusted(5, 5, -5, -5), 5, 5);
         }
+    }
+
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent *event) override
+    {
+        setSelected(true);
+        QMenu menu;
+        QAction *deleteAction = menu.addAction(QObject::tr("删除节点"));
+        QAction *chosen = menu.exec(event->screenPos());
+        if (chosen == deleteAction && m_owner)
+            m_owner->deleteNode(m_nodeId);
+        event->accept();
     }
 
 private:
@@ -455,6 +566,88 @@ private:
     QHash<QString, QPointF> m_before;
     QHash<QString, QPointF> m_after;
 };
+
+struct RemovedEdgeSnapshot
+{
+    BindingEdge edge;
+    int index = -1;
+};
+
+class AddBindingNodeCommand : public QUndoCommand
+{
+public:
+    AddBindingNodeCommand(BindingGraphView *view, const BindingNode &node)
+        : QUndoCommand(QObject::tr("添加绑定节点 %1").arg(node.title.isEmpty() ? node.refName : node.title))
+        , m_view(view)
+        , m_node(node)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdInsertNode(m_node, -1); }
+    void undo() override { if (m_view) m_view->cmdRemoveNode(m_node.id); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingNode m_node;
+};
+
+class UpdateBindingNodeCommand : public QUndoCommand
+{
+public:
+    UpdateBindingNodeCommand(BindingGraphView *view, const BindingNode &before, const BindingNode &after)
+        : QUndoCommand(QObject::tr("移动绑定节点 %1").arg(after.title.isEmpty() ? after.refName : after.title))
+        , m_view(view)
+        , m_before(before)
+        , m_after(after)
+    {}
+
+    void redo() override { if (m_view) m_view->cmdUpdateNode(m_after); }
+    void undo() override { if (m_view) m_view->cmdUpdateNode(m_before); }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingNode m_before;
+    BindingNode m_after;
+};
+
+class RemoveBindingNodeCommand : public QUndoCommand
+{
+public:
+    RemoveBindingNodeCommand(BindingGraphView *view,
+                             const BindingNode &node,
+                             int nodeIndex,
+                             const QVector<RemovedEdgeSnapshot> &edges)
+        : QUndoCommand(QObject::tr("删除绑定节点 %1").arg(node.title.isEmpty() ? node.refName : node.title))
+        , m_view(view)
+        , m_node(node)
+        , m_nodeIndex(nodeIndex)
+        , m_edges(edges)
+    {}
+
+    void redo() override
+    {
+        if (m_view)
+            m_view->cmdRemoveNode(m_node.id);
+    }
+
+    void undo() override
+    {
+        if (!m_view)
+            return;
+        m_view->cmdInsertNode(m_node, m_nodeIndex);
+        QVector<RemovedEdgeSnapshot> edges = m_edges;
+        std::sort(edges.begin(), edges.end(), [](const RemovedEdgeSnapshot &lhs, const RemovedEdgeSnapshot &rhs) {
+            return lhs.index < rhs.index;
+        });
+        for (const RemovedEdgeSnapshot &snapshot : std::as_const(edges))
+            m_view->cmdInsertEdge(snapshot.edge, snapshot.index);
+    }
+
+private:
+    BindingGraphView *m_view = nullptr;
+    BindingNode m_node;
+    int m_nodeIndex = -1;
+    QVector<RemovedEdgeSnapshot> m_edges;
+};
 }
 
 BindingGraphView::BindingGraphView(QWidget *parent)
@@ -500,6 +693,59 @@ bool BindingGraphView::deleteSelectedEdges()
     return true;
 }
 
+bool BindingGraphView::deleteSelectedItems()
+{
+    if (!m_scene || !m_project || !m_undoStack) return false;
+
+    QStringList nodeIds;
+    for (auto it = m_nodeItems.constBegin(); it != m_nodeItems.constEnd(); ++it) {
+        if (it.value() && it.value()->isSelected())
+            nodeIds.append(it.key());
+    }
+
+    if (!nodeIds.isEmpty()) {
+        if (nodeIds.size() > 1)
+            m_undoStack->beginMacro(tr("删除 %1 个绑定节点").arg(nodeIds.size()));
+        for (const QString &nodeId : std::as_const(nodeIds))
+            deleteNode(nodeId);
+        if (nodeIds.size() > 1)
+            m_undoStack->endMacro();
+        return true;
+    }
+
+    return deleteSelectedEdges();
+}
+
+bool BindingGraphView::deleteNode(const QString &nodeId)
+{
+    if (!m_project || !m_undoStack || nodeId.isEmpty()) return false;
+
+    int nodeIndex = -1;
+    BindingNode nodeSnapshot;
+    for (int i = 0; i < m_project->bindingGraph.nodes.size(); ++i) {
+        const BindingNode &node = m_project->bindingGraph.nodes.at(i);
+        if (node.id == nodeId) {
+            nodeIndex = i;
+            nodeSnapshot = node;
+            break;
+        }
+    }
+    if (nodeIndex < 0)
+        return false;
+
+    QVector<RemovedEdgeSnapshot> edgeSnapshots;
+    for (int i = 0; i < m_project->bindingGraph.edges.size(); ++i) {
+        const BindingEdge &edge = m_project->bindingGraph.edges.at(i);
+        if (edge.source.nodeId == nodeId || edge.target.nodeId == nodeId)
+            edgeSnapshots.append(RemovedEdgeSnapshot{ edge, i });
+    }
+
+    m_undoStack->push(new RemoveBindingNodeCommand(this, nodeSnapshot, nodeIndex, edgeSnapshots));
+    const QString title = nodeSnapshot.title.isEmpty() ? nodeSnapshot.refName : nodeSnapshot.title;
+    emit statusMessageRequested(tr("已删除绑定节点：%1").arg(title.isEmpty() ? nodeId : title));
+    return true;
+}
+
 bool BindingGraphView::deleteEdge(const QString &edgeId)
 {
     if (!m_project || !m_undoStack) return false;
@@ -509,6 +755,13 @@ bool BindingGraphView::deleteEdge(const QString &edgeId)
     m_undoStack->push(new RemoveBindingEdgeCommand(this, edge, index));
     emit statusMessageRequested(tr("已删除绑定：%1").arg(edge.label));
     return true;
+}
+
+BindingNode BindingGraphView::nodeSnapshot(const QString &nodeId) const
+{
+    if (BindingNode *node = findNode(nodeId))
+        return *node;
+    return BindingNode{};
 }
 
 BindingEdge BindingGraphView::edgeSnapshot(const QString &edgeId) const
@@ -538,12 +791,17 @@ void BindingGraphView::selectEdge(const QString &edgeId)
         item->setSelected(true);
         m_selectedEdgeId = edgeId;
         emit selectedEdgeChanged(edgeId);
+        emit selectedNodeChanged(QString());
     } else if (!edgeId.isEmpty()) {
         m_selectedEdgeId = edgeId;
         emit selectedEdgeChanged(edgeId);
+        emit selectedNodeChanged(QString());
     } else if (!m_selectedEdgeId.isEmpty()) {
         m_selectedEdgeId.clear();
         emit selectedEdgeChanged(QString());
+        emit selectedNodeChanged(QString());
+    } else {
+        emit selectedNodeChanged(QString());
     }
 }
 
@@ -810,6 +1068,76 @@ void BindingGraphView::cancelConnectionDrag()
     updateStatus();
 }
 
+void BindingGraphView::cmdInsertNode(const BindingNode &node, int index)
+{
+    if (!m_project || node.id.isEmpty()) return;
+    for (const BindingNode &existing : std::as_const(m_project->bindingGraph.nodes)) {
+        if (existing.id == node.id)
+            return;
+    }
+
+    const int insertIndex = index < 0
+        ? m_project->bindingGraph.nodes.size()
+        : qBound(0, index, m_project->bindingGraph.nodes.size());
+    m_project->bindingGraph.nodes.insert(insertIndex, node);
+    m_selectedEdgeId.clear();
+    rebuildScene();
+    updateStatus();
+    if (QGraphicsItem *item = m_nodeItems.value(node.id, nullptr)) {
+        m_scene->clearSelection();
+        item->setSelected(true);
+    }
+    emit graphChanged();
+    emit selectedEdgeChanged(QString());
+    emit selectedNodeChanged(node.id);
+}
+
+void BindingGraphView::cmdRemoveNode(const QString &nodeId)
+{
+    if (!m_project || nodeId.isEmpty()) return;
+
+    for (int i = m_project->bindingGraph.edges.size() - 1; i >= 0; --i) {
+        const BindingEdge &edge = m_project->bindingGraph.edges.at(i);
+        if (edge.source.nodeId == nodeId || edge.target.nodeId == nodeId)
+            m_project->bindingGraph.edges.removeAt(i);
+    }
+
+    for (int i = 0; i < m_project->bindingGraph.nodes.size(); ++i) {
+        if (m_project->bindingGraph.nodes.at(i).id == nodeId) {
+            m_project->bindingGraph.nodes.removeAt(i);
+            break;
+        }
+    }
+
+    m_selectedEdgeId.clear();
+    rebuildScene();
+    updateStatus();
+    emit graphChanged();
+    emit selectedEdgeChanged(QString());
+    emit selectedNodeChanged(QString());
+}
+
+void BindingGraphView::cmdUpdateNode(const BindingNode &node)
+{
+    if (!m_project || node.id.isEmpty()) return;
+    for (BindingNode &existing : m_project->bindingGraph.nodes) {
+        if (existing.id == node.id) {
+            existing = node;
+            break;
+        }
+    }
+    m_selectedEdgeId.clear();
+    rebuildScene();
+    updateStatus();
+    if (QGraphicsItem *item = m_nodeItems.value(node.id, nullptr)) {
+        m_scene->clearSelection();
+        item->setSelected(true);
+    }
+    emit graphChanged();
+    emit selectedEdgeChanged(QString());
+    emit selectedNodeChanged(node.id);
+}
+
 void BindingGraphView::cmdAddEdge(const BindingEdge &edge)
 {
     cmdInsertEdge(edge, -1);
@@ -900,6 +1228,39 @@ void BindingGraphView::cmdSetNodePositions(const QHash<QString, QPointF> &positi
 
 bool BindingGraphView::eventFilter(QObject *watched, QEvent *event)
 {
+    if ((watched == m_view || (m_view && watched == m_view->viewport()))
+        && (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)) {
+        auto *dragEvent = static_cast<QDragMoveEvent *>(event);
+        if (dragEvent->mimeData()->hasFormat(QLatin1String(kBindingGraphNodeMime))) {
+            updateDropHighlights(m_view->mapToScene(dragEvent->position().toPoint()));
+            dragEvent->acceptProposedAction();
+            return true;
+        }
+    }
+
+    if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::DragLeave) {
+        clearDropHighlights();
+        event->accept();
+        return true;
+    }
+
+    if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::Drop) {
+        auto *dropEvent = static_cast<QDropEvent *>(event);
+        if (dropEvent->mimeData()->hasFormat(QLatin1String(kBindingGraphNodeMime))) {
+            emit projectSyncRequested();
+            const QPointF scenePos = m_view->mapToScene(dropEvent->position().toPoint());
+            if (addNodeFromMimeData(dropEvent->mimeData(), scenePos)) {
+                clearDropHighlights();
+                dropEvent->acceptProposedAction();
+                return true;
+            }
+            clearDropHighlights();
+            emit statusMessageRequested(tr("请将节点放到高亮区域"));
+            dropEvent->ignore();
+            return true;
+        }
+    }
+
     if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::Wheel) {
         auto *wheelEvent = static_cast<QWheelEvent *>(event);
         if (wheelEvent->modifiers().testFlag(Qt::ControlModifier)) {
@@ -927,7 +1288,7 @@ bool BindingGraphView::eventFilter(QObject *watched, QEvent *event)
     if ((watched == m_view || (m_view && watched == m_view->viewport())) && event->type() == QEvent::KeyPress) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Delete || keyEvent->key() == Qt::Key_Backspace) {
-            if (deleteSelectedEdges()) {
+            if (deleteSelectedItems()) {
                 event->accept();
                 return true;
             }
@@ -953,21 +1314,13 @@ void BindingGraphView::buildUi()
     bar->setObjectName(QStringLiteral("bindingGraphToolbar"));
     bar->setStyleSheet(QStringLiteral(
         "QFrame#bindingGraphToolbar { background:#252526; border-bottom:1px solid #3a3a3a; }"
-        "QPushButton { padding:5px 10px; border:1px solid #4a4a4a; background:#333333; color:#dddddd; border-radius:4px; }"
-        "QPushButton:hover { background:#3f3f46; }"
         "QLabel { color:#cfcfcf; }"));
     auto *barLayout = new QHBoxLayout(bar);
     barLayout->setContentsMargins(8, 6, 8, 6);
     barLayout->setSpacing(8);
 
-    auto *refreshButton = new QPushButton(tr("刷新"), bar);
-    auto *layoutButton = new QPushButton(tr("重新布局"), bar);
-    auto *fitButton = new QPushButton(tr("适应窗口"), bar);
     m_statusLabel = new QLabel(bar);
 
-    barLayout->addWidget(refreshButton);
-    barLayout->addWidget(layoutButton);
-    barLayout->addWidget(fitButton);
     barLayout->addStretch();
     barLayout->addWidget(m_statusLabel);
     root->addWidget(bar);
@@ -975,6 +1328,7 @@ void BindingGraphView::buildUi()
     m_scene = new QGraphicsScene(this);
     m_scene->setBackgroundBrush(QColor(QStringLiteral("#1e1e1e")));
     m_view = new QGraphicsView(m_scene, this);
+    m_view->setAcceptDrops(true);
     m_view->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing | QPainter::SmoothPixmapTransform);
     m_view->setDragMode(QGraphicsView::RubberBandDrag);
     m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
@@ -982,11 +1336,9 @@ void BindingGraphView::buildUi()
     m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     m_view->installEventFilter(this);
     m_view->viewport()->installEventFilter(this);
+    m_view->viewport()->setAcceptDrops(true);
     root->addWidget(m_view, 1);
 
-    connect(refreshButton, &QPushButton::clicked, this, &BindingGraphView::refreshGraph);
-    connect(layoutButton, &QPushButton::clicked, this, &BindingGraphView::autoLayout);
-    connect(fitButton, &QPushButton::clicked, this, &BindingGraphView::fitToView);
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &BindingGraphView::onSceneSelectionChanged);
 }
 
@@ -994,50 +1346,46 @@ void BindingGraphView::reconcileGraphNodes()
 {
     if (!m_project) return;
 
-    QSet<QString> liveIds;
-    int nextIndex = m_project->bindingGraph.nodes.size();
-    auto ensureNode = [&](const QString &id, const QString &type, const QString &refId,
-                          const QString &refName, const QString &title) {
-        liveIds.insert(id);
-        BindingNode *existing = findNode(id);
-        if (existing) {
-            existing->type = type;
-            existing->refId = refId;
-            existing->refName = refName;
-            existing->title = title;
-            return;
-        }
-        BindingNode node;
-        node.id = id;
-        node.type = type;
-        node.refId = refId;
-        node.refName = refName;
-        node.title = title;
-        const QPointF pos = defaultNodePosition(nextIndex++, type);
-        node.x = qRound(pos.x());
-        node.y = qRound(pos.y());
-        m_project->bindingGraph.nodes.append(node);
-    };
+    QHash<QString, WidgetInstance> widgetsById;
+    QHash<QString, DataVariable> variablesById;
 
     for (const ScreenData &screen : std::as_const(m_project->screens)) {
         for (const WidgetInstance &instance : screen.widgets) {
             if (instance.isGroup) continue;
-            const QString title = instance.name.isEmpty() ? instance.widgetId : instance.name;
-            ensureNode(widgetNodeId(instance.instanceId), QStringLiteral("widget"),
-                       instance.instanceId, instance.name, title);
+            widgetsById.insert(instance.instanceId, instance);
         }
     }
 
-    for (const DataVariable &variable : std::as_const(m_project->dataVariables)) {
-        const QString title = variable.name.isEmpty() ? variable.id : variable.name;
-        ensureNode(dataNodeId(variable.id), QStringLiteral("data"),
-                   variable.id, variable.name, title);
-    }
+    for (const DataVariable &variable : std::as_const(m_project->dataVariables))
+        variablesById.insert(variable.id, variable);
 
     for (int i = m_project->bindingGraph.nodes.size() - 1; i >= 0; --i) {
-        if (!liveIds.contains(m_project->bindingGraph.nodes.at(i).id))
+        BindingNode &node = m_project->bindingGraph.nodes[i];
+        if (node.type == QLatin1String("widget")) {
+            if (!widgetsById.contains(node.refId)) {
+                m_project->bindingGraph.nodes.removeAt(i);
+                continue;
+            }
+            const WidgetInstance instance = widgetsById.value(node.refId);
+            node.refName = instance.name;
+            node.title = instance.name.isEmpty() ? instance.widgetId : instance.name;
+            node.visualState.insert(QStringLiteral("widgetId"), instance.widgetId);
+        } else if (node.type == QLatin1String("data")) {
+            if (!variablesById.contains(node.refId)) {
+                m_project->bindingGraph.nodes.removeAt(i);
+                continue;
+            }
+            const DataVariable variable = variablesById.value(node.refId);
+            node.refName = variable.name;
+            node.title = variable.name.isEmpty() ? variable.id : variable.name;
+        } else {
             m_project->bindingGraph.nodes.removeAt(i);
+        }
     }
+
+    QSet<QString> liveIds;
+    for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes))
+        liveIds.insert(node.id);
 
     for (int i = m_project->bindingGraph.edges.size() - 1; i >= 0; --i) {
         const BindingEdge &edge = m_project->bindingGraph.edges.at(i);
@@ -1048,6 +1396,7 @@ void BindingGraphView::reconcileGraphNodes()
 
 void BindingGraphView::rebuildScene()
 {
+    m_dropHighlightItems.clear();
     m_scene->clear();
     m_nodeItems.clear();
     m_ports.clear();
@@ -1056,46 +1405,131 @@ void BindingGraphView::rebuildScene()
     m_dragSourceKey.clear();
     if (!m_project) return;
 
-    m_scene->setSceneRect(-600, -400, 2200, 1600);
-
+    const QHash<int, qreal> rowHeights = gridRowHeights();
+    int maxRow = 0;
+    int maxColumn = 0;
     for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes)) {
+        maxRow = qMax(maxRow, nodeGridRow(node));
+        maxColumn = qMax(maxColumn, nodeGridColumn(node));
+    }
+    const int gridRows = qMax(kGridMinRows, maxRow + 2);
+    const int gridColumns = qMax(kGridMinColumns, maxColumn + 3);
+    drawGrid(rowHeights, gridRows, gridColumns);
+    const QRectF lastCell = gridCellRect(gridRows - 1, gridColumns - 1, rowHeights);
+    m_scene->setSceneRect(QRectF(0, 0, lastCell.right() + 32.0, lastCell.bottom() + 32.0));
+
+    for (BindingNode &node : m_project->bindingGraph.nodes) {
         const bool isData = node.type == QLatin1String("data");
-        const QColor accent = colorForNodeType(node.type);
-        const QRectF rect(0, 0, kNodeWidth, 168);
+        WidgetInstance fallbackInstance;
+        const WidgetInstance *instance = nullptr;
+        const WidgetMeta *meta = nullptr;
+        const DataVariable *variable = nullptr;
+
+        int inputRows = 0;
+        int propertyRows = 0;
+        int outputRows = 0;
+        if (isData) {
+            variable = findDataVariable(node.refId);
+            if (variable) {
+                inputRows = dataSettersForType(variable->type).size();
+                outputRows = dataEventsForType(variable->type).size();
+            }
+        } else {
+            instance = findWidgetInstance(node.refId);
+            if (!instance) {
+                fallbackInstance.instanceId = node.refId;
+                fallbackInstance.name = node.refName;
+                fallbackInstance.widgetId = node.visualState.value(QStringLiteral("widgetId")).toString();
+                if (!fallbackInstance.widgetId.isEmpty())
+                    instance = &fallbackInstance;
+            }
+            if (instance) {
+                meta = findWidgetMeta(instance->widgetId);
+                if (meta) {
+                    inputRows = meta->actions.size();
+                    propertyRows = bindablePropertyCount(meta);
+                    outputRows = meta->eventDefs.size();
+                }
+            }
+        }
+        if (outputRows == 0)
+            outputRows = 1;
+
+        const QColor accent = isData
+            ? colorForNodeType(node.type)
+            : colorForWidgetNode(meta, QStringLiteral("%1 %2").arg(node.title, node.refName));
+        const bool showInputSection = inputRows > 0;
+        const bool showPropertySection = propertyRows > 0;
+        const bool showOutputSection = outputRows > 0;
+        const int propertyTitleRows = (showInputSection && showPropertySection) ? 1 : 0;
+        const int leftRows = inputRows + propertyTitleRows + propertyRows;
+        const int rows = qMax(leftRows, outputRows);
+        const qreal height = qMax<qreal>(122.0, kHeaderHeight + kFirstPortTop + rows * kPortRowHeight + kNodePadding);
+        const QRectF rect(0, 0, kNodeWidth, height);
+        const QRectF cellRect = gridCellRect(nodeGridRow(node), nodeGridColumn(node), rowHeights);
+        node.x = qRound(cellRect.left() + kGridNodeMarginX);
+        node.y = qRound(cellRect.top() + kGridNodeMarginY);
         auto *nodeItem = new BindingNodeItem(this, node.id, rect);
         nodeItem->setPos(node.x, node.y);
-        nodeItem->setPen(QPen(accent, 1.6));
+        nodeItem->setPen(QPen(accent, 1.8));
         nodeItem->setBrush(QColor(QStringLiteral("#252526")));
         m_scene->addItem(nodeItem);
         m_nodeItems.insert(node.id, nodeItem);
 
         auto *header = new QGraphicsRectItem(0, 0, kNodeWidth, kHeaderHeight, nodeItem);
         header->setPen(Qt::NoPen);
-        header->setBrush(accent.darker(135));
+        header->setBrush(accent);
+
+        const qreal bodyTop = kHeaderHeight;
+        const qreal propertyTop = showInputSection
+            ? portCenterY(inputRows) - kPortRowHeight / 2.0
+            : bodyTop;
+        if (showInputSection) {
+            auto *inputBackground = new QGraphicsRectItem(0, bodyTop,
+                                                          kNodeHalfWidth,
+                                                          showPropertySection ? propertyTop - bodyTop : height - bodyTop,
+                                                          nodeItem);
+            inputBackground->setPen(Qt::NoPen);
+            inputBackground->setBrush(QColor(QStringLiteral("#30363D")));
+            addSectionLabel(nodeItem, isData ? tr("输入动作") : tr("输入事件"),
+                            0, bodyTop + 4.0, kNodeHalfWidth);
+        }
+
+        if (showOutputSection) {
+            auto *outputBackground = new QGraphicsRectItem(kNodeHalfWidth, bodyTop,
+                                                           kNodeHalfWidth,
+                                                           height - bodyTop,
+                                                           nodeItem);
+            outputBackground->setPen(Qt::NoPen);
+            outputBackground->setBrush(QColor(QStringLiteral("#2B3036")));
+            addSectionLabel(nodeItem, isData ? tr("输出数据") : tr("输出事件"),
+                            kNodeHalfWidth, bodyTop + 4.0, kNodeHalfWidth);
+        }
+
+        if (showPropertySection) {
+            auto *propertyBackground = new QGraphicsRectItem(0, propertyTop,
+                                                             kNodeHalfWidth,
+                                                             height - propertyTop,
+                                                             nodeItem);
+            propertyBackground->setPen(Qt::NoPen);
+            propertyBackground->setBrush(QColor(QStringLiteral("#252A30")));
+            addSectionLabel(nodeItem, tr("属性设置"), 0, propertyTop, kNodeHalfWidth);
+        }
 
         auto *title = new QGraphicsTextItem(node.title.isEmpty() ? node.refName : node.title, nodeItem);
         title->setDefaultTextColor(Qt::white);
         title->setTextWidth(kNodeWidth - 24);
         title->setPos(12, 6);
 
-        auto *kind = new QGraphicsTextItem(isData ? tr("数据变量") : tr("控件节点"), nodeItem);
-        kind->setDefaultTextColor(QColor(QStringLiteral("#a8a8a8")));
-        kind->setPos(12, kHeaderHeight + kKindLabelTop);
-
         int leftRow = 0;
         int rightRow = 0;
         if (isData) {
-            if (const DataVariable *variable = findDataVariable(node.refId))
+            if (variable)
                 addDataNodePorts(*variable, nodeItem, &leftRow, &rightRow);
         } else {
-            const WidgetInstance *instance = findWidgetInstance(node.refId);
             if (instance)
-                addWidgetNodePorts(*instance, findWidgetMeta(instance->widgetId), nodeItem, &leftRow, &rightRow);
+                addWidgetNodePorts(*instance, meta, nodeItem, &leftRow, &rightRow);
         }
-
-        const int rows = qMax(leftRow, rightRow);
-        const qreal height = qMax<qreal>(122.0, kHeaderHeight + kFirstPortTop + rows * kPortRowHeight + kNodePadding);
-        nodeItem->setRect(0, 0, kNodeWidth, height);
     }
 
     rebuildEdges();
@@ -1114,8 +1548,13 @@ void BindingGraphView::addWidgetNodePorts(const WidgetInstance &instance,
                     action.label.isEmpty() ? action.name : action.label,
                     action.valueType.isEmpty() ? QStringLiteral("any") : action.valueType,
                     false, (*leftRow)++, QColor(QStringLiteral("#27ae60")));
+        const bool hasInputPorts = *leftRow > 0;
+        bool hasPropertyPorts = false;
         for (const PropertyMeta &property : meta->properties) {
             if (!property.bindable) continue;
+            if (!hasPropertyPorts && hasInputPorts)
+                ++(*leftRow);
+            hasPropertyPorts = true;
             addPort(nodeItem, nodeId, QStringLiteral("property"), property.name,
                     property.label.isEmpty() ? property.name : property.label,
                     property.type.isEmpty() ? QStringLiteral("any") : property.type,
@@ -1128,11 +1567,6 @@ void BindingGraphView::addWidgetNodePorts(const WidgetInstance &instance,
                     true, (*rightRow)++, QColor(QStringLiteral("#3498db")));
     }
 
-    if (*leftRow == 0) {
-        addPort(nodeItem, nodeId, QStringLiteral("action"), QStringLiteral("set_property"),
-                tr("设置属性"), QStringLiteral("any"),
-                false, (*leftRow)++, QColor(QStringLiteral("#27ae60")));
-    }
     if (*rightRow == 0) {
         addPort(nodeItem, nodeId, QStringLiteral("event"), QStringLiteral("clicked"),
                 tr("点击"), QStringLiteral("event"),
@@ -1147,27 +1581,13 @@ void BindingGraphView::addDataNodePorts(const DataVariable &variable,
 {
     const QString nodeId = dataNodeId(variable.id);
     const QString valueType = variable.type.isEmpty() ? QStringLiteral("any") : variable.type;
-    QStringList setters;
-    if (variable.type == QLatin1String("boolean"))
-        setters = { QStringLiteral("set_true"), QStringLiteral("set_false"), QStringLiteral("toggle") };
-    else if (variable.type == QLatin1String("list"))
-        setters = { QStringLiteral("push"), QStringLiteral("pop"), QStringLiteral("set_item"), QStringLiteral("clear") };
-    else if (variable.type == QLatin1String("string"))
-        setters = { QStringLiteral("set"), QStringLiteral("append"), QStringLiteral("format"), QStringLiteral("clear") };
-    else
-        setters = { QStringLiteral("set"), QStringLiteral("increment"), QStringLiteral("decrement"), QStringLiteral("reset") };
+    const QStringList setters = dataSettersForType(variable.type);
 
     for (const QString &setter : setters)
         addPort(nodeItem, nodeId, QStringLiteral("data_set"), setter, setter,
                 valueType, false, (*leftRow)++, QColor(QStringLiteral("#e67e22")));
 
-    QStringList events = { QStringLiteral("onChange") };
-    if (variable.type == QLatin1String("number"))
-        events << QStringLiteral("onAboveLimit") << QStringLiteral("onBelowLimit") << QStringLiteral("onEquals");
-    else if (variable.type == QLatin1String("boolean"))
-        events << QStringLiteral("onTrue") << QStringLiteral("onFalse");
-    else if (variable.type == QLatin1String("list"))
-        events << QStringLiteral("onEmpty");
+    const QStringList events = dataEventsForType(variable.type);
 
     for (const QString &event : events)
         addPort(nodeItem, nodeId, QStringLiteral("data_get"), event, event,
@@ -1297,16 +1717,25 @@ void BindingGraphView::updateStatus()
 void BindingGraphView::onSceneSelectionChanged()
 {
     QString selectedEdgeId;
+    QString selectedNodeId;
     if (m_scene) {
         for (QGraphicsItem *item : m_scene->selectedItems()) {
             selectedEdgeId = edgeIdForItem(item);
             if (!selectedEdgeId.isEmpty())
                 break;
+            if (auto *nodeItem = dynamic_cast<BindingNodeItem *>(item))
+                selectedNodeId = nodeItem->nodeId();
         }
     }
-    if (m_selectedEdgeId == selectedEdgeId) return;
+    if (!selectedEdgeId.isEmpty())
+        selectedNodeId.clear();
+    if (m_selectedEdgeId == selectedEdgeId) {
+        emit selectedNodeChanged(selectedNodeId);
+        return;
+    }
     m_selectedEdgeId = selectedEdgeId;
     emit selectedEdgeChanged(m_selectedEdgeId);
+    emit selectedNodeChanged(selectedNodeId);
 }
 
 void BindingGraphView::updatePortHighlights(const QString &hoverKey)
@@ -1542,6 +1971,281 @@ bool BindingGraphView::createEdge(const QString &sourceKey, const QString &targe
         cmdAddEdge(edge);
     emit statusMessageRequested(tr("已创建绑定：%1").arg(edge.label));
     return true;
+}
+
+
+bool BindingGraphView::addNodeFromMimeData(const QMimeData *mimeData, const QPointF &scenePos)
+{
+    if (!m_project || !m_undoStack || !mimeData || !mimeData->hasFormat(QLatin1String(kBindingGraphNodeMime)))
+        return false;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(mimeData->data(QLatin1String(kBindingGraphNodeMime)));
+    if (!doc.isObject())
+        return false;
+
+    const QJsonObject payload = doc.object();
+    const QString type = payload.value(QStringLiteral("nodeType")).toString();
+    const QString refId = payload.value(QStringLiteral("refId")).toString();
+    if (type.isEmpty() || refId.isEmpty())
+        return false;
+
+    const QString nodeId = type == QLatin1String("widget")
+        ? widgetNodeId(refId)
+        : (type == QLatin1String("data") ? dataNodeId(refId) : QString());
+    if (nodeId.isEmpty())
+        return false;
+
+    const QPoint cell = gridCellFromScenePos(scenePos);
+    if (!isAllowedDropCell(cell, nodeId))
+        return false;
+
+    BindingNode node;
+    node.id = nodeId;
+    node.type = type;
+    node.refId = refId;
+    node.refName = payload.value(QStringLiteral("refName")).toString();
+    node.title = payload.value(QStringLiteral("title")).toString(node.refName);
+
+    if (type == QLatin1String("widget")) {
+        node.visualState.insert(QStringLiteral("widgetId"), payload.value(QStringLiteral("widgetId")).toString());
+    } else if (type == QLatin1String("data")) {
+        node.visualState.insert(QStringLiteral("valueType"), payload.value(QStringLiteral("valueType")).toString());
+    } else {
+        return false;
+    }
+
+    if (node.title.isEmpty())
+        node.title = node.refId;
+
+    if (BindingNode *existing = findNode(node.id)) {
+        BindingNode after = *existing;
+        after.refName = node.refName;
+        after.title = node.title;
+        if (type == QLatin1String("widget"))
+            after.visualState.insert(QStringLiteral("widgetId"), node.visualState.value(QStringLiteral("widgetId")));
+        else if (type == QLatin1String("data"))
+            after.visualState.insert(QStringLiteral("valueType"), node.visualState.value(QStringLiteral("valueType")));
+        applyGridPlacement(after, cell);
+        m_undoStack->push(new UpdateBindingNodeCommand(this, *existing, after));
+    } else {
+        applyGridPlacement(node, cell);
+        m_undoStack->push(new AddBindingNodeCommand(this, node));
+    }
+
+    emit statusMessageRequested(tr("已添加绑定节点：%1").arg(node.title));
+    return true;
+}
+
+int BindingGraphView::nodeGridRow(const BindingNode &node) const
+{
+    return qMax(0, node.visualState.value(QStringLiteral("gridRow"), 0).toInt());
+}
+
+int BindingGraphView::nodeGridColumn(const BindingNode &node) const
+{
+    return qMax(0, node.visualState.value(QStringLiteral("gridCol"), 0).toInt());
+}
+
+qreal BindingGraphView::nodeVisualHeight(const BindingNode &node) const
+{
+    int inputRows = 0;
+    int propertyRows = 0;
+    int outputRows = 0;
+
+    if (node.type == QLatin1String("data")) {
+        const DataVariable *variable = findDataVariable(node.refId);
+        const QString type = variable ? variable->type : node.visualState.value(QStringLiteral("valueType")).toString();
+        inputRows = dataSettersForType(type).size();
+        outputRows = dataEventsForType(type).size();
+    } else {
+        const WidgetInstance *instance = findWidgetInstance(node.refId);
+        const QString widgetId = instance ? instance->widgetId : node.visualState.value(QStringLiteral("widgetId")).toString();
+        const WidgetMeta *meta = findWidgetMeta(widgetId);
+        if (meta) {
+            inputRows = meta->actions.size();
+            propertyRows = bindablePropertyCount(meta);
+            outputRows = meta->eventDefs.size();
+        }
+    }
+
+    if (outputRows == 0)
+        outputRows = 1;
+    const bool showInputSection = inputRows > 0;
+    const bool showPropertySection = propertyRows > 0;
+    const int propertyTitleRows = (showInputSection && showPropertySection) ? 1 : 0;
+    const int rows = qMax(inputRows + propertyTitleRows + propertyRows, outputRows);
+    return qMax<qreal>(122.0, kHeaderHeight + kFirstPortTop + rows * kPortRowHeight + kNodePadding);
+}
+
+QHash<int, qreal> BindingGraphView::gridRowHeights() const
+{
+    QHash<int, qreal> rowHeights;
+    if (!m_project)
+        return rowHeights;
+
+    for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes)) {
+        const int row = nodeGridRow(node);
+        const qreal height = qMax(kGridMinRowHeight, nodeVisualHeight(node) + kGridNodeMarginY * 2.0);
+        rowHeights.insert(row, qMax(rowHeights.value(row, kGridMinRowHeight), height));
+    }
+    return rowHeights;
+}
+
+QRectF BindingGraphView::gridCellRect(int row, int column, const QHash<int, qreal> &rowHeights) const
+{
+    qreal y = kGridOriginY;
+    for (int i = 0; i < row; ++i)
+        y += rowHeights.value(i, kGridMinRowHeight);
+    return QRectF(kGridOriginX + column * kGridColumnWidth,
+                  y,
+                  kGridColumnWidth,
+                  rowHeights.value(row, kGridMinRowHeight));
+}
+
+QRectF BindingGraphView::gridCellRect(int row, int column) const
+{
+    return gridCellRect(row, column, gridRowHeights());
+}
+
+QPoint BindingGraphView::gridCellFromScenePos(const QPointF &scenePos) const
+{
+    if (scenePos.x() < kGridOriginX || scenePos.y() < kGridOriginY)
+        return QPoint(-1, -1);
+
+    const int column = qFloor((scenePos.x() - kGridOriginX) / kGridColumnWidth);
+    const QHash<int, qreal> rowHeights = gridRowHeights();
+    qreal y = kGridOriginY;
+    const int maxRows = qMax(kGridMinRows, rowHeights.isEmpty() ? 1 : (*std::max_element(rowHeights.keyBegin(), rowHeights.keyEnd()) + 2));
+    for (int row = 0; row <= maxRows; ++row) {
+        const qreal height = rowHeights.value(row, kGridMinRowHeight);
+        if (scenePos.y() >= y && scenePos.y() < y + height)
+            return QPoint(column, row);
+        y += height;
+    }
+    return QPoint(column, qMax(0, maxRows));
+}
+
+BindingNode *BindingGraphView::nodeAtGridCell(int row, int column, const QString &ignoreNodeId) const
+{
+    if (!m_project)
+        return nullptr;
+    for (BindingNode &node : m_project->bindingGraph.nodes) {
+        if (!ignoreNodeId.isEmpty() && node.id == ignoreNodeId)
+            continue;
+        if (nodeGridRow(node) == row && nodeGridColumn(node) == column)
+            return &node;
+    }
+    return nullptr;
+}
+
+QVector<QPoint> BindingGraphView::allowedDropCells(const QString &ignoreNodeId) const
+{
+    QVector<QPoint> cells;
+    if (!m_project)
+        return cells;
+
+    const bool effectivelyEmpty = std::none_of(m_project->bindingGraph.nodes.cbegin(),
+                                               m_project->bindingGraph.nodes.cend(),
+                                               [&](const BindingNode &node) { return node.id != ignoreNodeId; });
+    if (effectivelyEmpty) {
+        cells.append(QPoint(0, 0));
+        return cells;
+    }
+
+    auto addCell = [&](int row, int column) {
+        if (row < 0 || column < 0)
+            return;
+        const QPoint cell(column, row);
+        if (!cells.contains(cell) && !nodeAtGridCell(row, column, ignoreNodeId))
+            cells.append(cell);
+    };
+
+    for (const BindingNode &node : std::as_const(m_project->bindingGraph.nodes)) {
+        if (node.id == ignoreNodeId)
+            continue;
+        const int row = nodeGridRow(node);
+        const int column = nodeGridColumn(node);
+        const bool entry = node.visualState.value(QStringLiteral("entry"), false).toBool();
+        addCell(row, column + 1);
+        if (!entry)
+            addCell(row + 1, column);
+    }
+    return cells;
+}
+
+bool BindingGraphView::isAllowedDropCell(const QPoint &cell, const QString &ignoreNodeId) const
+{
+    if (cell.x() < 0 || cell.y() < 0)
+        return false;
+    return allowedDropCells(ignoreNodeId).contains(cell);
+}
+
+void BindingGraphView::applyGridPlacement(BindingNode &node, const QPoint &cell)
+{
+    const QHash<int, qreal> rowHeights = gridRowHeights();
+    const QRectF rect = gridCellRect(cell.y(), cell.x(), rowHeights);
+    node.visualState.insert(QStringLiteral("gridRow"), cell.y());
+    node.visualState.insert(QStringLiteral("gridCol"), cell.x());
+    node.visualState.insert(QStringLiteral("entry"), cell == QPoint(0, 0));
+
+    QString previousNodeId;
+    if (cell == QPoint(0, 0)) {
+        previousNodeId.clear();
+    } else if (BindingNode *left = nodeAtGridCell(cell.y(), cell.x() - 1, node.id)) {
+        previousNodeId = left->id;
+    } else if (BindingNode *entry = nodeAtGridCell(0, 0, node.id)) {
+        previousNodeId = entry->id;
+    }
+    node.visualState.insert(QStringLiteral("prevNodeId"), previousNodeId);
+    node.visualState.insert(QStringLiteral("branchRow"), cell.y());
+    node.x = qRound(rect.left() + kGridNodeMarginX);
+    node.y = qRound(rect.top() + kGridNodeMarginY);
+}
+
+void BindingGraphView::drawGrid(const QHash<int, qreal> &rowHeights, int rows, int columns)
+{
+    QPen gridPen(QColor(255, 255, 255, 58), 1.0, Qt::DashLine);
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            auto *cell = new QGraphicsRectItem(gridCellRect(row, column, rowHeights));
+            cell->setPen(gridPen);
+            cell->setBrush(Qt::NoBrush);
+            cell->setZValue(-20.0);
+            m_scene->addItem(cell);
+        }
+    }
+}
+
+void BindingGraphView::updateDropHighlights(const QPointF &scenePos)
+{
+    if (!m_scene)
+        return;
+
+    clearDropHighlights();
+    const QVector<QPoint> cells = allowedDropCells();
+    m_hoverDropCell = gridCellFromScenePos(scenePos);
+
+    for (const QPoint &cell : cells) {
+        QRectF rect = gridCellRect(cell.y(), cell.x()).adjusted(5, 5, -5, -5);
+        auto *highlight = new QGraphicsRectItem(rect);
+        const bool hover = cell == m_hoverDropCell;
+        highlight->setPen(QPen(hover ? QColor(QStringLiteral("#4AA3FF")) : QColor(QStringLiteral("#27AE60")), hover ? 2.0 : 1.4));
+        highlight->setBrush(hover ? QColor(74, 163, 255, 72) : QColor(39, 174, 96, 48));
+        highlight->setZValue(-5.0);
+        m_scene->addItem(highlight);
+        m_dropHighlightItems.append(highlight);
+    }
+}
+
+void BindingGraphView::clearDropHighlights()
+{
+    if (m_scene) {
+        for (QGraphicsItem *item : std::as_const(m_dropHighlightItems))
+            m_scene->removeItem(item);
+    }
+    qDeleteAll(m_dropHighlightItems);
+    m_dropHighlightItems.clear();
+    m_hoverDropCell = QPoint(-1, -1);
 }
 
 QPainterPath BindingGraphView::connectionPath(const QPointF &source, const QPointF &target) const

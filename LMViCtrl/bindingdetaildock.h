@@ -32,6 +32,7 @@ public:
 
 public slots:
     void setCurrentEdge(const QString &edgeId);
+    void setCurrentNode(const QString &nodeId);
     void refreshPanel();
 
 private:
@@ -40,8 +41,11 @@ private:
     void buildEmptyPanel();
     void buildEdgePanel(const BindingEdge &edge);
     void buildSequenceList(const BindingEdge &edge);
+    void buildNodePanel(const BindingNode &node);
+    void buildNodeActionSequences(const BindingNode &node);
     void applyChanges();
     QString endpointTitle(const BindingEndpoint &endpoint) const;
+    QString nodeTitle(const QString &nodeId) const;
     QString edgeTitle(const BindingEdge &edge) const;
     QString paramsToJson(const QVariantMap &params) const;
     bool paramsFromJson(const QString &text, QVariantMap *params) const;
@@ -50,6 +54,7 @@ private:
     QList<WidgetMeta> m_metas;
     QPointer<BindingGraphView> m_graphView;
     QString m_currentEdgeId;
+    QString m_currentNodeId;
     bool m_loading = false;
 
     QScrollArea *m_scroll = nullptr;

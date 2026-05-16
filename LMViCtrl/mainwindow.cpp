@@ -74,7 +74,9 @@ MainWindow::MainWindow(QWidget* parent)
 	connect(m_tabWidget, &QTabWidget::tabCloseRequested,
 		this, &MainWindow::onTabCloseRequested);
 	connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
-		const bool bindingMode = m_bindingGraphView && m_tabWidget->currentWidget() == m_bindingGraphView;
+		const bool bindingMode = m_bindingGraphView
+			&& (m_tabWidget->currentWidget() == m_bindingGraphView
+				|| (m_bindingGraphDock && m_bindingGraphDock->isVisible()));
 		if (bindingMode)
 			m_bindingGraphView->refreshGraph();
 		if (m_propertyPanel)
@@ -88,10 +90,12 @@ MainWindow::MainWindow(QWidget* parent)
 			m_projectTree->setCurrentScreen(currentScene(), currentScreenId(), currentScreenName());
 		});
 
-	m_bindingGraphView = new BindingGraphView(m_tabWidget);
+	m_bindingGraphView = new BindingGraphView(this);
 	m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
 	connect(m_bindingGraphView, &BindingGraphView::statusMessageRequested,
 		this, &MainWindow::appendLog);
+	connect(m_bindingGraphView, &BindingGraphView::projectSyncRequested,
+		this, &MainWindow::syncSceneToProject);
 	connect(m_bindingGraphView, &BindingGraphView::graphChanged, this, [this]() {
 		m_project.updatedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
 	});
@@ -110,6 +114,14 @@ MainWindow::MainWindow(QWidget* parent)
 	m_bindingDetailPanel->hide();
 
 	setupLogDock();
+	m_bindingGraphDock = new QDockWidget(tr("绑定窗口"), this);
+	m_bindingGraphDock->setAllowedAreas(Qt::AllDockWidgetAreas);
+	m_bindingGraphDock->setFeatures(QDockWidget::DockWidgetClosable
+		| QDockWidget::DockWidgetMovable
+		| QDockWidget::DockWidgetFloatable);
+	addDockWidget(Qt::BottomDockWidgetArea, m_bindingGraphDock);
+	tabifyDockWidget(m_logDock, m_bindingGraphDock);
+	m_bindingGraphDock->hide();
 
 	// 欢迎页
 	m_welcomeWidget = new WelcomeWidget;
@@ -244,8 +256,12 @@ void MainWindow::setupMenus()
 void MainWindow::setupViewMenu()
 {
 	QMenu* viewMenu = menuBar()->addMenu(tr("视图(&V)"));
-	m_openBindingModeAction = addAction(viewMenu, tr("绑定模式"), QKeySequence(Qt::CTRL | Qt::Key_B));
+	m_openBindingModeAction = addAction(viewMenu, tr("绑定模式（组态Tab）"), QKeySequence(Qt::CTRL | Qt::Key_B));
 	connect(m_openBindingModeAction, &QAction::triggered, this, &MainWindow::onOpenBindingMode);
+	connect(addAction(viewMenu, tr("绑定窗口（下方停靠）")), &QAction::triggered,
+		this, &MainWindow::onOpenBindingDock);
+	connect(addAction(viewMenu, tr("绑定窗口（浮动）")), &QAction::triggered,
+		this, &MainWindow::onFloatBindingDock);
 }
 
 void MainWindow::setupFileMenu()

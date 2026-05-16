@@ -6,9 +6,12 @@
 #include <QGraphicsScene>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -21,7 +24,11 @@ constexpr int kInstanceIdRole = Qt::UserRole + 1;
 constexpr int kNodeTypeRole = Qt::UserRole + 2;
 constexpr int kVariableIdRole = Qt::UserRole + 3;
 constexpr int kScreenIdRole = Qt::UserRole + 4;
+constexpr int kWidgetIdRole = Qt::UserRole + 5;
+constexpr int kVariableNameRole = Qt::UserRole + 6;
+constexpr int kVariableTypeRole = Qt::UserRole + 7;
 
+constexpr const char *kBindingGraphNodeMime = "application/x-lm-victrl-binding-node";
 constexpr const char *kNodeScreensRoot = "screensRoot";
 constexpr const char *kNodeScreen = "screen";
 constexpr const char *kNodeWidget = "widget";
@@ -48,6 +55,48 @@ QString widgetDisplayName(const WidgetInstance &inst)
 {
     return inst.name.trimmed().isEmpty() ? inst.widgetId : inst.name.trimmed();
 }
+
+class ProjectTreeWidget : public QTreeWidget
+{
+public:
+    using QTreeWidget::QTreeWidget;
+
+protected:
+    QStringList mimeTypes() const override
+    {
+        return { QString::fromLatin1(kBindingGraphNodeMime) };
+    }
+
+    QMimeData *mimeData(const QList<QTreeWidgetItem *> &items) const override
+    {
+        auto *mime = new QMimeData;
+        if (items.isEmpty())
+            return mime;
+
+        QTreeWidgetItem *item = items.constFirst();
+        const QString nodeType = item->data(0, kNodeTypeRole).toString();
+        QJsonObject payload;
+        if (nodeType == QLatin1String(kNodeWidget)) {
+            payload.insert(QStringLiteral("nodeType"), QStringLiteral("widget"));
+            payload.insert(QStringLiteral("refId"), item->data(0, kInstanceIdRole).toString());
+            payload.insert(QStringLiteral("refName"), item->text(0));
+            payload.insert(QStringLiteral("title"), item->text(0));
+            payload.insert(QStringLiteral("widgetId"), item->data(0, kWidgetIdRole).toString());
+            payload.insert(QStringLiteral("screenId"), item->data(0, kScreenIdRole).toString());
+        } else if (nodeType == QLatin1String(kNodeVariable)) {
+            payload.insert(QStringLiteral("nodeType"), QStringLiteral("data"));
+            payload.insert(QStringLiteral("refId"), item->data(0, kVariableIdRole).toString());
+            payload.insert(QStringLiteral("refName"), item->data(0, kVariableNameRole).toString());
+            payload.insert(QStringLiteral("title"), item->data(0, kVariableNameRole).toString());
+            payload.insert(QStringLiteral("valueType"), item->data(0, kVariableTypeRole).toString());
+        }
+
+        if (!payload.isEmpty())
+            mime->setData(QString::fromLatin1(kBindingGraphNodeMime), QJsonDocument(payload).toJson(QJsonDocument::Compact));
+        return mime;
+    }
+
+};
 }
 
 ProjectTreeDock::ProjectTreeDock(QWidget *parent)
@@ -65,13 +114,16 @@ void ProjectTreeDock::buildUi()
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
-    m_tree = new QTreeWidget(container);
+    m_tree = new ProjectTreeWidget(container);
     m_tree->setHeaderHidden(true);
     m_tree->setColumnCount(1);
     m_tree->setIndentation(12);
     m_tree->setRootIsDecorated(true);
     m_tree->setUniformRowHeights(true);
     m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_tree->setDragEnabled(true);
+    m_tree->setDragDropMode(QAbstractItemView::DragOnly);
+    m_tree->setDefaultDropAction(Qt::CopyAction);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setStyleSheet(QStringLiteral(
         "QTreeWidget { background: #2b2b2b; color: #d8d8d8; border: 1px solid #3a3a3a; }"
@@ -186,7 +238,9 @@ void ProjectTreeDock::refreshTree()
             item->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeWidget));
             item->setData(0, kInstanceIdRole, inst.instanceId);
             item->setData(0, kScreenIdRole, screenId);
+            item->setData(0, kWidgetIdRole, inst.widgetId);
             item->setToolTip(0, displayName);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
             if ((screenId.isEmpty() || screenId == m_screenId) && inst.instanceId == selectedId)
                 m_tree->setCurrentItem(item);
             ++count;
@@ -215,7 +269,10 @@ void ProjectTreeDock::refreshTree()
         item->setText(0, label);
         item->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeVariable));
         item->setData(0, kVariableIdRole, variable.id);
+        item->setData(0, kVariableNameRole, variable.name);
+        item->setData(0, kVariableTypeRole, type);
         item->setToolTip(0, variable.description.isEmpty() ? label : variable.description);
+        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
     }
     variablesRoot->setExpanded(true);
 

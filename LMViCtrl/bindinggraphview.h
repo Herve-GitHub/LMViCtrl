@@ -10,6 +10,7 @@ class QGraphicsItem;
 class QGraphicsPathItem;
 class QGraphicsScene;
 class QGraphicsView;
+class QMimeData;
 class QLabel;
 class QPainterPath;
 class QUndoStack;
@@ -28,8 +29,11 @@ public:
     void autoLayout();
     bool hasProject() const { return m_project != nullptr; }
     QUndoStack *undoStack() const { return m_undoStack; }
+    bool deleteSelectedItems();
     bool deleteSelectedEdges();
+    bool deleteNode(const QString &nodeId);
     bool deleteEdge(const QString &edgeId);
+    BindingNode nodeSnapshot(const QString &nodeId) const;
     BindingEdge edgeSnapshot(const QString &edgeId) const;
     bool updateEdge(const BindingEdge &edge);
     void selectEdge(const QString &edgeId);
@@ -45,6 +49,9 @@ public:
     void updateConnectionDrag(const QPointF &scenePos);
     void finishConnectionDrag(const QPointF &scenePos);
     void cancelConnectionDrag();
+    void cmdInsertNode(const BindingNode &node, int index);
+    void cmdRemoveNode(const QString &nodeId);
+    void cmdUpdateNode(const BindingNode &node);
     void cmdAddEdge(const BindingEdge &edge);
     void cmdInsertEdge(const BindingEdge &edge, int index);
     void cmdRemoveEdge(const QString &edgeId);
@@ -54,8 +61,10 @@ public:
 
 signals:
     void graphChanged();
+    void projectSyncRequested();
     void statusMessageRequested(const QString &message);
     void selectedEdgeChanged(const QString &edgeId);
+    void selectedNodeChanged(const QString &nodeId);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -115,6 +124,21 @@ private:
     QString edgeLabelForPorts(const PortVisual &source, const PortVisual &target) const;
     bool edgeExists(const QString &sourceKey, const QString &targetKey) const;
     bool createEdge(const QString &sourceKey, const QString &targetKey);
+    bool addNodeFromMimeData(const QMimeData *mimeData, const QPointF &scenePos);
+    int nodeGridRow(const BindingNode &node) const;
+    int nodeGridColumn(const BindingNode &node) const;
+    qreal nodeVisualHeight(const BindingNode &node) const;
+    QHash<int, qreal> gridRowHeights() const;
+    QRectF gridCellRect(int row, int column, const QHash<int, qreal> &rowHeights) const;
+    QRectF gridCellRect(int row, int column) const;
+    QPoint gridCellFromScenePos(const QPointF &scenePos) const;
+    BindingNode *nodeAtGridCell(int row, int column, const QString &ignoreNodeId = QString()) const;
+    QVector<QPoint> allowedDropCells(const QString &ignoreNodeId = QString()) const;
+    bool isAllowedDropCell(const QPoint &cell, const QString &ignoreNodeId = QString()) const;
+    void applyGridPlacement(BindingNode &node, const QPoint &cell);
+    void drawGrid(const QHash<int, qreal> &rowHeights, int rows, int columns);
+    void updateDropHighlights(const QPointF &scenePos);
+    void clearDropHighlights();
     int edgeIndex(const QString &edgeId) const;
     QString edgeIdForItem(QGraphicsItem *item) const;
     QPainterPath connectionPath(const QPointF &source, const QPointF &target) const;
@@ -140,4 +164,6 @@ private:
     QString m_dragSourceKey;
     QGraphicsPathItem *m_dragPathItem = nullptr;
     QHash<QString, QPointF> m_nodeMoveStartPositions;
+    QVector<QGraphicsItem *> m_dropHighlightItems;
+    QPoint m_hoverDropCell = QPoint(-1, -1);
 };

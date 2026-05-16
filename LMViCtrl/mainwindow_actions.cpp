@@ -409,6 +409,10 @@ void MainWindow::openBindingGraphTab()
     if (!m_tabWidget || !m_bindingGraphView) return;
     m_bindingGraphView->setProjectData(&m_project);
     m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+    if (m_bindingGraphDock && m_bindingGraphDock->widget() == m_bindingGraphView) {
+        m_bindingGraphDock->setWidget(nullptr);
+        m_bindingGraphDock->hide();
+    }
     if (m_bindingDetailPanel) {
         m_bindingDetailPanel->setProjectData(&m_project);
         m_bindingDetailPanel->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
@@ -427,6 +431,45 @@ void MainWindow::openBindingGraphTab()
 
     m_tabWidget->addTab(m_bindingGraphView, tr("绑定模式"));
     m_tabWidget->setCurrentWidget(m_bindingGraphView);
+    m_bindingGraphView->refreshGraph();
+}
+
+void MainWindow::openBindingGraphDock(bool floating)
+{
+    if (!m_bindingGraphDock || !m_bindingGraphView) return;
+    m_bindingGraphView->setProjectData(&m_project);
+    m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+
+    if (m_tabWidget) {
+        const int existing = m_tabWidget->indexOf(m_bindingGraphView);
+        if (existing >= 0)
+            m_tabWidget->removeTab(existing);
+    }
+
+    if (m_bindingGraphDock->widget() != m_bindingGraphView)
+        m_bindingGraphDock->setWidget(m_bindingGraphView);
+
+    if (floating) {
+        m_bindingGraphDock->setFloating(true);
+        m_bindingGraphDock->resize(1100, 720);
+    } else {
+        m_bindingGraphDock->setFloating(false);
+        addDockWidget(Qt::BottomDockWidgetArea, m_bindingGraphDock);
+        if (m_logDock)
+            tabifyDockWidget(m_logDock, m_bindingGraphDock);
+    }
+
+    m_bindingGraphDock->show();
+    m_bindingGraphDock->raise();
+    registerUndoStack(m_bindingGraphView->undoStack());
+
+    if (m_bindingDetailPanel) {
+        m_bindingDetailPanel->setProjectData(&m_project);
+        m_bindingDetailPanel->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
+        m_bindingDetailPanel->setGraphView(m_bindingGraphView);
+        m_bindingDetailPanel->show();
+        m_bindingDetailPanel->raise();
+    }
     m_bindingGraphView->refreshGraph();
 }
 
@@ -628,6 +671,8 @@ void MainWindow::onTabCloseRequested(int index)
     QWidget *widget = m_tabWidget->widget(index);
     if (widget == m_bindingGraphView) {
         m_tabWidget->removeTab(index);
+        if (m_bindingDetailPanel && (!m_bindingGraphDock || !m_bindingGraphDock->isVisible()))
+            m_bindingDetailPanel->hide();
         if (m_tabWidget->count() == 0 && !m_project.screens.isEmpty())
             openScreenTab(m_project.screens.first().id);
         return;
@@ -659,6 +704,12 @@ void MainWindow::setProjectOpen(bool open)
     }
     if(m_propertyPanel)
         m_propertyPanel->setVisible(open);
+    if (!open) {
+        if (m_bindingGraphDock)
+            m_bindingGraphDock->hide();
+        if (m_bindingDetailPanel)
+            m_bindingDetailPanel->hide();
+    }
     resizeDocks({m_screenManager, m_widgetToolbox}, {100, 400}, Qt::Vertical);
     // 若切回欢迎页，刷新最近工程列表
     if (!open && m_welcomeWidget)
@@ -1210,8 +1261,11 @@ void MainWindow::onPaste()
 
 void MainWindow::onDelete()
 {
-    if (m_bindingGraphView && m_tabWidget && m_tabWidget->currentWidget() == m_bindingGraphView) {
-        m_bindingGraphView->deleteSelectedEdges();
+    const bool bindingGraphActive = m_bindingGraphView
+        && ((m_tabWidget && m_tabWidget->currentWidget() == m_bindingGraphView)
+            || m_bindingGraphView->isAncestorOf(QApplication::focusWidget()));
+    if (bindingGraphActive) {
+        m_bindingGraphView->deleteSelectedItems();
         return;
     }
     if (auto *s = currentScene())
@@ -1323,6 +1377,22 @@ void MainWindow::onOpenBindingMode()
     syncSceneToProject();
     openBindingGraphTab();
     appendLog(tr("打开绑定模式画布"));
+}
+
+void MainWindow::onOpenBindingDock()
+{
+    if (!m_projectOpen) return;
+    syncSceneToProject();
+    openBindingGraphDock(false);
+    appendLog(tr("打开绑定窗口（下方停靠）"));
+}
+
+void MainWindow::onFloatBindingDock()
+{
+    if (!m_projectOpen) return;
+    syncSceneToProject();
+    openBindingGraphDock(true);
+    appendLog(tr("打开绑定窗口（浮动）"));
 }
 
 void MainWindow::onZoomIn() {}

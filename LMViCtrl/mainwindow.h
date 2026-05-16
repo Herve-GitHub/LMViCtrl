@@ -113,6 +113,8 @@ private slots:
     void onToggleOutputWindow(bool checked);
     void onToggleStatusBar(bool checked);
     void onOpenBindingMode();
+    void onOpenBindingDock();
+    void onFloatBindingDock();
     void onZoomIn();
     void onZoomOut();
     void onFitToWindow();
@@ -285,6 +287,7 @@ private:
     WelcomeWidget     *m_welcomeWidget    = nullptr;
     ScreenManagerDock *m_screenManager    = nullptr;
     PropertyPanelDock *m_propertyPanel    = nullptr;
+    QDockWidget       *m_bindingGraphDock = nullptr;
     BindingDetailDock *m_bindingDetailPanel = nullptr;
     QDockWidget       *m_logDock          = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;
@@ -352,6 +355,7 @@ private:
     // 图页辅助
     void openScreenTab(const QString &screenId);
     void openBindingGraphTab();
+    void openBindingGraphDock(bool floating = false);
     void refreshBindingGraphTab();
     void closeScreenTab(const QString &screenId);
     void applyProjectToTabs();          // 工程加载后打开所有图页
