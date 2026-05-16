@@ -85,7 +85,7 @@ MainWindow::MainWindow(QWidget* parent)
 				m_bindingDetailPanel->raise();
 		}
 		if (m_projectTree)
-			m_projectTree->setCurrentScene(currentScene(), currentScreenName());
+			m_projectTree->setCurrentScreen(currentScene(), currentScreenId(), currentScreenName());
 		});
 
 	m_bindingGraphView = new BindingGraphView(m_tabWidget);

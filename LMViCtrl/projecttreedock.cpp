@@ -14,15 +14,40 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
+
 namespace {
 constexpr int kInstanceIdRole = Qt::UserRole + 1;
 constexpr int kNodeTypeRole = Qt::UserRole + 2;
 constexpr int kVariableIdRole = Qt::UserRole + 3;
+constexpr int kScreenIdRole = Qt::UserRole + 4;
 
+constexpr const char *kNodeScreensRoot = "screensRoot";
 constexpr const char *kNodeScreen = "screen";
 constexpr const char *kNodeWidget = "widget";
 constexpr const char *kNodeVariablesRoot = "variablesRoot";
 constexpr const char *kNodeVariable = "variable";
+
+QList<ScreenData> screensSortedByOrder(QList<ScreenData> screens)
+{
+    std::stable_sort(screens.begin(), screens.end(), [](const ScreenData &a, const ScreenData &b) {
+        return a.order < b.order;
+    });
+    return screens;
+}
+
+QList<WidgetInstance> widgetsSortedByZ(QList<WidgetInstance> widgets)
+{
+    std::stable_sort(widgets.begin(), widgets.end(), [](const WidgetInstance &a, const WidgetInstance &b) {
+        return a.zOrder < b.zOrder;
+    });
+    return widgets;
+}
+
+QString widgetDisplayName(const WidgetInstance &inst)
+{
+    return inst.name.trimmed().isEmpty() ? inst.widgetId : inst.name.trimmed();
+}
 }
 
 ProjectTreeDock::ProjectTreeDock(QWidget *parent)
@@ -72,7 +97,7 @@ void ProjectTreeDock::buildUi()
 
 void ProjectTreeDock::setCurrentScene(CanvasScene *scene)
 {
-    setCurrentScene(scene, QString());
+    setCurrentScreen(scene, QString(), QString());
 }
 
 void ProjectTreeDock::setProjectData(const ProjectData *project)
@@ -83,7 +108,13 @@ void ProjectTreeDock::setProjectData(const ProjectData *project)
 
 void ProjectTreeDock::setCurrentScene(CanvasScene *scene, const QString &screenName)
 {
+    setCurrentScreen(scene, QString(), screenName);
+}
+
+void ProjectTreeDock::setCurrentScreen(CanvasScene *scene, const QString &screenId, const QString &screenName)
+{
     if (m_scene == scene) {
+        m_screenId = screenId;
         m_screenName = screenName;
         refreshTree();
         syncSelectionFromScene();
@@ -93,6 +124,7 @@ void ProjectTreeDock::setCurrentScene(CanvasScene *scene, const QString &screenN
         disconnect(m_scene, nullptr, this, nullptr);
 
     m_scene = scene;
+    m_screenId = screenId;
     m_screenName = screenName;
     if (m_scene) {
         connect(m_scene.data(), &CanvasScene::sceneItemsChanged,
@@ -123,32 +155,54 @@ void ProjectTreeDock::refreshTree()
     m_tree->clear();
 
     int count = 0;
-    if (m_scene) {
-        const QString rootName = m_screenName.trimmed().isEmpty()
-            ? tr("图页")
-            : m_screenName.trimmed();
-        auto *root = new QTreeWidgetItem(m_tree);
+    int screenCount = 0;
+
+    auto *screensRoot = new QTreeWidgetItem(m_tree);
+    screensRoot->setText(0, tr("图页"));
+    screensRoot->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeScreensRoot));
+
+    auto appendScreen = [&](const QString &screenId, const QString &screenName, const QList<WidgetInstance> &widgets) {
+        const QString rootName = screenName.trimmed().isEmpty()
+            ? tr("未命名图页")
+            : screenName.trimmed();
+        auto *root = new QTreeWidgetItem(screensRoot);
         root->setText(0, rootName);
         root->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeScreen));
+        root->setData(0, kScreenIdRole, screenId);
+        root->setToolTip(0, rootName);
 
-        const QList<WidgetInstance> instances = m_scene->instancesSortedByZ();
+        QList<WidgetInstance> instances = widgets;
+        if (m_scene && !m_screenId.isEmpty() && screenId == m_screenId)
+            instances = m_scene->instancesSortedByZ();
+        else
+            instances = widgetsSortedByZ(instances);
+
         for (const WidgetInstance &inst : instances) {
             if (inst.isGroup)
                 continue;
-            const QString displayName = inst.name.trimmed().isEmpty()
-                ? inst.widgetId
-                : inst.name.trimmed();
+            const QString displayName = widgetDisplayName(inst);
             auto *item = new QTreeWidgetItem(root);
             item->setText(0, displayName);
             item->setData(0, kNodeTypeRole, QString::fromLatin1(kNodeWidget));
             item->setData(0, kInstanceIdRole, inst.instanceId);
+            item->setData(0, kScreenIdRole, screenId);
             item->setToolTip(0, displayName);
-            if (inst.instanceId == selectedId)
+            if ((screenId.isEmpty() || screenId == m_screenId) && inst.instanceId == selectedId)
                 m_tree->setCurrentItem(item);
             ++count;
         }
         root->setExpanded(true);
+        ++screenCount;
+    };
+
+    if (m_project) {
+        const QList<ScreenData> screens = screensSortedByOrder(m_project->screens);
+        for (const ScreenData &screen : screens)
+            appendScreen(screen.id, screen.name, screen.widgets);
+    } else if (m_scene) {
+        appendScreen(m_screenId, m_screenName, m_scene->instancesSortedByZ());
     }
+    screensRoot->setExpanded(true);
 
     const QList<DataVariable> variables = m_project ? m_project->dataVariables : QList<DataVariable>{};
     auto *variablesRoot = new QTreeWidgetItem(m_tree);
@@ -168,11 +222,36 @@ void ProjectTreeDock::refreshTree()
     m_updatingTree = false;
 
     if (m_countLabel) {
-        if (m_scene)
-            m_countLabel->setText(tr("%1 个元素 / %2 个变量").arg(count).arg(variables.size()));
+        if (m_project || m_scene)
+            m_countLabel->setText(tr("%1 个图页 / %2 个控件 / %3 个变量")
+                                      .arg(screenCount).arg(count).arg(variables.size()));
         else
             m_countLabel->setText(tr("未激活图页"));
     }
+}
+
+QTreeWidgetItem *ProjectTreeDock::currentScreenItem() const
+{
+    if (!m_tree) return nullptr;
+
+    QTreeWidgetItem *firstScreen = nullptr;
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *top = m_tree->topLevelItem(i);
+        const int childCount = top ? top->childCount() : 0;
+        for (int j = 0; j < childCount; ++j) {
+            QTreeWidgetItem *item = top->child(j);
+            if (item->data(0, kNodeTypeRole).toString() != QLatin1String(kNodeScreen))
+                continue;
+            if (!firstScreen)
+                firstScreen = item;
+            const QString screenId = item->data(0, kScreenIdRole).toString();
+            if (!m_screenId.isEmpty() && screenId == m_screenId)
+                return item;
+            if (m_screenId.isEmpty() && item->text(0) == m_screenName.trimmed())
+                return item;
+        }
+    }
+    return firstScreen;
 }
 
 void ProjectTreeDock::showContextMenu(const QPoint &pos)
@@ -254,7 +333,7 @@ void ProjectTreeDock::syncSelectionFromScene()
 
     m_syncingSelection = true;
     m_tree->clearSelection();
-    QTreeWidgetItem *root = m_tree->topLevelItem(0);
+    QTreeWidgetItem *root = currentScreenItem();
     const int childCount = root ? root->childCount() : 0;
     for (int i = 0; i < childCount; ++i) {
         QTreeWidgetItem *treeItem = root->child(i);
@@ -274,6 +353,8 @@ void ProjectTreeDock::onCurrentTreeItemChanged()
     QTreeWidgetItem *item = m_tree->currentItem();
     const QString instanceId = item ? item->data(0, kInstanceIdRole).toString() : QString();
     if (instanceId.isEmpty()) return;
+    const QString screenId = item->data(0, kScreenIdRole).toString();
+    if (!screenId.isEmpty() && !m_screenId.isEmpty() && screenId != m_screenId) return;
 
     if (CanvasItem *canvasItem = m_scene->findItem(instanceId)) {
         m_syncingSelection = true;

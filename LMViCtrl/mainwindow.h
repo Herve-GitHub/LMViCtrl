@@ -358,6 +358,7 @@ private:
     void refreshTabWidgetMetas();       // 把 widgetMetas 注入所有打开的 tab
     ScreenTab *currentScreenTab() const;
     CanvasScene *currentScene() const;  // 当前活动图页的 scene（可为 nullptr）
+    QString currentScreenId() const;
     QString currentScreenName() const;
 
     // 最近工程

@@ -61,7 +61,8 @@ Button.__widget_meta = {
     { group = "外观", name = "label",        type = "string", default = "OK",      label = "文本",
       bindable = true, description = "按钮显示文本，可绑定到变量" },
     { group = "外观", name = "color",        type = "color",  default = "#ffffff", label = "文本颜色" },
-    { group = "外观", name = "bg_color",     type = "color",  default = "#007acc", label = "背景色" },
+    { group = "外观", name = "bg_color",     type = "color",  default = "#007acc", label = "背景色" ,
+      bindable = true},
     { group = "外观", name = "font_size",    type = "number", default = 16,        label = "字体大小",
       unit = "px", min = 8, max = 96 },
     { group = "外观", name = "font_family",  type = "string", default = "default", label = "字体",
@@ -93,16 +94,12 @@ Button.__widget_meta = {
   },
 
   actions = {
-    { name = "setText",    label = "设置文本",   kind = "set_property", property = "label",    value_type = "string",
-      description = "设置按钮显示文本" },
     { name = "setEnabled", label = "设置启用",   kind = "set_property", property = "enabled",  value_type = "boolean",
       description = "启用或禁用按钮" },
     { name = "show",       label = "显示",       kind = "set_property", property = "visible",  value_type = "boolean", default_value = "true",
       description = "显示按钮" },
     { name = "hide",       label = "隐藏",       kind = "set_property", property = "visible",  value_type = "boolean", default_value = "false",
       description = "隐藏按钮" },
-    { name = "setColor",   label = "设置背景色", kind = "set_property", property = "bg_color", value_type = "color",
-      description = "设置按钮背景色" },
   },
 
   -- ===== 数据绑定声明 =====

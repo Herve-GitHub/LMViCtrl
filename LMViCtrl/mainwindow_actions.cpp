@@ -490,7 +490,7 @@ void MainWindow::openScreenTab(const QString &screenId)
     if (m_propertyPanel)
         m_propertyPanel->setCurrentScene(tab->scene());
     if (m_projectTree)
-        m_projectTree->setCurrentScene(tab->scene(), sd->name);
+        m_projectTree->setCurrentScreen(tab->scene(), sd->id, sd->name);
 }
 
 void MainWindow::closeScreenTab(const QString &screenId)
@@ -557,6 +557,12 @@ QString MainWindow::currentScreenName() const
     return QString();
 }
 
+QString MainWindow::currentScreenId() const
+{
+    ScreenTab *tab = currentScreenTab();
+    return tab ? tab->screenId() : QString();
+}
+
 // 图页管理器信号
 void MainWindow::onScreenManagerOpenRequested(const QString &screenId)
 {
@@ -614,7 +620,7 @@ void MainWindow::onScreensChanged(const QList<ScreenData> &updatedScreens)
         tab->scene()->setCanvasSize(m_project.target.width, m_project.target.height);
 
     if (m_projectTree)
-        m_projectTree->setCurrentScene(currentScene(), currentScreenName());
+        m_projectTree->setCurrentScreen(currentScene(), currentScreenId(), currentScreenName());
 }
 
 void MainWindow::onTabCloseRequested(int index)
@@ -1382,7 +1388,7 @@ void MainWindow::onScreenProperties()
     if (m_screenManager)
         m_screenManager->setScreens(m_project.screens);
     if (m_projectTree)
-        m_projectTree->setCurrentScene(tab->scene(), sd->name);
+        m_projectTree->setCurrentScreen(tab->scene(), sd->id, sd->name);
 }
 
 void MainWindow::onTagDictionary() {}

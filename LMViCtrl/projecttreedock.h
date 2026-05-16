@@ -22,6 +22,7 @@ public:
 
     void setCurrentScene(CanvasScene *scene);
     void setCurrentScene(CanvasScene *scene, const QString &screenName);
+    void setCurrentScreen(CanvasScene *scene, const QString &screenId, const QString &screenName);
     void setProjectData(const ProjectData *project);
 
 signals:
@@ -36,11 +37,13 @@ private slots:
 
 private:
     void buildUi();
+    QTreeWidgetItem *currentScreenItem() const;
     void requestAddDataVariable();
     void requestRemoveDataVariable(QTreeWidgetItem *item);
 
     QPointer<CanvasScene> m_scene;
     const ProjectData *m_project = nullptr;
+    QString m_screenId;
     QString m_screenName;
     QTreeWidget *m_tree = nullptr;
     QLabel *m_countLabel = nullptr;
