@@ -26,6 +26,7 @@ class QByteArray;
 class QDockWidget;
 class QPlainTextEdit;
 class QProcess;
+class QSplitter;
 class QTabWidget;
 class QStackedWidget;
 class QToolBar;
@@ -282,6 +283,7 @@ private:
     WidgetToolbox     *m_widgetToolbox    = nullptr;
     ProjectTreeDock   *m_projectTree      = nullptr;
     QStackedWidget    *m_stackedWidget    = nullptr;
+    QSplitter         *m_centralSplitter  = nullptr;
     QTabWidget        *m_tabWidget        = nullptr;
     BindingGraphView  *m_bindingGraphView = nullptr;
     WelcomeWidget     *m_welcomeWidget    = nullptr;
@@ -289,7 +291,7 @@ private:
     PropertyPanelDock *m_propertyPanel    = nullptr;
     QDockWidget       *m_bindingGraphDock = nullptr;
     BindingDetailDock *m_bindingDetailPanel = nullptr;
-    QDockWidget       *m_logDock          = nullptr;
+    QWidget           *m_logPanel         = nullptr;
     QPlainTextEdit    *m_logView          = nullptr;
     QMenu             *m_recentMenu       = nullptr;
     QToolBar          *m_fileToolBar      = nullptr;

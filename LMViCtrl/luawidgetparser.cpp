@@ -231,6 +231,43 @@ QList<PropertyMeta> LuaWidgetParser::parsePropertyList(const QString &metaBlock,
 // events (兼容字符串数组与对象数组)
 // ---------------------------------------------------------------------------
 
+QList<EventParamDef> LuaWidgetParser::parseEventParams(const QString &eventEntry)
+{
+    QList<EventParamDef> params;
+    const QString block = extractTableField(eventEntry, "params");
+    if (block.isEmpty()) return params;
+
+    const QString inner = block.mid(1, block.length() - 2);
+    int pos = 0;
+    while (pos < inner.length()) {
+        const int b = inner.indexOf('{', pos);
+        if (b < 0) break;
+        const QString entry = extractBlock(inner, b);
+        if (entry.isEmpty()) break;
+
+        EventParamDef param;
+        param.name = extractStringField(entry, "name");
+        param.label = extractStringField(entry, "label");
+        param.type = extractStringField(entry, "type");
+        param.description = extractStringField(entry, "description");
+        if (!param.name.isEmpty())
+            params.append(param);
+        pos = b + entry.length();
+    }
+
+    if (!params.isEmpty()) return params;
+
+    QRegularExpression rq(R"("([^"]*)\")");
+    auto it = rq.globalMatch(block);
+    while (it.hasNext()) {
+        EventParamDef param;
+        param.name = it.next().captured(1);
+        if (!param.name.isEmpty())
+            params.append(param);
+    }
+    return params;
+}
+
 void LuaWidgetParser::parseEvents(const QString  &metaBlock,
                                   QStringList    *names,
                                   QList<EventDef> *defs)
@@ -253,6 +290,7 @@ void LuaWidgetParser::parseEvents(const QString  &metaBlock,
         d.name        = extractStringField(entry, "name");
         d.label       = extractStringField(entry, "label");
         d.description = extractStringField(entry, "description");
+        d.params      = parseEventParams(entry);
         if (!d.name.isEmpty()) {
             if (names) names->append(d.name);
             if (defs)  defs->append(d);

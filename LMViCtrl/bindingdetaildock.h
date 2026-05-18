@@ -8,6 +8,7 @@
 class BindingGraphView;
 class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QFormLayout;
 class QGroupBox;
 class QLabel;
@@ -29,6 +30,7 @@ public:
     void setProjectData(ProjectData *project);
     void setWidgetMetas(const QList<WidgetMeta> &metas);
     void setGraphView(BindingGraphView *view);
+    bool applyPendingChanges();
 
 public slots:
     void setCurrentEdge(const QString &edgeId);
@@ -43,10 +45,16 @@ private:
     void buildSequenceList(const BindingEdge &edge);
     void buildNodePanel(const BindingNode &node);
     void buildNodeActionSequences(const BindingNode &node);
-    void applyChanges();
+    void updateValueEditorState();
     QString endpointTitle(const BindingEndpoint &endpoint) const;
     QString nodeTitle(const QString &nodeId) const;
     QString edgeTitle(const BindingEdge &edge) const;
+    QString edgeValueType(const BindingEdge &edge) const;
+    QStringList eventParamNamesForEdge(const BindingEdge &edge) const;
+    QVariant editorLiteralValue(const QString &valueType) const;
+    void setEditorLiteralValue(const QVariant &value, const QString &valueType);
+    void setFormFieldVisible(QWidget *field, bool visible);
+    QVariantMap paramsFromEditors(const BindingEdge &edge, bool *ok) const;
     QString paramsToJson(const QVariantMap &params) const;
     bool paramsFromJson(const QString &text, QVariantMap *params) const;
 
@@ -75,6 +83,17 @@ private:
     QSpinBox *m_orderSpin = nullptr;
     QSpinBox *m_delaySpin = nullptr;
     QLineEdit *m_conditionEdit = nullptr;
+    QComboBox *m_valueSourceCombo = nullptr;
+    QLineEdit *m_valueTextEdit = nullptr;
+    QDoubleSpinBox *m_valueNumberSpin = nullptr;
+    QComboBox *m_valueBoolCombo = nullptr;
+    QComboBox *m_eventParamCombo = nullptr;
+    QComboBox *m_variableCombo = nullptr;
+    QLineEdit *m_expressionEdit = nullptr;
+    QLineEdit *m_indexEdit = nullptr;
+    QLineEdit *m_patternEdit = nullptr;
+    QCheckBox *m_debugPrintCheck = nullptr;
+    QLineEdit *m_debugLabelEdit = nullptr;
     QPlainTextEdit *m_paramsEdit = nullptr;
     QPushButton *m_applyButton = nullptr;
     QPushButton *m_deleteButton = nullptr;

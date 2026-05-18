@@ -276,6 +276,64 @@ bool edgesEqual(const BindingEdge &lhs, const BindingEdge &rhs)
         && lhs.params == rhs.params;
 }
 
+QString variantSummary(const QVariant &value)
+{
+    if (!value.isValid() || value.isNull()) return QString();
+    if (value.typeId() == QMetaType::Bool)
+        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+    return value.toString();
+}
+
+QString edgeParamSummary(const BindingEdge &edge)
+{
+    const QVariantMap params = edge.params;
+    const QString source = params.value(QStringLiteral("valueSource")).toString();
+    QStringList parts;
+
+    if (source == QLatin1String("literal") || (source.isEmpty() && params.contains(QStringLiteral("value")))) {
+        const QString value = variantSummary(params.value(QStringLiteral("value")));
+        if (!value.isEmpty())
+            parts << QStringLiteral("value=%1").arg(value);
+    } else if (source == QLatin1String("event")) {
+        const QString param = params.value(QStringLiteral("eventParam"), QStringLiteral("value")).toString();
+        parts << QStringLiteral("e.%1").arg(param.isEmpty() ? QStringLiteral("value") : param);
+    } else if (source == QLatin1String("variable")) {
+        const QString variable = params.value(QStringLiteral("variable")).toString();
+        if (!variable.isEmpty())
+            parts << variable;
+    } else if (source == QLatin1String("expression")) {
+        const QString expression = params.value(QStringLiteral("expression")).toString();
+        if (!expression.isEmpty())
+            parts << QStringLiteral("expr: %1").arg(expression);
+    }
+
+    const QString index = params.value(QStringLiteral("index")).toString();
+    if (!index.isEmpty())
+        parts << QStringLiteral("index=%1").arg(index);
+    const QString pattern = params.value(QStringLiteral("pattern")).toString();
+    if (!pattern.isEmpty())
+        parts << QStringLiteral("format=%1").arg(pattern);
+    if (params.value(QStringLiteral("debugPrint")).toBool())
+        parts << QStringLiteral("print");
+    return parts.join(QStringLiteral(", "));
+}
+
+QString edgeLabelText(const QString &summary)
+{
+    constexpr int maxLength = 26;
+    if (summary.size() <= maxLength)
+        return summary;
+    return summary.left(maxLength - 3) + QStringLiteral("...");
+}
+
+qreal edgeLabelLaneOffset(int index, int total)
+{
+    if (total <= 1)
+        return -28.0;
+    const qreal centeredIndex = index - (total - 1) / 2.0;
+    return -34.0 + centeredIndex * 18.0;
+}
+
 class BindingNodeItem : public QGraphicsRectItem
 {
 public:
@@ -428,6 +486,12 @@ public:
 
     QString edgeId() const { return m_edgeId; }
 
+    void setInfoLabel(QGraphicsItem *label)
+    {
+        m_infoLabel = label;
+        updateInfoLabelVisibility();
+    }
+
 protected:
     QPainterPath shape() const override
     {
@@ -440,6 +504,8 @@ protected:
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override
     {
+        QStyleOptionGraphicsItem copy = *option;
+        copy.state &= ~QStyle::State_Selected;
         if (isSelected()) {
             QPen highlight(QColor(QStringLiteral("#f1c40f")), pen().widthF() + 4.0);
             highlight.setStyle(Qt::SolidLine);
@@ -448,7 +514,29 @@ protected:
             painter->setBrush(Qt::NoBrush);
             painter->drawPath(path());
         }
-        QGraphicsPathItem::paint(painter, option, widget);
+        QGraphicsPathItem::paint(painter, &copy, widget);
+    }
+
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override
+    {
+        const QVariant result = QGraphicsPathItem::itemChange(change, value);
+        if (change == QGraphicsItem::ItemSelectedHasChanged)
+            updateInfoLabelVisibility();
+        return result;
+    }
+
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override
+    {
+        m_hovered = true;
+        updateInfoLabelVisibility();
+        QGraphicsPathItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override
+    {
+        m_hovered = false;
+        updateInfoLabelVisibility();
+        QGraphicsPathItem::hoverLeaveEvent(event);
     }
 
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *event) override
@@ -463,8 +551,16 @@ protected:
     }
 
 private:
+    void updateInfoLabelVisibility()
+    {
+        if (m_infoLabel)
+            m_infoLabel->setVisible(m_hovered || isSelected());
+    }
+
     BindingGraphView *m_owner = nullptr;
     QString m_edgeId;
+    QGraphicsItem *m_infoLabel = nullptr;
+    bool m_hovered = false;
 };
 
 class AddBindingEdgeCommand : public QUndoCommand
@@ -1687,11 +1783,37 @@ void BindingGraphView::rebuildEdges()
         if (!edge.enabled) pen.setColor(QColor(QStringLiteral("#686868")));
         item->setPen(pen);
         item->setZValue(3);
-        item->setToolTip(edge.label.isEmpty()
+        const QString paramSummary = edgeParamSummary(edge);
+        QString tooltip = edge.label.isEmpty()
             ? QStringLiteral("%1 -> %2").arg(edge.source.portName, edge.target.portName)
-            : edge.label);
+            : edge.label;
+        if (!paramSummary.isEmpty())
+            tooltip += QStringLiteral("\n%1").arg(paramSummary);
+        item->setToolTip(tooltip);
         m_scene->addItem(item);
         m_edgeItems.insert(edge.id, item);
+
+        if (!paramSummary.isEmpty()) {
+            const QString labelText = edgeLabelText(paramSummary);
+            auto *label = new QGraphicsRectItem(item);
+            auto *text = new QGraphicsTextItem(labelText, label);
+            text->setDefaultTextColor(QColor(QStringLiteral("#f4f4f4")));
+            text->setTextWidth(-1.0);
+            text->setPos(6.0, 1.0);
+
+            const QRectF textRect = text->boundingRect();
+            label->setRect(0.0, 0.0, textRect.width() + 12.0, textRect.height() + 2.0);
+            label->setBrush(QColor(31, 37, 43, 218));
+            label->setPen(QPen(QColor(255, 255, 255, 46), 1.0));
+            label->setZValue(1.0);
+            label->setToolTip(paramSummary);
+            label->setAcceptedMouseButtons(Qt::NoButton);
+            text->setAcceptedMouseButtons(Qt::NoButton);
+
+            const qreal labelOffsetY = edgeLabelLaneOffset(sourceIndex, sourceTotals.value(sourceKey, 1));
+            label->setPos(item->path().pointAtPercent(0.5) + QPointF(-label->rect().width() / 2.0, labelOffsetY));
+            item->setInfoLabel(label);
+        }
     }
 
     m_selectedEdgeId = edgeToRestore;
@@ -1924,9 +2046,10 @@ int BindingGraphView::edgeIndex(const QString &edgeId) const
 
 QString BindingGraphView::edgeIdForItem(QGraphicsItem *item) const
 {
-    if (!item) return QString();
-    if (auto *edgeItem = dynamic_cast<EdgeItem *>(item))
-        return edgeItem->edgeId();
+    for (QGraphicsItem *current = item; current; current = current->parentItem()) {
+        if (auto *edgeItem = dynamic_cast<EdgeItem *>(current))
+            return edgeItem->edgeId();
+    }
     for (auto it = m_edgeItems.constBegin(); it != m_edgeItems.constEnd(); ++it) {
         if (it.value() == item)
             return it.key();

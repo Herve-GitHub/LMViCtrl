@@ -13,15 +13,19 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
+#include <QFrame>
 #include <QKeySequence>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPlainTextEdit>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextCursor>
 #include <QToolBar>
 #include <QUndoStack>
+#include <QVBoxLayout>
 
 MainWindow::MainWindow(QWidget* parent)
 	: QMainWindow(parent)
@@ -124,8 +128,6 @@ MainWindow::MainWindow(QWidget* parent)
 	m_bindingGraphDock->setFeatures(QDockWidget::DockWidgetClosable
 		| QDockWidget::DockWidgetMovable
 		| QDockWidget::DockWidgetFloatable);
-	addDockWidget(Qt::BottomDockWidgetArea, m_bindingGraphDock);
-	tabifyDockWidget(m_logDock, m_bindingGraphDock);
 	m_bindingGraphDock->hide();
 
 	// 欢迎页
@@ -141,7 +143,15 @@ MainWindow::MainWindow(QWidget* parent)
 	m_stackedWidget = new QStackedWidget(this);
 	m_stackedWidget->addWidget(m_welcomeWidget);
 	m_stackedWidget->addWidget(m_tabWidget);
-	setCentralWidget(m_stackedWidget);
+	m_centralSplitter = new QSplitter(Qt::Vertical, this);
+	m_centralSplitter->setChildrenCollapsible(false);
+	m_centralSplitter->addWidget(m_stackedWidget);
+	if (m_logPanel)
+		m_centralSplitter->addWidget(m_logPanel);
+	m_centralSplitter->setStretchFactor(0, 1);
+	m_centralSplitter->setStretchFactor(1, 0);
+	m_centralSplitter->setSizes({ 720, 140 });
+	setCentralWidget(m_centralSplitter);
 
 	// 加载最近工程并显示欢迎页
 	loadRecentProjects();
@@ -207,19 +217,26 @@ QAction* MainWindow::addAction(QMenu* menu,
 
 void MainWindow::setupLogDock()
 {
-	m_logDock = new QDockWidget(tr("日志"), this);
-	m_logDock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
+	m_logPanel = new QFrame(this);
+	m_logPanel->setMinimumHeight(72);
+	m_logPanel->setStyleSheet(QStringLiteral(
+		"QFrame { background:#202020; border-top:1px solid #4a4a4a; }"
+		"QLabel { color:#d8dee9; padding-left:8px; border:0; }"));
+	auto *layout = new QVBoxLayout(m_logPanel);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(0);
+	auto *title = new QLabel(tr("日志"), m_logPanel);
+	title->setFixedHeight(24);
 
-	m_logView = new QPlainTextEdit(m_logDock);
+	m_logView = new QPlainTextEdit(m_logPanel);
 	m_logView->setReadOnly(true);
 	m_logView->setMaximumBlockCount(1000);
 	m_logView->setLineWrapMode(QPlainTextEdit::NoWrap);
 	m_logView->setStyleSheet(QStringLiteral(
 		"QPlainTextEdit { background:#1e1e1e; color:#cccccc; border:0; }"));
 
-	m_logDock->setWidget(m_logView);
-	addDockWidget(Qt::BottomDockWidgetArea, m_logDock);
-	resizeDocks({ m_logDock }, { 140 }, Qt::Vertical);
+	layout->addWidget(title);
+	layout->addWidget(m_logView);
 	appendLog(tr("日志窗口已启动"));
 }
 

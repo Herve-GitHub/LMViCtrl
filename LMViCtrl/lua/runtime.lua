@@ -791,12 +791,78 @@ local function binding_event_value(self, e)
     return read_widget_event_value(self, e)
 end
 
+local function binding_event_param_value(e, param_name)
+    if type(e) ~= "table" then return nil end
+    param_name = param_name or "value"
+    if e[param_name] ~= nil then return e[param_name] end
+    if param_name == "oldValue" and e.old_value ~= nil then return e.old_value end
+    if param_name == "newValue" and e.value ~= nil then return e.value end
+    return nil
+end
+
+local function binding_expression_value(edge, self, e, expression)
+    if type(expression) ~= "string" or expression:match("^%s*$") then return nil end
+    local loader = load or loadstring
+    if type(loader) ~= "function" then
+        log_warn("binding graph: no load/loadstring available for expression")
+        return nil
+    end
+
+    local chunk_src = "local self, e, edge, params = ...\nreturn (" .. expression .. ")"
+    local chunk_name = string.format("=[binding_graph.%s.value]", tostring(edge and edge.id or "edge"))
+    local fn, err
+    if load then
+        fn, err = load(chunk_src, chunk_name, "t", g_handler_env)
+    else
+        fn, err = loadstring(chunk_src, chunk_name)
+        if fn and type(setfenv) == "function" then setfenv(fn, g_handler_env) end
+    end
+    if not fn then
+        log_warn("binding graph: expression compile failed: %s", tostring(err))
+        return nil
+    end
+
+    local ok, result = pcall(fn, self, e, edge, edge and edge.params or {})
+    if not ok then
+        log_warn("binding graph: expression failed: %s", tostring(result))
+        return nil
+    end
+    return result
+end
+
 local function binding_edge_value(edge, self, e, action_def)
     local params = edge.params or {}
-    if params.value ~= nil then return resolve_action_value(params.value) end
+    local source = params.valueSource or params.value_source
+    if source == "literal" then
+        if params.value ~= nil then return resolve_action_value(params.value) end
+    elseif source == "event" then
+        local value = binding_event_param_value(e, params.eventParam or params.event_param or "value")
+        if value ~= nil then return value end
+    elseif source == "variable" then
+        if g_data_store and params.variable then
+            local value = g_data_store:get(params.variable)
+            if value ~= nil then return value end
+        end
+    elseif source == "expression" then
+        local value = binding_expression_value(edge, self, e, params.expression)
+        if value ~= nil then return value end
+    elseif source == nil and params.value ~= nil then
+        return resolve_action_value(params.value)
+    end
     if action_def and action_def.default_value ~= nil then return resolve_action_value(action_def.default_value) end
     if action_def and action_def.defaultValue ~= nil then return resolve_action_value(action_def.defaultValue) end
     return binding_event_value(self, e)
+end
+
+local function binding_edge_log_value(edge, value, target)
+    local params = edge and edge.params or {}
+    if params.debugPrint ~= true and params.debug_print ~= true and params.logValue ~= true then return end
+    local label = params.debugLabel or params.debug_label or (edge and edge.label)
+    if type(label) ~= "string" or label == "" then
+        local target_text = target and endpoint_ref(target) or "target"
+        label = tostring(target_text)
+    end
+    log_info("binding graph: %s value=%s", tostring(label), tostring(value))
 end
 
 local function set_widget_property(widget, property_name, value, options)
@@ -816,8 +882,10 @@ local function execute_binding_edge(edge, self, e)
     local target = edge.target or {}
     if target.portKind == "data_set" then
         if not g_data_store then return end
+        local value = binding_edge_value(edge, self, e)
+        binding_edge_log_value(edge, value, target)
         local ok, err = g_data_store:apply(endpoint_ref(target), target.portName or "set", {
-            value = binding_edge_value(edge, self, e),
+            value = value,
             index = edge.params and edge.params.index,
             pattern = edge.params and edge.params.pattern,
         }, self, e)
@@ -833,7 +901,9 @@ local function execute_binding_edge(edge, self, e)
     end
 
     if target.portKind == "property" then
-        set_widget_property(widget, target.portName, binding_edge_value(edge, self, e), {
+        local value = binding_edge_value(edge, self, e)
+        binding_edge_log_value(edge, value, target)
+        set_widget_property(widget, target.portName, value, {
             source = "binding_graph",
         })
         return
@@ -843,15 +913,21 @@ local function execute_binding_edge(edge, self, e)
         local action_def = find_action_def(entry, target.portName)
         local kind = action_def and action_def.kind
         if action_def and kind == "set_property" and action_def.property then
-            set_widget_property(widget, action_def.property, binding_edge_value(edge, self, e, action_def), {
+            local value = binding_edge_value(edge, self, e, action_def)
+            binding_edge_log_value(edge, value, target)
+            set_widget_property(widget, action_def.property, value, {
                 source = "binding_graph_action",
             })
         elseif action_def and kind == "call_method" and action_def.method and type(widget[action_def.method]) == "function" then
             widget[action_def.method](widget)
         elseif type(widget[target.portName]) == "function" then
-            widget[target.portName](widget, binding_edge_value(edge, self, e, action_def))
+            local value = binding_edge_value(edge, self, e, action_def)
+            binding_edge_log_value(edge, value, target)
+            widget[target.portName](widget, value)
         elseif type(widget.set_property) == "function" then
-            widget:set_property(target.portName, binding_edge_value(edge, self, e, action_def))
+            local value = binding_edge_value(edge, self, e, action_def)
+            binding_edge_log_value(edge, value, target)
+            widget:set_property(target.portName, value)
         end
     end
 end

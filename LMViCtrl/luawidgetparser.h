@@ -33,6 +33,7 @@ private:
     static void                parseEvents(const QString &metaBlock,
                                            QStringList    *names,
                                            QList<EventDef> *defs);
+    static QList<EventParamDef> parseEventParams(const QString &eventEntry);
     // actions 输入动作列表
     static QList<ActionDef>    parseActions(const QString &metaBlock);
     // bindings 列表

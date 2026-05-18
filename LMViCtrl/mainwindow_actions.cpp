@@ -449,6 +449,11 @@ void MainWindow::openBindingGraphTab()
 void MainWindow::openBindingGraphDock(bool floating)
 {
     if (!m_bindingGraphDock || !m_bindingGraphView) return;
+    if (!floating) {
+        openBindingGraphTab();
+        return;
+    }
+
     m_bindingGraphView->setProjectData(&m_project);
     m_bindingGraphView->setWidgetMetas(m_widgetToolbox ? m_widgetToolbox->widgetMetas() : QList<WidgetMeta>{});
 
@@ -461,15 +466,8 @@ void MainWindow::openBindingGraphDock(bool floating)
     if (m_bindingGraphDock->widget() != m_bindingGraphView)
         m_bindingGraphDock->setWidget(m_bindingGraphView);
 
-    if (floating) {
-        m_bindingGraphDock->setFloating(true);
-        m_bindingGraphDock->resize(1100, 720);
-    } else {
-        m_bindingGraphDock->setFloating(false);
-        addDockWidget(Qt::BottomDockWidgetArea, m_bindingGraphDock);
-        if (m_logDock)
-            tabifyDockWidget(m_logDock, m_bindingGraphDock);
-    }
+    m_bindingGraphDock->setFloating(true);
+    m_bindingGraphDock->resize(1100, 720);
 
     m_bindingGraphDock->show();
     m_bindingGraphDock->raise();
@@ -1147,6 +1145,8 @@ void MainWindow::onOpenRecentProject(const QString &path)
 void MainWindow::onSave()
 {
     if (!m_projectOpen) return;
+    if (m_bindingDetailPanel && !m_bindingDetailPanel->applyPendingChanges())
+        return;
     if (m_projectFilePath.isEmpty()) {
         onSaveAs();
         return;
@@ -1157,6 +1157,8 @@ void MainWindow::onSave()
 void MainWindow::onSaveAs()
 {
     if (!m_projectOpen) return;
+    if (m_bindingDetailPanel && !m_bindingDetailPanel->applyPendingChanges())
+        return;
 
     const QString projectName = m_project.name.isEmpty() ? QStringLiteral("project")
                                                          : m_project.name;
@@ -1419,7 +1421,11 @@ void MainWindow::onTogglePropertyPanel(bool checked)
         m_propertyPanel->setVisible(checked);
 }
 
-void MainWindow::onToggleOutputWindow(bool /*checked*/) {}
+void MainWindow::onToggleOutputWindow(bool checked)
+{
+    if (m_logPanel)
+        m_logPanel->setVisible(checked);
+}
 
 void MainWindow::onToggleStatusBar(bool /*checked*/) {}
 
@@ -1436,7 +1442,7 @@ void MainWindow::onOpenBindingDock()
     if (!m_projectOpen) return;
     syncSceneToProject();
     openBindingGraphDock(false);
-    appendLog(tr("打开绑定窗口（下方停靠）"));
+    appendLog(tr("打开绑定模式画布"));
 }
 
 void MainWindow::onFloatBindingDock()
@@ -1881,10 +1887,8 @@ void MainWindow::onStartSimulate()
 
     m_simulatorStdoutBuffer.clear();
     m_simulatorStderrBuffer.clear();
-    if (m_logDock) {
-        m_logDock->show();
-        m_logDock->raise();
-    }
+    if (m_logPanel)
+        m_logPanel->show();
     m_simulatorProcess->setWorkingDirectory(projectDir);
     m_simulatorProcess->start(simuExe, args);
     if (!m_simulatorProcess->waitForStarted(3000)) {

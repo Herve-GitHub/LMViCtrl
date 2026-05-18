@@ -37,11 +37,20 @@ struct PropertyMeta {
     bool required = false;
 };
 
+// 事件参数定义
+struct EventParamDef {
+    QString name;
+    QString label;
+    QString type;
+    QString description;
+};
+
 // 事件定义
 struct EventDef {
     QString name;
     QString label;
     QString description;
+    QList<EventParamDef> params;
 };
 
 // 输入动作定义（用于绑定模式左侧绿色锚点）
