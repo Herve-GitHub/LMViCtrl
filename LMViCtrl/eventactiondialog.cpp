@@ -17,6 +17,33 @@
 
 #include <utility>
 
+#include <QFile>
+#include <QTextStream>
+// 读取 tag_list.txt，返回所有数据点
+static QStringList loadTagList()
+{
+    QStringList list;
+    QFile file("./tag_list.txt");
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return list;
+
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (!line.isEmpty())
+            list << line;
+    }
+
+    file.close();
+    return list;
+}
+
+
+
+
+
+
 
 namespace {
 
@@ -378,21 +405,19 @@ void EventActionDialog::rebuildPropertyCombo(const QString& preferredProperty, b
 
     if (currentActionType() == "datewrite") {
         m_dataPointCombo->clear();
-        m_dataPointCombo->addItem("系统时间");
-        m_dataPointCombo->addItem("系统日期");
-        m_dataPointCombo->addItem("温度");
-        m_dataPointCombo->addItem("湿度");
+        // 从文件读取，不再写死
+        QStringList tags = loadTagList();
+        m_dataPointCombo->addItems(tags);
         return;
     }
 
     // ✅ 新增：如果是 ValueChange，填充 【数据点】 + 【属性】
     if (currentActionType() == "valuechange") {
         // 1. 填充左边：数据点下拉框（固定选项）
+       // 1. 填充左边：数据点下拉框（固定选项）
         m_valuePointCombo->clear();
-        m_valuePointCombo->addItem("系统时间");
-        m_valuePointCombo->addItem("系统日期");
-        m_valuePointCombo->addItem("温度");
-        m_valuePointCombo->addItem("湿度");
+        QStringList tags = loadTagList();
+        m_valuePointCombo->addItems(tags);
 
         // 2. 填充右边：属性下拉框（控件属性，和 set_property 一样）
         m_valuePropCombo->clear();

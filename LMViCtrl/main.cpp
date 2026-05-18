@@ -4,7 +4,7 @@
 #include <QIcon>
 #include <QLocale>
 #include <QTranslator>
-
+#include "HttpServer.h"
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
@@ -21,5 +21,13 @@ int main(int argc, char *argv[])
     }
     MainWindow w;
     w.show();
+
+
+
+    // ==============================
+     // 启动 HTTP 服务
+     // ==============================
+    // 启动时请求网关
+   // getGatewayTags();
     return QCoreApplication::exec();
 }

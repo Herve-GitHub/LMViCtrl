@@ -36,7 +36,10 @@ SOURCES += \
     welcomewidget.cpp \
     newprojectdialog.cpp \
     drawHints.cpp \
-    lvglpreviewrenderer.cpp
+    lvglpreviewrenderer.cpp \
+    mongoose.c \
+    cJSON.c \
+    HttpServer.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -58,7 +61,10 @@ HEADERS += \
     welcomewidget.h \
     newprojectdialog.h \
     drawHints.h \
-    lvglpreviewrenderer.h
+    lvglpreviewrenderer.h \
+    mongoose.h \
+    cJSON.h     \
+    HttpServer.h
 
 FORMS += \
     mainwindow.ui
