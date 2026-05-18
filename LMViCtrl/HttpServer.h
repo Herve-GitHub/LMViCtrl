@@ -5,6 +5,6 @@
 #include "mongoose.h"
 
 // 请求网关数据
-void getGatewayTags();
+void getGatewayTags(const char* gateway_ip);
 
 #endif

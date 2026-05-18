@@ -49,7 +49,7 @@ public:
                        QWidget *) override;
 
     static constexpr qreal kHandle = 8.0;
-    static constexpr qreal kMin    = 20.0;
+    static constexpr qreal kMin    = 1.0;
 
 signals:
     // 缩放完成后通知场景（用于 undo）

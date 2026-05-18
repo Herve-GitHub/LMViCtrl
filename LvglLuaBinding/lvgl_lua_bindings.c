@@ -312,6 +312,12 @@ static int l_lv_button_create(lua_State* L) {
     return 1;
 }
 
+// lv.button_create(parent)
+static int l_lv_line_create(lua_State* L) {
+    push_lv_obj(L, lv_line_create(check_lv_obj(L, 1)));
+    return 1;
+}
+
 // lv.list_create(parent)
 static int l_lv_list_create(lua_State* L) {
     push_lv_obj(L, lv_list_create(check_lv_obj(L, 1)));
@@ -987,6 +993,7 @@ static const luaL_Reg lvgl_funcs[] = {
     {"obj_create", l_lv_obj_create},
     {"label_create", l_lv_label_create},
     {"button_create", l_lv_button_create},
+    {"line_create", l_lv_line_create},
     {"btn_create", l_lv_button_create},
     {"list_create", l_lv_list_create},
     {"win_create", l_lv_win_create},

@@ -27,6 +27,7 @@ private:
     void loadData();
     void onBrowseFont();
     void onClearFont();
+    void onOkClicked();
 
     ProjectData m_data;
     QString     m_projectDir;

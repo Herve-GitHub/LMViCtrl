@@ -17,7 +17,7 @@
 #include <QSpinBox>
 #include <QTextEdit>
 #include <QVBoxLayout>
-
+#include "HttpServer.h"
 ProjectPropertiesDialog::ProjectPropertiesDialog(const ProjectData &project,
                                                  const QString &projectDir,
                                                  QWidget *parent)
@@ -197,6 +197,10 @@ void ProjectPropertiesDialog::buildUi()
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+  //  connect(buttons, &QDialogButtonBox::accepted, this, &ProjectPropertiesDialog::onOkClicked);
+   // connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
     mainLayout->addWidget(buttons);
 }
 
@@ -277,4 +281,21 @@ void ProjectPropertiesDialog::onBrowseFont()
 void ProjectPropertiesDialog::onClearFont()
 {
     m_fontFileEdit->clear();
+}
+
+
+void ProjectPropertiesDialog::onOkClicked()
+{
+    // 1. 先拿到当前界面所有填写好的数据
+    ProjectData pData = projectData();
+
+    // 2. 取出填写的网关地址
+    QString gatewayAddr = pData.dataClient.server;
+
+    // 3. 调用函数，把地址传进去
+    getGatewayTags(gatewayAddr.toUtf8().constData());
+
+
+    // 最后关闭对话框
+    accept();
 }
